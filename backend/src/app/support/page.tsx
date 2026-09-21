@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { ArrowLeft, Headphones, Mail, HelpCircle, Smartphone, RefreshCw, MessageSquare, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Headphones, Mail, HelpCircle, Smartphone, RefreshCw, MessageSquare, ShieldCheck, Cloud } from 'lucide-react';
 
 export const metadata = {
   title: '技術支援與客戶服務中心 (Support) - FitnessRider',
@@ -10,6 +10,12 @@ export const metadata = {
 
 export default function SupportPage() {
   const troubleshootingItems = [
+    {
+      icon: <Cloud className="h-5 w-5 text-sky-400" />,
+      title: '如何從 Google 雲端硬碟 (Google Drive) 或 iCloud 匯入音樂？',
+      description:
+        '在 App「課表編輯器」或「音樂庫」點選「＋匯入新檔案」，系統會自動叫出 iPadOS「檔案」或 Android 系統選擇器。在選單切換至 Google Drive 或 iCloud 資料夾，即可直接批量勾選音樂；亦可使用「音樂資料夾」功能直接綁定外部資料夾零拷貝播放。若為他人分享之雲端連結，建議先在 Google 雲端硬碟 App 中「新增捷徑至我的雲端硬碟」或直接下載整包 ZIP 至本機「下載項目」再行匯入。',
+    },
     {
       icon: <Headphones className="h-5 w-5 text-emerald-400" />,
       title: '藍牙音訊與音樂播放疑難排除',

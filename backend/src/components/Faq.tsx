@@ -21,6 +21,10 @@ export default function Faq() {
       a: '傳統播音在切歌時常有 2~5 秒尷尬靜音，造成踩踏節奏中斷。FitnessRider 內建雙原生 Audio Engine 播放核心，支援在曲目結尾與下一首開頭進行 1~3 秒等能量（Equal-Power）聲學交叉淡入淡出，踩踏能量不中斷。系統同時提供「曲目段落結束自動暫停 (Auto-Pause)」開關，開啟時 Crossfade 自動智慧互斥避讓，滿足需要間歇技術解說的特殊課堂需求。',
     },
     {
+      q: '如何從 Google 雲端硬碟 (Google Drive)、iCloud 或隨身碟中匯入音樂？',
+      a: '非常簡單！FitnessRider 深度整合 iPadOS「檔案 (Files App)」與 Android「儲存空間存取框架 (SAF)」。在 App「課表編輯器」或「音樂庫」中點選「＋匯入新檔案」，系統檔案選擇器會自動彈出。您只需在左側位置點選「Google 雲端硬碟」或「iCloud 雲端硬碟」，即可多選歌曲批量匯入，系統會自動下載並計算 BPM 踏頻與振幅波形。您亦可切換至「音樂資料夾」分頁直接零拷貝掛載整個音樂目錄。',
+    },
+    {
       q: '支援哪些設備與系統版本？',
       a: '支援 iPad (iPadOS 17 及以上版本，推薦 11 吋或 13 吋橫向安裝於車把大支架) 與 Android 平板 (Android 14 及以上版本)。手機端（iPhone / Android 手機）亦可自適應響應版面，方便教練輕量隨身檢視課表。',
     },
