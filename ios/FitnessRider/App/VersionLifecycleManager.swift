@@ -4,7 +4,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     public static let shared = VersionLifecycleManager()
 
     public static let lifecycleDays: Int = 30
-    public static let updateURL = URL(string: "https://github.com/tonylu880042/fitnessrider/releases")!
+    public static let updateURL = URL(string: "https://appdistribution.firebase.dev/i/d740076f27b77ab0")!
 
     private let userDefaultsKey = "fitness_rider_last_launch_timestamp"
 
