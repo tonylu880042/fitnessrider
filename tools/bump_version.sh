@@ -46,8 +46,15 @@ case "$BUMP_TYPE" in
         NEW_VERSION_NAME="${MAJOR}.${MINOR}.${PATCH}"
         ;;
     *)
-        # Specific version passed
-        NEW_VERSION_NAME="$BUMP_TYPE"
+        # 明確指定版號字面值時，必須符合 X.Y.Z 格式，否則任何打錯字的參數
+        # （例如 `./tools/bump_version.sh Patch`）都會被當成版號字面值，
+        # 一路寫進 versionName、MARKETING_VERSION 與 APK 檔名。
+        if [[ "$BUMP_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            NEW_VERSION_NAME="$BUMP_TYPE"
+        else
+            echo "錯誤: 無法辨識的版本參數 '${BUMP_TYPE}'（必須是 patch / minor / major，或符合 X.Y.Z 格式的版號，例如 1.2.3）" >&2
+            exit 1
+        fi
         ;;
 esac
 
