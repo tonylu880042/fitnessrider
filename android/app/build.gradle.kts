@@ -17,7 +17,19 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
+        val gitTimestamp = providers.exec {
+            commandLine("git", "log", "-1", "--format=%ct")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.map { out ->
+            out.trim().toLongOrNull()?.let { it * 1000L } ?: 1789994982000L
+        }
+        val resolvedBuildTime = providers.gradleProperty("buildTimestamp")
+            .map { it.toLong() }
+            .orElse(gitTimestamp)
+            .orElse(1789994982000L)
+            .get()
+
+        buildConfigField("long", "BUILD_TIME_MS", "${resolvedBuildTime}L")
         buildConfigField("int", "LIFECYCLE_DAYS", "30")
         buildConfigField("String", "UPDATE_URL", "\"https://appdistribution.firebase.dev/i/d740076f27b77ab0\"")
 

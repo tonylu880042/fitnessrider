@@ -252,6 +252,66 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertTrue(manager.getFormattedBuildDate().isNotEmpty())
         org.junit.Assert.assertTrue(manager.getFormattedExpirationDate().isNotEmpty())
         org.junit.Assert.assertTrue(manager.updateUrl.startsWith("https://"))
+
+        // 7. Persistence & Anti-Clock Rollback verification with mock Context
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        // Normal launch on Day 10
+        val day10 = buildTime + (10 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
+        org.junit.Assert.assertFalse(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
+        assertEquals(day10, fakePrefs.getLong(manager.KEY_LAST_LAUNCH_TIME, 0L))
+        assertEquals(20, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day10))
+
+        // Advance warning range on Day 25 (5 days remaining, in 1..7 range)
+        val day25 = buildTime + (25 * oneDayMs)
+        val remainingDay25 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day25)
+        assertEquals(5, remainingDay25)
+        org.junit.Assert.assertTrue(remainingDay25 in 1..7)
+
+        // Expired launch on Day 35 -> must persist KEY_IS_EXPIRED = true
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
+        org.junit.Assert.assertTrue(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
+
+        // Time Rollback Attempt: Clock rolled back to Day 5 after expiration
+        val day5 = buildTime + (5 * oneDayMs)
+        org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day5))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5))
+    }
+
+    private class FakeSharedPreferences : android.content.SharedPreferences {
+        val data = mutableMapOf<String, Any?>()
+        override fun getAll(): MutableMap<String, *> = data
+        override fun getString(key: String?, defValue: String?): String? = data[key] as? String ?: defValue
+        override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? = data[key] as? MutableSet<String> ?: defValues
+        override fun getInt(key: String?, defValue: Int): Int = data[key] as? Int ?: defValue
+        override fun getLong(key: String?, defValue: Long): Long = data[key] as? Long ?: defValue
+        override fun getFloat(key: String?, defValue: Float): Float = data[key] as? Float ?: defValue
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean = data[key] as? Boolean ?: defValue
+        override fun contains(key: String?): Boolean = data.containsKey(key)
+        override fun edit(): android.content.SharedPreferences.Editor = EditorImpl(this)
+        override fun registerOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+
+        class EditorImpl(private val prefs: FakeSharedPreferences) : android.content.SharedPreferences.Editor {
+            private val temp = mutableMapOf<String, Any?>()
+            override fun putString(key: String?, value: String?) = apply { temp[key!!] = value }
+            override fun putStringSet(key: String?, values: MutableSet<String>?) = apply { temp[key!!] = values }
+            override fun putInt(key: String?, value: Int) = apply { temp[key!!] = value }
+            override fun putLong(key: String?, value: Long) = apply { temp[key!!] = value }
+            override fun putFloat(key: String?, value: Float) = apply { temp[key!!] = value }
+            override fun putBoolean(key: String?, value: Boolean) = apply { temp[key!!] = value }
+            override fun remove(key: String?) = apply { temp[key!!] = null }
+            override fun clear() = apply { temp.clear() }
+            override fun commit(): Boolean { prefs.data.putAll(temp); return true }
+            override fun apply() { prefs.data.putAll(temp) }
+        }
+    }
+
+    private class MockContext(private val prefs: android.content.SharedPreferences) : android.content.ContextWrapper(null) {
+        override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = prefs
     }
 }
 

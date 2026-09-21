@@ -1,5 +1,7 @@
 package com.fitnessrider.ui.classlist
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,10 +13,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,6 +26,7 @@ import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.SegmentProgressBar
 import com.fitnessrider.ui.components.TopNavBar
+import com.fitnessrider.util.VersionLifecycleManager
 
 @Composable
 fun ClassListScreen(
@@ -33,6 +38,10 @@ fun ClassListScreen(
     onShareClick: (WorkoutClass) -> Unit,
     onDeleteClick: (WorkoutClass) -> Unit
 ) {
+    val context = LocalContext.current
+    var isWarningDismissed by rememberSaveable { mutableStateOf(false) }
+    val remainingDays = remember { VersionLifecycleManager.getRemainingDays(context) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -52,6 +61,77 @@ fun ClassListScreen(
                 }
             }
         )
+
+        // Advance expiration warning banner (shows when 1 <= remainingDays <= 7)
+        if (!isWarningDismissed && remainingDays in 1..7) {
+            Surface(
+                color = Color(0xFFFFF3CD),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .border(1.dp, Color(0xFFFFEEBA), RoundedCornerShape(8.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFF856404),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "版本即將到期提醒",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404)
+                        )
+                        Text(
+                            text = "目前測試版本將於 ${remainingDays} 天後到期。請提前更新以避免影響上課。",
+                            fontSize = 12.sp,
+                            color = Color(0xFF856404).copy(alpha = 0.85f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(VersionLifecycleManager.updateUrl)).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("更新", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { isWarningDismissed = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "關閉提示",
+                            tint = Color(0xFF856404),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
 
         if (classes.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

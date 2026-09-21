@@ -69,86 +69,86 @@ class MainActivity : ComponentActivity() {
                     var activeClassForHUD by remember { mutableStateOf<WorkoutClass?>(null) }
                     var activeClassForEditor by remember { mutableStateOf<WorkoutClass?>(null) }
 
-                when (currentScreen) {
-                    ScreenState.LIST -> {
-                        ClassListScreen(
-                            classes = classes,
-                            onClassClick = {
-                                activeClassForHUD = it
-                                currentScreen = ScreenState.HUD
-                            },
-                            onEditClick = {
-                                activeClassForEditor = it
-                                currentScreen = ScreenState.EDITOR
-                            },
-                            onNewClassClick = {
-                                val newClass = WorkoutClass(
-                                    id = UUID.randomUUID().toString(),
-                                    title = "新飛輪課表",
-                                    author = "Coach"
-                                )
-                                lifecycleScope.launch {
-                                    repository.saveClass(newClass)
-                                }
-                                activeClassForEditor = newClass
-                                currentScreen = ScreenState.EDITOR
-                            },
-                            onSettingsClick = {
-                                currentScreen = ScreenState.SETTINGS
-                            },
-                            onShareClick = {
-                                lifecycleScope.launch {
-                                    archiveService.exportRiderClass(it)
-                                }
-                            },
-                            onDeleteClick = {
-                                lifecycleScope.launch {
-                                    repository.deleteClass(it.id)
-                                }
-                            }
-                        )
-                    }
-
-                    ScreenState.HUD -> {
-                        activeClassForHUD?.let { wc ->
-                            WorkoutHUDScreen(
-                                workoutClass = wc,
-                                audioManager = audioEngine,
-                                onExitClick = {
-                                    audioEngine.pause()
-                                    currentScreen = ScreenState.LIST
-                                }
-                            )
-                        } ?: run { currentScreen = ScreenState.LIST }
-                    }
-
-                    ScreenState.EDITOR -> {
-                        activeClassForEditor?.let { wc ->
-                            ClassEditorScreen(
-                                initialClass = wc,
-                                onSave = { updated ->
-                                    lifecycleScope.launch {
-                                        repository.saveClass(updated)
-                                    }
-                                    currentScreen = ScreenState.LIST
+                    when (currentScreen) {
+                        ScreenState.LIST -> {
+                            ClassListScreen(
+                                classes = classes,
+                                onClassClick = {
+                                    activeClassForHUD = it
+                                    currentScreen = ScreenState.HUD
                                 },
-                                onCancel = {
-                                    currentScreen = ScreenState.LIST
+                                onEditClick = {
+                                    activeClassForEditor = it
+                                    currentScreen = ScreenState.EDITOR
+                                },
+                                onNewClassClick = {
+                                    val newClass = WorkoutClass(
+                                        id = UUID.randomUUID().toString(),
+                                        title = "新飛輪課表",
+                                        author = "Coach"
+                                    )
+                                    lifecycleScope.launch {
+                                        repository.saveClass(newClass)
+                                    }
+                                    activeClassForEditor = newClass
+                                    currentScreen = ScreenState.EDITOR
+                                },
+                                onSettingsClick = {
+                                    currentScreen = ScreenState.SETTINGS
+                                },
+                                onShareClick = {
+                                    lifecycleScope.launch {
+                                        archiveService.exportRiderClass(it)
+                                    }
+                                },
+                                onDeleteClick = {
+                                    lifecycleScope.launch {
+                                        repository.deleteClass(it.id)
+                                    }
                                 }
                             )
-                        } ?: run { currentScreen = ScreenState.LIST }
-                    }
+                        }
 
-                    ScreenState.SETTINGS -> {
-                        SettingsScreen(
-                            onBackClick = { currentScreen = ScreenState.LIST }
-                        )
+                        ScreenState.HUD -> {
+                            activeClassForHUD?.let { wc ->
+                                WorkoutHUDScreen(
+                                    workoutClass = wc,
+                                    audioManager = audioEngine,
+                                    onExitClick = {
+                                        audioEngine.pause()
+                                        currentScreen = ScreenState.LIST
+                                    }
+                                )
+                            } ?: run { currentScreen = ScreenState.LIST }
+                        }
+
+                        ScreenState.EDITOR -> {
+                            activeClassForEditor?.let { wc ->
+                                ClassEditorScreen(
+                                    initialClass = wc,
+                                    onSave = { updated ->
+                                        lifecycleScope.launch {
+                                            repository.saveClass(updated)
+                                        }
+                                        currentScreen = ScreenState.LIST
+                                    },
+                                    onCancel = {
+                                        currentScreen = ScreenState.LIST
+                                    }
+                                )
+                            } ?: run { currentScreen = ScreenState.LIST }
+                        }
+
+                        ScreenState.SETTINGS -> {
+                            SettingsScreen(
+                                onBackClick = { currentScreen = ScreenState.LIST }
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
 
     override fun onDestroy() {
         super.onDestroy()

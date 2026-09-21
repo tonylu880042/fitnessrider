@@ -7,7 +7,8 @@ import java.util.*
 
 object VersionLifecycleManager {
     private const val PREFS_NAME = "fitness_rider_lifecycle_prefs"
-    private const val KEY_LAST_LAUNCH_TIME = "last_launch_timestamp"
+    const val KEY_LAST_LAUNCH_TIME = "last_launch_timestamp"
+    const val KEY_IS_EXPIRED = "is_version_expired"
     private const val MS_PER_DAY = 86_400_000L
 
     val buildTimeMs: Long get() = BuildConfig.BUILD_TIME_MS
@@ -20,43 +21,56 @@ object VersionLifecycleManager {
 
     /**
      * Check if current version has exceeded its 30-day lifecycle or clock has been rolled back.
+     * When expired, persists KEY_IS_EXPIRED = true so subsequent clock rollbacks cannot unlock.
      */
     fun isExpired(context: Context? = null, overrideCurrentTimeMs: Long? = null): Boolean {
         val now = overrideCurrentTimeMs ?: System.currentTimeMillis()
 
-        // 1. Check expiration date (30-day lifecycle)
-        if (now >= expirationTimeMs) {
-            return true
-        }
-
-        // 2. Anti-clock rollback check
-        if (context != null && overrideCurrentTimeMs == null) {
+        if (context != null) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val lastRecordedTime = prefs.getLong(KEY_LAST_LAUNCH_TIME, 0L)
 
-            // If time went backwards by more than 1 hour (allowing minor timezone/NTP shifts)
-            if (lastRecordedTime > 0L && now < (lastRecordedTime - 3600_000L)) {
-                return true // Clock rollback detected
-            }
-
-            // If last recorded time was already past expiration, stay expired
-            if (lastRecordedTime >= expirationTimeMs) {
+            // 1. Permanent lock check: once marked expired, stays expired regardless of clock
+            if (prefs.getBoolean(KEY_IS_EXPIRED, false)) {
                 return true
             }
 
-            // Update last launch time
+            val lastRecordedTime = prefs.getLong(KEY_LAST_LAUNCH_TIME, 0L)
+
+            // 2. Anti-clock rollback check (> 1 hour backwards from last launch)
+            if (lastRecordedTime > 0L && now < (lastRecordedTime - 3600_000L)) {
+                prefs.edit()
+                    .putBoolean(KEY_IS_EXPIRED, true)
+                    .apply()
+                return true
+            }
+
+            // 3. Expiration date check (30-day lifecycle)
+            if (now >= expirationTimeMs) {
+                prefs.edit()
+                    .putBoolean(KEY_IS_EXPIRED, true)
+                    .putLong(KEY_LAST_LAUNCH_TIME, maxOf(now, lastRecordedTime))
+                    .apply()
+                return true
+            }
+
+            // 4. Record newest launch time
             if (now > lastRecordedTime) {
                 prefs.edit().putLong(KEY_LAST_LAUNCH_TIME, now).apply()
             }
+            return false
         }
 
-        return false
+        // Fallback for tests without Context
+        return now >= expirationTimeMs
     }
 
     /**
      * Remaining days of validity (0 if expired).
      */
-    fun getRemainingDays(overrideCurrentTimeMs: Long? = null): Int {
+    fun getRemainingDays(context: Context? = null, overrideCurrentTimeMs: Long? = null): Int {
+        if (isExpired(context, overrideCurrentTimeMs)) {
+            return 0
+        }
         val now = overrideCurrentTimeMs ?: System.currentTimeMillis()
         val remainingMs = expirationTimeMs - now
         return if (remainingMs <= 0) 0 else Math.ceil(remainingMs.toDouble() / MS_PER_DAY).toInt()

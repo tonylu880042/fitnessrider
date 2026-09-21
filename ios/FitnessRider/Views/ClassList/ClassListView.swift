@@ -10,6 +10,11 @@ public struct ClassListView: View {
     @State private var isShowingShareSheet: Bool = false
     @State private var classToDelete: WorkoutClass?
     @State private var isShowingDeleteAlert: Bool = false
+    @State private var isWarningDismissed: Bool = false
+
+    private var remainingDays: Int {
+        VersionLifecycleManager.shared.remainingDays()
+    }
 
     public init() {}
 
@@ -36,6 +41,55 @@ public struct ClassListView: View {
                         }
                     }
                 )
+
+                // Advance expiration warning banner (1 <= remainingDays <= 7)
+                if !isWarningDismissed && remainingDays >= 1 && remainingDays <= 7 {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02))
+                            .font(.system(size: 20))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("版本即將到期提醒")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02))
+                            Text("目前測試版本將於 \(remainingDays) 天後到期。請提前更新以避免影響上課。")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02).opacity(0.85))
+                        }
+
+                        Spacer()
+
+                        Button {
+                            UIApplication.shared.open(VersionLifecycleManager.updateURL)
+                        } label: {
+                            Text("更新")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(FitnessRiderTheme.topBarGreen)
+                                .cornerRadius(6)
+                        }
+
+                        Button {
+                            isWarningDismissed = true
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02))
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(red: 1.0, green: 0.95, blue: 0.80))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(red: 1.0, green: 0.93, blue: 0.73), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                }
 
                 // Content List
                 if classes.isEmpty {

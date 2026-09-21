@@ -2,12 +2,17 @@ import SwiftUI
 
 @main
 struct FitnessRiderApp: App {
+    @StateObject private var lifecycleManager = VersionLifecycleManager.shared
     @State private var importedClassNotice: String?
     @State private var isShowingImportNotice: Bool = false
 
+    init() {
+        VersionLifecycleManager.shared.evaluateExpirationOnLaunch()
+    }
+
     var body: some Scene {
         WindowGroup {
-            if VersionLifecycleManager.shared.isExpired() {
+            if lifecycleManager.isExpiredOnLaunch {
                 VersionExpiredView()
             } else {
                 ClassListView()

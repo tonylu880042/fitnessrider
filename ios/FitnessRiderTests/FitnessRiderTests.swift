@@ -318,37 +318,55 @@ final class FitnessRiderTests: XCTestCase {
         // 1. Same day as build -> not expired, 30 days remaining
         let day0 = baseDate
         XCTAssertFalse(manager.isExpired(currentTime: day0, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day0), 30)
+        XCTAssertEqual(manager.remainingDays(currentTime: day0, defaults: testDefaults), 30)
 
         // 2. Day 15 -> not expired, 15 days remaining
         let day15 = baseDate.addingTimeInterval(15 * oneDay)
         XCTAssertFalse(manager.isExpired(currentTime: day15, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day15), 15)
+        XCTAssertEqual(manager.remainingDays(currentTime: day15, defaults: testDefaults), 15)
 
-        // 3. Day 29 -> not expired, 1 day remaining
+        // 3. Advance warning range on Day 25 (5 days remaining, falls in 1...7 range)
+        let day25 = baseDate.addingTimeInterval(25 * oneDay)
+        let rem25 = manager.remainingDays(currentTime: day25, defaults: testDefaults)
+        XCTAssertEqual(rem25, 5)
+        XCTAssertTrue((1...7).contains(rem25))
+
+        // 4. Day 29 -> not expired, 1 day remaining
         let day29 = baseDate.addingTimeInterval(29 * oneDay)
         XCTAssertFalse(manager.isExpired(currentTime: day29, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day29), 1)
+        XCTAssertEqual(manager.remainingDays(currentTime: day29, defaults: testDefaults), 1)
 
-        // 4. Day 30 -> expired, 0 days remaining
+        // 5. Day 30 -> expired, 0 days remaining
         let day30 = baseDate.addingTimeInterval(30 * oneDay)
         XCTAssertTrue(manager.isExpired(currentTime: day30, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day30), 0)
+        XCTAssertEqual(manager.remainingDays(currentTime: day30, defaults: testDefaults), 0)
 
-        // 5. Day 35 -> expired
+        // 6. Day 35 -> expired
         let day35 = baseDate.addingTimeInterval(35 * oneDay)
         XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day35), 0)
+        XCTAssertEqual(manager.remainingDays(currentTime: day35, defaults: testDefaults), 0)
 
-        // 6. Anti-clock rollback test
+        // 7. Anti-clock rollback and post-expiration persistence test
         let rollbackDefaults = UserDefaults(suiteName: "FitnessRiderRollback_\(UUID().uuidString)")!
         let day10 = baseDate.addingTimeInterval(10 * oneDay)
         XCTAssertFalse(manager.isExpired(currentTime: day10, defaults: rollbackDefaults))
         // Rollback clock by 2 days (< last recorded launch - 1 hour)
         let day8 = baseDate.addingTimeInterval(8 * oneDay)
         XCTAssertTrue(manager.isExpired(currentTime: day8, defaults: rollbackDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day8, defaults: rollbackDefaults), 0)
 
-        // 7. Formatted strings and URL
+        // Expired on Day 35 in a fresh store
+        let persistenceDefaults = UserDefaults(suiteName: "FitnessRiderPersistence_\(UUID().uuidString)")!
+        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: persistenceDefaults))
+        // Clock rolled back to Day 5 after having expired -> must remain expired!
+        let day5 = baseDate.addingTimeInterval(5 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day5, defaults: persistenceDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day5, defaults: persistenceDefaults), 0)
+
+        // 8. Fixed duration (immune to DST / Calendar shifts)
+        XCTAssertEqual(manager.expirationDate.timeIntervalSince(baseDate), 30.0 * 86400.0, accuracy: 0.001)
+
+        // 9. Formatted strings and URL
         XCTAssertFalse(manager.buildDateFormatted.isEmpty)
         XCTAssertFalse(manager.expirationDateFormatted.isEmpty)
         XCTAssertTrue(VersionLifecycleManager.updateURL.absoluteString.hasPrefix("https://"))

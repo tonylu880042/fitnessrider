@@ -1,8 +1,13 @@
 package com.fitnessrider.ui.expiration
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,10 +15,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.HourglassDisabled
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +38,18 @@ fun VersionExpiredScreen(
     onUpdateClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    var showBrowserlessDialog by remember { mutableStateOf(false) }
+
+    fun copyUpdateUrlToClipboard() {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("FitnessRider Update URL", VersionLifecycleManager.updateUrl)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "已複製更新網址至剪貼簿", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     // Block back button and predictive back gesture completely
     BackHandler(enabled = true) {
@@ -133,8 +151,18 @@ fun VersionExpiredScreen(
                         if (onUpdateClick != null) {
                             onUpdateClick()
                         } else {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(VersionLifecycleManager.updateUrl))
-                            context.startActivity(intent)
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(VersionLifecycleManager.updateUrl)).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (e: ActivityNotFoundException) {
+                                copyUpdateUrlToClipboard()
+                                showBrowserlessDialog = true
+                            } catch (e: Exception) {
+                                copyUpdateUrlToClipboard()
+                                showBrowserlessDialog = true
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
@@ -153,6 +181,20 @@ fun VersionExpiredScreen(
                     )
                 }
 
+                // Copy URL Action for Kiosk/Restricted Tablets
+                TextButton(
+                    onClick = { copyUpdateUrlToClipboard() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextSecondary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "複製更新網址 (若無瀏覽器)",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                }
+
                 // Secondary Action: Exit Application
                 TextButton(
                     onClick = {
@@ -168,5 +210,49 @@ fun VersionExpiredScreen(
                 }
             }
         }
+    }
+
+    if (showBrowserlessDialog) {
+        AlertDialog(
+            onDismissRequest = { showBrowserlessDialog = false },
+            title = {
+                Text(
+                    text = "無法開啟系統瀏覽器",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "此設備未安裝瀏覽器或處於受限 Kiosk 模式。更新網址已複製至剪貼簿，請使用手機或其他設備下載安裝：",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        color = CardHeaderBackground,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = VersionLifecycleManager.updateUrl,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = TopBarGreen,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copyUpdateUrlToClipboard()
+                    showBrowserlessDialog = false
+                }) {
+                    Text("再次複製網址並確定", color = TopBarGreen, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }

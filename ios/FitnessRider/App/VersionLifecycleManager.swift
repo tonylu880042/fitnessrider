@@ -4,73 +4,91 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     public static let shared = VersionLifecycleManager()
 
     public static let lifecycleDays: Int = 30
+    public static let secondsPerDay: TimeInterval = 86_400.0
+    public static let lifecycleDuration: TimeInterval = Double(lifecycleDays) * secondsPerDay
+
     public static let updateURL = URL(string: "https://appdistribution.firebase.dev/i/d740076f27b77ab0")!
 
-    private let userDefaultsKey = "fitness_rider_last_launch_timestamp"
+    private let userDefaultsLastLaunchKey = "fitness_rider_last_launch_timestamp"
+    private let userDefaultsExpiredKey = "fitness_rider_is_expired"
 
     /// The build / compile date of the application bundle.
     public let buildDate: Date
 
-    /// The calculated expiration date (buildDate + 30 days).
+    /// The calculated expiration date (buildDate + fixed 30 * 86400s, immune to DST shifts).
     public var expirationDate: Date {
-        Calendar.current.date(byAdding: .day, value: Self.lifecycleDays, to: buildDate)
-            ?? buildDate.addingTimeInterval(TimeInterval(Self.lifecycleDays * 86400))
+        buildDate.addingTimeInterval(Self.lifecycleDuration)
     }
+
+    /// Evaluated once on app launch.
+    @Published public private(set) var isExpiredOnLaunch: Bool = false
 
     public init(buildDate: Date? = nil) {
         if let explicit = buildDate {
             self.buildDate = explicit
         } else {
-            // Attempt to read executable binary creation/modification date
+            // Read build timestamp from bundle Info.plist (never installation filesystem date)
             var resolvedDate: Date? = nil
-            if let execURL = Bundle.main.executableURL,
-               let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path) {
-                resolvedDate = attrs[.creationDate] as? Date ?? attrs[.modificationDate] as? Date
+            if let tsString = Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildTimestamp") as? String,
+               let ts = Double(tsString), ts > 0 {
+                resolvedDate = Date(timeIntervalSince1970: ts)
+            } else if let tsNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleBuildTimestamp") as? Double,
+                      tsNumber > 0 {
+                resolvedDate = Date(timeIntervalSince1970: tsNumber)
             }
-            if resolvedDate == nil,
-               let infoPath = Bundle.main.path(forResource: "Info", ofType: "plist"),
-               let attrs = try? FileManager.default.attributesOfItem(atPath: infoPath) {
-                resolvedDate = attrs[.creationDate] as? Date ?? attrs[.modificationDate] as? Date
-            }
-            // Fallback: compile time or current date
-            self.buildDate = resolvedDate ?? Date()
+            // Fallback: fixed release epoch (2026-09-21)
+            self.buildDate = resolvedDate ?? Date(timeIntervalSince1970: 1789994982)
         }
     }
 
+    /// Call once at App initialization to evaluate expiration and record launch outside SwiftUI body.
+    @discardableResult
+    public func evaluateExpirationOnLaunch(currentTime: Date = Date(), defaults: UserDefaults = .standard) -> Bool {
+        let expired = isExpired(currentTime: currentTime, defaults: defaults)
+        self.isExpiredOnLaunch = expired
+        return expired
+    }
+
     /// Check if the build has expired (exceeded 30 days) or clock was rolled back.
+    /// When expired, persists userDefaultsExpiredKey = true so subsequent clock rollbacks cannot unlock.
     public func isExpired(currentTime: Date = Date(), defaults: UserDefaults = .standard) -> Bool {
-        // 1. Expiration check (30-day lifecycle)
-        if currentTime >= expirationDate {
+        // 1. Permanent lock check: once expired, stays expired
+        if defaults.bool(forKey: userDefaultsExpiredKey) {
             return true
         }
 
-        // 2. Anti-clock rollback check
-        let lastLaunch = defaults.double(forKey: userDefaultsKey)
+        let lastLaunch = defaults.double(forKey: userDefaultsLastLaunchKey)
         let currentSeconds = currentTime.timeIntervalSince1970
 
-        // If system clock rolled back more than 1 hour behind last recorded launch
+        // 2. Anti-clock rollback check (> 1 hour backwards from last launch)
         if lastLaunch > 0 && currentSeconds < (lastLaunch - 3600.0) {
+            defaults.set(true, forKey: userDefaultsExpiredKey)
             return true
         }
 
-        // If last launch was already past expiration, stay expired
-        if lastLaunch > 0 && lastLaunch >= expirationDate.timeIntervalSince1970 {
+        // 3. Expiration date check (fixed 30-day duration)
+        if currentTime >= expirationDate {
+            defaults.set(true, forKey: userDefaultsExpiredKey)
+            defaults.set(max(currentSeconds, lastLaunch), forKey: userDefaultsLastLaunchKey)
             return true
         }
 
-        // Record current launch time
+        // 4. Record current launch time
         if currentSeconds > lastLaunch {
-            defaults.set(currentSeconds, forKey: userDefaultsKey)
+            defaults.set(currentSeconds, forKey: userDefaultsLastLaunchKey)
         }
 
         return false
     }
 
     /// Remaining days of validity (0 if expired).
-    public func remainingDays(currentTime: Date = Date()) -> Int {
+    public func remainingDays(currentTime: Date = Date(), defaults: UserDefaults = .standard) -> Int {
+        if isExpired(currentTime: currentTime, defaults: defaults) {
+            return 0
+        }
         let remaining = expirationDate.timeIntervalSince(currentTime)
         guard remaining > 0 else { return 0 }
-        return Int(ceil(remaining / 86400.0))
+        return Int(ceil(remaining / Self.secondsPerDay))
     }
 
     public var buildDateFormatted: String {

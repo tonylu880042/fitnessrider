@@ -20,7 +20,7 @@ public struct VersionExpiredView: View {
                     Circle()
                         .fill(FitnessRiderTheme.accentRed.opacity(0.12))
                         .frame(width: 80, height: 80)
-                    Image(systemName: "hourglass.badge.xmark")
+                    Image(systemName: "clock.badge.exclamationmark")
                         .font(.system(size: 38, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.accentRed)
                 }
