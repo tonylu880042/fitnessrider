@@ -11,6 +11,7 @@ public struct ClassEditorView: View {
     @State private var waveformSamples: [Float] = []
     @State private var isAnalyzingWaveform: Bool = false
     @State private var isShowingCueSheet: Bool = false
+    @State private var isShowingBpmSheet: Bool = false
     @State private var editingCue: WorkoutCue?
     @State private var isShowingMusicPicker: Bool = false
     @State private var previewPlayheadMs: Int = 0
@@ -149,6 +150,15 @@ public struct ClassEditorView: View {
                 saveCue(updatedCue)
             }
         }
+        .sheet(isPresented: $isShowingBpmSheet) {
+            if let segment = activeSegment {
+                BpmCalibrationSheet(initialBpm: segment.baseBpm) { newBpm in
+                    if selectedSegmentIndex < workoutClass.segments.count {
+                        workoutClass.segments[selectedSegmentIndex].baseBpm = newBpm
+                    }
+                }
+            }
+        }
         .fileImporter(
             isPresented: $isShowingMusicPicker,
             allowedContentTypes: [UTType.audio, UTType.mp3, UTType.mpeg4Audio],
@@ -275,9 +285,35 @@ public struct ClassEditorView: View {
                     .buttonStyle(SpeedButtonStyle())
                 }
 
-                Text(String(format: "速度: %.0f%% (%.1f BPM)", segment.playbackRate * 100, segment.effectiveBpm))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                // Live BPM readout & Tap-Tempo Calibration button
+                Button {
+                    isShowingBpmSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "metronome.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        Text(String(format: "%.0f%% (%.1f BPM)", segment.playbackRate * 100, segment.effectiveBpm))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+                        Text("校正")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(FitnessRiderTheme.cardBackground)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -453,6 +489,11 @@ public struct ClassEditorView: View {
         WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName) { samples, bpm in
             self.waveformSamples = samples
             self.isAnalyzingWaveform = false
+            if segment.baseBpm == 128.0 && bpm != 128.0 {
+                if self.selectedSegmentIndex < self.workoutClass.segments.count {
+                    self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
+                }
+            }
         }
     }
 

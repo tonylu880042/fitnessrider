@@ -23,10 +23,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.fitnessrider.R
 import com.fitnessrider.audio.AudioEngineManager
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.HandPosition
+import com.fitnessrider.model.PostureType
 import com.fitnessrider.model.WorkoutClass
+import com.fitnessrider.model.WorkoutCue
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.CircleProgressBar
 import com.fitnessrider.ui.components.HandPositionBadge
@@ -250,7 +255,7 @@ fun WorkoutHUDScreen(
                 }
             }
 
-            // Cockpit Center (CircleProgressBar + Controls)
+            // Cockpit Center (3-Column Layout: Hand Position Card | RPM Gauge | Posture Figure Card + Controls)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -260,84 +265,86 @@ fun WorkoutHUDScreen(
             ) {
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Giant Circle Progress Bar (300dp)
-                CircleProgressBar(
-                    progress = progressRatio,
-                    strokeWidth = 20.dp,
-                    ringColor = TopBarGreen,
-                    trackColor = CardBorder,
-                    modifier = Modifier.size(300.dp)
+                // 3-Column Telemetry Row (Hand Position, Giant Gauge, Riding Posture)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        // Posture with info click
-                        if (activeCue != null) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { isShowingPostureInfo = true }
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = activeCue.posture.localizedName,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TopBarGreenDark
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = "姿勢說明",
-                                    tint = TopBarGreen,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
+                    // Left: Hand Position Card (Large Graphic)
+                    HandPositionCockpitCard(cue = activeCue)
 
-                        // GIANT RPM
-                        Row(verticalAlignment = Alignment.Bottom) {
+                    Spacer(modifier = Modifier.width(28.dp))
+
+                    // Center: Giant Circle Progress Bar (300dp)
+                    CircleProgressBar(
+                        progress = progressRatio,
+                        strokeWidth = 20.dp,
+                        ringColor = TopBarGreen,
+                        trackColor = CardBorder,
+                        modifier = Modifier.size(300.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "${activeCue?.targetRpm ?: 85}",
-                                fontSize = 80.sp,
-                                fontWeight = FontWeight.Black,
-                                color = TextPrimary
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "RPM",
-                                fontSize = 24.sp,
+                                text = "目標轉速",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TextSecondary,
-                                modifier = Modifier.padding(bottom = 12.dp)
-                            )
-                        }
-
-                        // BPM
-                        if (activeSegment != null) {
-                            Text(
-                                text = "♫ ${activeSegment.effectiveBpm.toInt()} BPM",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary
                             )
+
+                            // GIANT RPM
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = "${activeCue?.targetRpm ?: 85}",
+                                    fontSize = 82.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = TextPrimary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "RPM",
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(bottom = 14.dp)
+                                )
+                            }
+
+                            // BPM
+                            if (activeSegment != null) {
+                                Text(
+                                    text = "♫ ${activeSegment.effectiveBpm.toInt()} BPM",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextSecondary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Countdown
+                            val min = remainingCueSec / 60
+                            val sec = remainingCueSec % 60
+                            Text(
+                                text = String.format("%02d:%02d", min, sec),
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (remainingCueSec <= 5) AccentRed else TopBarGreen
+                            )
                         }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Countdown
-                        val min = remainingCueSec / 60
-                        val sec = remainingCueSec % 60
-                        Text(
-                            text = String.format("%02d:%02d", min, sec),
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (remainingCueSec <= 5) AccentRed else TopBarGreen
-                        )
                     }
+
+                    Spacer(modifier = Modifier.width(28.dp))
+
+                    // Right: Posture Figure Card (Rider Illustration + Benefits info)
+                    PostureFigureCockpitCard(
+                        cue = activeCue,
+                        onInfoClick = { isShowingPostureInfo = true }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Coaching Prompt Live Banner
                 Surface(
@@ -346,7 +353,7 @@ fun WorkoutHUDScreen(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -365,18 +372,13 @@ fun WorkoutHUDScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Info Strip: Hand Position, Resistance & Steppers
+                // Info Strip: Resistance Badge & Playback Speed Steppers
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    // Hand Position Badge
-                    if (activeCue != null) {
-                        HandPositionBadge(position = activeCue.handPosition, isCompact = false)
-                    }
-
                     // Resistance Badge + Delta Indicator
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -392,7 +394,7 @@ fun WorkoutHUDScreen(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
                             )
                         }
 
@@ -418,7 +420,7 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.adjustRatePercent(-2.0) },
                             colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(text = "-2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
@@ -427,7 +429,7 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.resetRate() },
                             colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(text = "100%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
@@ -436,7 +438,7 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.adjustRatePercent(2.0) },
                             colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(text = "+2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
@@ -511,10 +513,26 @@ fun WorkoutHUDScreen(
             AlertDialog(
                 onDismissRequest = { isShowingPostureInfo = false },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = activeCue.posture.localizedName, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "${activeCue.posture.defaultRpm} RPM", fontSize = 14.sp, color = TextSecondary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Color(0xFF505050), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = getPostureDrawableRes(activeCue.posture)),
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp)
+                            )
+                        }
+                        Column {
+                            Text(text = activeCue.posture.localizedName, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = TopBarGreenDark)
+                            Text(text = "建議目標轉速: ${activeCue.posture.defaultRpm} RPM", fontSize = 13.sp, color = TextSecondary)
+                        }
                     }
                 },
                 text = {
@@ -531,10 +549,207 @@ fun WorkoutHUDScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { isShowingPostureInfo = false }) {
-                        Text("關閉", color = TopBarGreenDark, fontWeight = FontWeight.Bold)
+                        Text("我知道了", color = TopBarGreenDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
             )
         }
     }
 }
+
+@Composable
+private fun HandPositionCockpitCard(
+    cue: WorkoutCue?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .width(170.dp)
+            .border(1.dp, CardBorder, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
+        shadowElevation = 3.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "握把把位",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Circular Hand Position Icon (105dp)
+            if (cue != null) {
+                Image(
+                    painter = painterResource(id = getHandPositionDrawableRes(cue.handPosition)),
+                    contentDescription = cue.handPosition.localizedName,
+                    modifier = Modifier.size(105.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(105.dp)
+                        .background(CardBorder.copy(alpha = 0.3f), CircleShape)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = cue?.handPosition?.shortTitle ?: "1 號位",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Black,
+                color = TopBarGreenDark
+            )
+
+            Text(
+                text = when (cue?.handPosition) {
+                    HandPosition.POSITION_1 -> "平把中段"
+                    HandPosition.POSITION_2 -> "橫桿轉折"
+                    HandPosition.POSITION_3 -> "前端牛角"
+                    null -> "平把中段"
+                },
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = when (cue?.handPosition) {
+                    HandPosition.POSITION_1 -> "雙手放近身平把"
+                    HandPosition.POSITION_2 -> "手握橫桿轉折處"
+                    HandPosition.POSITION_3 -> "雙手扣住前端牛角"
+                    null -> "雙手放近身平把"
+                },
+                fontSize = 11.sp,
+                color = TextSecondary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun PostureFigureCockpitCard(
+    cue: WorkoutCue?,
+    onInfoClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .width(170.dp)
+            .border(1.dp, CardBorder, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
+        shadowElevation = 3.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onInfoClick() }
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "騎乘姿勢",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "姿勢說明",
+                    tint = TopBarGreenDark,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Circular Posture Icon (105dp)
+            if (cue != null) {
+                Image(
+                    painter = painterResource(id = getPostureDrawableRes(cue.posture)),
+                    contentDescription = cue.posture.localizedName,
+                    modifier = Modifier.size(105.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(105.dp)
+                        .background(CardBorder.copy(alpha = 0.3f), CircleShape)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = cue?.posture?.localizedName ?: "坐姿平路",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Black,
+                color = TopBarGreenDark
+            )
+
+            Text(
+                text = "建議 ${cue?.targetRpm ?: 85} RPM",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = when (cue?.posture) {
+                    PostureType.SEATED_FLAT -> "基礎體能建立"
+                    PostureType.STANDING_FLAT -> "核心穩定鍛鍊"
+                    PostureType.SEATED_CLIMB -> "臀腿阻力爬坡"
+                    PostureType.STANDING_CLIMB -> "重阻力站立攀登"
+                    PostureType.JUMPS -> "動態抽車跳躍"
+                    PostureType.SPRINT -> "極限全力衝刺"
+                    PostureType.RECOVERY -> "緩和放鬆心率"
+                    null -> "基礎體能建立"
+                },
+                fontSize = 11.sp,
+                color = TextSecondary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+private fun getPostureDrawableRes(posture: PostureType): Int {
+    return when (posture) {
+        PostureType.SEATED_FLAT -> R.drawable.icon_sit
+        PostureType.STANDING_FLAT -> R.drawable.icon_stand
+        PostureType.SEATED_CLIMB -> R.drawable.icon_sit_climbing
+        PostureType.STANDING_CLIMB -> R.drawable.icon_stand_climbing
+        PostureType.JUMPS -> R.drawable.icon_stand
+        PostureType.SPRINT -> R.drawable.icon_stand_climbing
+        PostureType.RECOVERY -> R.drawable.icon_sit
+    }
+}
+
+private fun getHandPositionDrawableRes(position: HandPosition): Int {
+    return when (position) {
+        HandPosition.POSITION_1 -> R.drawable.icon_hand_position_1
+        HandPosition.POSITION_2 -> R.drawable.icon_hand_position_2
+        HandPosition.POSITION_3 -> R.drawable.icon_hand_position_3
+    }
+}
+

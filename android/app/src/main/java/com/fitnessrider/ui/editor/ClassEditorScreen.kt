@@ -1,5 +1,7 @@
 package com.fitnessrider.ui.editor
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,15 +21,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fitnessrider.audio.WaveformAnalyzer
 import com.fitnessrider.model.*
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
+import com.fitnessrider.ui.components.WaveformCanvas
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
+import kotlin.math.roundToInt
 
 @Composable
 fun ClassEditorScreen(
@@ -35,14 +45,82 @@ fun ClassEditorScreen(
     onSave: (WorkoutClass) -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
     var workoutClass by remember { mutableStateOf(initialClass) }
     var selectedSegmentIndex by remember { mutableStateOf(0) }
     var isEditingCueDialogVisible by remember { mutableStateOf(false) }
     var currentEditingCue by remember { mutableStateOf<WorkoutCue?>(null) }
+    var isBpmDialogVisible by remember { mutableStateOf(false) }
+
+    var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
+    var previewPlayheadMs by remember { mutableStateOf(0) }
+    var isPreviewPlaying by remember { mutableStateOf(false) }
 
     val activeSegment = if (workoutClass.segments.isNotEmpty() && selectedSegmentIndex in workoutClass.segments.indices) {
         workoutClass.segments[selectedSegmentIndex]
     } else null
+
+    val musicPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null && activeSegment != null) {
+            try {
+                val contentResolver = context.contentResolver
+                var fileName = "imported_${System.currentTimeMillis()}.mp3"
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(nameIndex)
+                    }
+                }
+                val musicDir = File(context.filesDir, "Music").apply { if (!exists()) mkdirs() }
+                val destFile = File(musicDir, fileName)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                val updatedSeg = activeSegment.copy(musicFileName = fileName)
+                val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                workoutClass = workoutClass.copy(segments = updatedSegs)
+            } catch (e: Exception) {
+                android.util.Log.e("ClassEditor", "Error importing music", e)
+            }
+        }
+    }
+
+    LaunchedEffect(activeSegment?.id, activeSegment?.musicFileName) {
+        if (activeSegment != null) {
+            previewPlayheadMs = 0
+            isPreviewPlaying = false
+            val analyzer = WaveformAnalyzer.getInstance(context)
+            val result = analyzer.analyzeWaveform(activeSegment.musicFileName)
+            waveformSamples = result.samples
+            if (activeSegment.baseBpm == 128.0 && result.bpm != 128.0) {
+                val updatedSeg = activeSegment.copy(baseBpm = result.bpm)
+                val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                workoutClass = workoutClass.copy(segments = updatedSegs)
+            }
+        } else {
+            waveformSamples = FloatArray(0)
+        }
+    }
+
+    LaunchedEffect(isPreviewPlaying, activeSegment?.playbackRate) {
+        if (isPreviewPlaying && activeSegment != null) {
+            while (isActive && isPreviewPlaying) {
+                delay(100)
+                val step = (100 * activeSegment.playbackRate).toInt()
+                val next = previewPlayheadMs + step
+                if (next >= activeSegment.durationMs) {
+                    previewPlayheadMs = 0
+                    isPreviewPlaying = false
+                } else {
+                    previewPlayheadMs = next
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -94,9 +172,23 @@ fun ClassEditorScreen(
             Text(text = "⏱ 總時長: ${workoutClass.formattedDuration}", fontSize = 13.sp, color = TextSecondary)
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = "🔥 預估消耗: ${workoutClass.estimatedCalories.toInt()} kcal", fontSize = 13.sp, color = TextSecondary)
+            Spacer(modifier = Modifier.weight(1f))
+            Button(
+                onClick = { musicPickerLauncher.launch(arrayOf("audio/*")) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TopBarGreen.copy(alpha = 0.15f),
+                    contentColor = TopBarGreenDark
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = "匯入音樂檔", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
-        Divider(color = CardBorder)
+        HorizontalDivider(color = CardBorder)
 
         // Horizontal Segment Cards
         LazyRow(
@@ -190,52 +282,202 @@ fun ClassEditorScreen(
             }
         }
 
-        Divider(color = CardBorder)
+        HorizontalDivider(color = CardBorder)
 
-        // Cue Section
+        // Waveform & Cue Section
         if (activeSegment != null) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
+                // Waveform & Preview Card
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White)
+                        .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
+                        .padding(14.dp)
+                ) {
+                    // Header: Track title & Timecode
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = activeSegment.musicFileName.ifBlank { activeSegment.title },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        val curSec = previewPlayheadMs / 1000
+                        val totSec = activeSegment.durationMs / 1000
+                        Text(
+                            text = String.format("%02d:%02d / %02d:%02d", curSec / 60, curSec % 60, totSec / 60, totSec % 60),
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = TopBarGreenDark
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Waveform Canvas with interactive drag seeking
+                    WaveformCanvas(
+                        samples = waveformSamples,
+                        cues = activeSegment.cues,
+                        durationMs = activeSegment.durationMs,
+                        currentOffsetMs = previewPlayheadMs,
+                        onSeek = { previewPlayheadMs = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Control Bar: Play/Pause, ±2%, BPM Tap-Tempo, Mark Cue
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Play / Pause Button
+                        IconButton(
+                            onClick = { isPreviewPlaying = !isPreviewPlaying },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(TopBarGreen, CircleShape)
+                        ) {
+                            Icon(
+                                if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPreviewPlaying) "暫停" else "試聽",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Rate buttons: -2%, 100%, +2%
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val newRate = ((activeSegment.playbackRate - 0.02) * 100).roundToInt() / 100.0
+                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
+                                    val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                                    workoutClass = workoutClass.copy(segments = updatedSegs)
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("-2%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val updatedSeg = activeSegment.copy(playbackRate = 1.0)
+                                    val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                                    workoutClass = workoutClass.copy(segments = updatedSegs)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("100%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val newRate = ((activeSegment.playbackRate + 0.02) * 100).roundToInt() / 100.0
+                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
+                                    val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                                    workoutClass = workoutClass.copy(segments = updatedSegs)
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("+2%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Live BPM readout & Tap-Tempo Calibration button
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = CardBackground,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.clickable { isBpmDialogVisible = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Speed, contentDescription = null, tint = TopBarGreenDark, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = String.format("%.0f%% (%.1f BPM)", activeSegment.playbackRate * 100, activeSegment.effectiveBpm),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "校正",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TopBarGreenDark
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Mark Cue Pin Button
+                        Button(
+                            onClick = {
+                                val newOffset = previewPlayheadMs
+                                currentEditingCue = WorkoutCue(
+                                    id = UUID.randomUUID().toString(),
+                                    segmentId = activeSegment.id,
+                                    offsetMs = newOffset,
+                                    posture = PostureType.STANDING_CLIMB,
+                                    handPosition = PostureType.STANDING_CLIMB.defaultHandPosition,
+                                    targetRpm = 65,
+                                    resistanceLevel = "LEVEL 6",
+                                    message = "起立站姿爬坡",
+                                    reminders = emptyList()
+                                )
+                                isEditingCueDialogVisible = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TopBarGreenDark),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Icon(Icons.Default.AddLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "標記 Cue 點", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Cue Section Title
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "動作設定 (${activeSegment.title})",
-                        fontSize = 16.sp,
+                        text = "動作設定提示 (${activeSegment.cues.size})",
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Button(
-                        onClick = {
-                            val newOffset = if (activeSegment.cues.isEmpty()) 0 else (activeSegment.cues.last().offsetMs + 30_000).coerceAtMost(activeSegment.durationMs)
-                            currentEditingCue = WorkoutCue(
-                                id = UUID.randomUUID().toString(),
-                                segmentId = activeSegment.id,
-                                offsetMs = newOffset,
-                                posture = PostureType.STANDING_CLIMB,
-                                handPosition = PostureType.STANDING_CLIMB.defaultHandPosition,
-                                targetRpm = 65,
-                                resistanceLevel = "LEVEL 6",
-                                message = "起立站姿爬坡",
-                                reminders = emptyList()
-                            )
-                            isEditingCueDialogVisible = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreenDark),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.AddLocation, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "標記 Cue 點", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -345,6 +587,19 @@ fun ClassEditorScreen(
                 }
                 isEditingCueDialogVisible = false
                 currentEditingCue = null
+            }
+        )
+    }
+
+    if (isBpmDialogVisible && activeSegment != null) {
+        BpmCalibrationDialog(
+            initialBpm = activeSegment.baseBpm,
+            onDismiss = { isBpmDialogVisible = false },
+            onSave = { newBpm ->
+                val updatedSeg = activeSegment.copy(baseBpm = newBpm)
+                val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                workoutClass = workoutClass.copy(segments = updatedSegs)
+                isBpmDialogVisible = false
             }
         )
     }

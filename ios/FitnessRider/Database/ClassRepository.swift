@@ -273,11 +273,11 @@ public final class ClassRepository: @unchecked Sendable {
 
     // MARK: - Waveform Cache
 
-    public func fetchWaveform(for fileName: String) -> [Float]? {
+    public func fetchWaveform(for fileName: String) -> (samples: [Float], bpm: Double)? {
         guard let dbPtr = db.getDbPointer() else { return nil }
-        let sql = "SELECT samples_blob, sample_count FROM waveform_cache WHERE file_name = ? LIMIT 1;"
+        let sql = "SELECT samples_blob, sample_count, calculated_bpm FROM waveform_cache WHERE file_name = ? LIMIT 1;"
         var stmt: OpaquePointer?
-        var samples: [Float]?
+        var result: (samples: [Float], bpm: Double)?
 
         if sqlite3_prepare_v2(dbPtr, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, fileName, -1, SQLITE_TRANSIENT)
@@ -286,12 +286,14 @@ public final class ClassRepository: @unchecked Sendable {
                     let byteCount = Int(sqlite3_column_bytes(stmt, 0))
                     let count = byteCount / MemoryLayout<Float>.size
                     let buffer = blobPtr.bindMemory(to: Float.self, capacity: count)
-                    samples = Array(UnsafeBufferPointer(start: buffer, count: count))
+                    let samples = Array(UnsafeBufferPointer(start: buffer, count: count))
+                    let bpm = sqlite3_column_double(stmt, 2)
+                    result = (samples: samples, bpm: bpm > 0 ? bpm : 128.0)
                 }
             }
         }
         sqlite3_finalize(stmt)
-        return samples
+        return result
     }
 
     public func saveWaveform(for fileName: String, samples: [Float], durationMs: Int, bpm: Double) {

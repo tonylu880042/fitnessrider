@@ -279,79 +279,27 @@ public struct WorkoutHUDView: View {
         .background(FitnessRiderTheme.cardBackground)
     }
 
-    // MARK: - Cockpit Core (CircleProgressBar + Indicators)
+    // MARK: - Cockpit Core (3-Column Layout: Hand Position Card | Circle Gauge | Posture Card)
 
     private func cockpitCore(isLandscape: Bool) -> some View {
         VStack(spacing: 16) {
             Spacer()
 
-            // Giant Circle Progress Bar (300px)
-            CircleProgressBar(
-                progress: progressRatio,
-                strokeWidth: 18.0,
-                ringColor: FitnessRiderTheme.topBarGreen,
-                trackColor: FitnessRiderTheme.cardBorder
-            ) {
-                VStack(spacing: 4) {
-                    // Posture Icon & Title (Tap for Purpose Details)
-                    if let cue = activeCue {
-                        Button {
-                            isShowingPostureInfoSheet = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: cue.posture.sfSymbol)
-                                    .font(.system(size: 20, weight: .bold))
-                                Text(cue.posture.localizedName)
-                                    .font(.system(size: 20, weight: .bold))
-                                Image(systemName: "info.circle.fill")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(FitnessRiderTheme.topBarGreen)
-                            }
-                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
-                        }
-                    }
-
-                    // GIANT Target RPM
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(activeCue?.targetRpm ?? 85)")
-                            .font(.system(size: 80, weight: .black, design: .rounded))
-                            .foregroundColor(FitnessRiderTheme.textPrimary)
-
-                        Text("RPM")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(FitnessRiderTheme.textSecondary)
-                    }
-
-                    // Music BPM
-                    if let segment = activeSegment {
-                        HStack(spacing: 4) {
-                            Image(systemName: "metronome.fill")
-                            Text(String(format: "%.0f BPM", segment.effectiveBpm))
-                        }
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
-                    }
-
-                    // Interval Countdown Timer
-                    let minutes = remainingCueSeconds / 60
-                    let seconds = remainingCueSeconds % 60
-                    Text(String(format: "%02d:%02d", minutes, seconds))
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .foregroundColor(remainingCueSeconds <= 5 ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreen)
+            if isLandscape {
+                HStack(spacing: 28) {
+                    handPositionCockpitCard
+                    circleProgressGauge(isLandscape: true)
+                    postureFigureCockpitCard
                 }
+            } else {
+                circleProgressGauge(isLandscape: false)
             }
-            .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
 
             // Coaching Live Prompt Banner
             coachingPromptBanner
 
-            // Info Strip (Hand Position, Resistance & Tempo Controls)
-            HStack(spacing: 16) {
-                // Hand Position Badge
-                if let cue = activeCue {
-                    HandPositionBadge(position: cue.handPosition, isCompact: false)
-                }
-
+            // Info Strip (Resistance & Tempo Controls)
+            HStack(spacing: 20) {
                 // Resistance Badge + Delta Indicator
                 HStack(spacing: 8) {
                     HStack(spacing: 6) {
@@ -412,6 +360,137 @@ public struct WorkoutHUDView: View {
         .sheet(isPresented: $isShowingPostureInfoSheet) {
             postureInfoSheet
         }
+    }
+
+    private func circleProgressGauge(isLandscape: Bool) -> some View {
+        CircleProgressBar(
+            progress: progressRatio,
+            strokeWidth: 18.0,
+            ringColor: FitnessRiderTheme.topBarGreen,
+            trackColor: FitnessRiderTheme.cardBorder
+        ) {
+            VStack(spacing: 4) {
+                Text("目標轉速")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+
+                // GIANT Target RPM
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(activeCue?.targetRpm ?? 85)")
+                        .font(.system(size: 80, weight: .black, design: .rounded))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                    Text("RPM")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                }
+
+                // Music BPM
+                if let segment = activeSegment {
+                    HStack(spacing: 4) {
+                        Image(systemName: "metronome.fill")
+                        Text(String(format: "%.0f BPM", segment.effectiveBpm))
+                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                }
+
+                // Interval Countdown Timer
+                let minutes = remainingCueSeconds / 60
+                let seconds = remainingCueSeconds % 60
+                Text(String(format: "%02d:%02d", minutes, seconds))
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(remainingCueSeconds <= 5 ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreen)
+            }
+        }
+        .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
+    }
+
+    private var handPositionCockpitCard: some View {
+        VStack(spacing: 8) {
+            Text("握把把位")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(FitnessRiderTheme.textSecondary)
+
+            if let cue = activeCue {
+                Image(cue.handPosition.assetImageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 105, height: 105)
+            } else {
+                Circle()
+                    .fill(FitnessRiderTheme.cardBorder.opacity(0.3))
+                    .frame(width: 105, height: 105)
+            }
+
+            Text(activeCue?.handPosition.shortTitle ?? "1 號位")
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+
+            Text(activeCue?.handPosition == .position1 ? "平把中段" : (activeCue?.handPosition == .position2 ? "橫桿轉折" : "前端牛角"))
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(FitnessRiderTheme.textPrimary)
+
+            Text(activeCue?.handPosition == .position1 ? "雙手放近身平把" : (activeCue?.handPosition == .position2 ? "手握橫桿轉折處" : "雙手扣住前端牛角"))
+                .font(.system(size: 11))
+                .foregroundColor(FitnessRiderTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
+        .frame(width: 170)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+    }
+
+    private var postureFigureCockpitCard: some View {
+        VStack(spacing: 8) {
+            Button {
+                isShowingPostureInfoSheet = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text("騎乘姿勢")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                }
+            }
+
+            if let cue = activeCue {
+                Image(cue.posture.assetImageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 105, height: 105)
+            } else {
+                Circle()
+                    .fill(FitnessRiderTheme.cardBorder.opacity(0.3))
+                    .frame(width: 105, height: 105)
+            }
+
+            Text(activeCue?.posture.localizedName ?? "坐姿平路")
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+
+            Text("建議 \(activeCue?.targetRpm ?? 85) RPM")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(FitnessRiderTheme.textPrimary)
+
+            Text(activeCue?.posture == .seatedFlat ? "基礎體能建立" : (activeCue?.posture == .standingFlat ? "核心穩定鍛鍊" : (activeCue?.posture == .seatedClimb ? "臀腿阻力爬坡" : (activeCue?.posture == .standingClimb ? "重阻力站立攀登" : (activeCue?.posture == .jumps ? "動態抽車跳躍" : (activeCue?.posture == .sprint ? "極限全力衝刺" : "緩和放鬆心率"))))))
+                .font(.system(size: 11))
+                .foregroundColor(FitnessRiderTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
+        .frame(width: 170)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
     }
 
     // MARK: - Coaching Prompt Banner

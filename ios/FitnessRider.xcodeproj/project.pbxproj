@@ -23,6 +23,8 @@
 		87AA2AD36743DDEB17611BFD /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92BD3C95326013660D39116 /* AppSettings.swift */; };
 		8B6B2D4655E2CD3A9CE2A60A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */; };
 		95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */; };
+		E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100022C9B800100000001 /* TapTempoDetector.swift */; };
+		E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */; };
 		9648C09D13608505B0145810 /* FitnessRiderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */; };
 		999093BC9A827D1AB76E8B3D /* SegmentProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */; };
 		9D8E9CF48C4551175D4FE682 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B9540016F25DEC18089446E0 /* libsqlite3.tbd */; };
@@ -70,6 +72,8 @@
 		61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBackupView.swift; sourceTree = "<group>"; };
 		743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueAudioBeepPlayer.swift; sourceTree = "<group>"; };
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
+		E4A100022C9B800100000001 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
+		E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BpmCalibrationSheet.swift; sourceTree = "<group>"; };
 		7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassRepository.swift; sourceTree = "<group>"; };
 		8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentProgressBar.swift; sourceTree = "<group>"; };
 		98018669BA114F7F3866B19A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -184,6 +188,7 @@
 			children = (
 				B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */,
 				CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */,
+				E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */,
 			);
 			path = ClassEditor;
 			sourceTree = "<group>";
@@ -246,6 +251,7 @@
 				44D24707BF5F2B200C158031 /* AudioEngineManager.swift */,
 				743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */,
 				754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */,
+				E4A100022C9B800100000001 /* TapTempoDetector.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -385,6 +391,8 @@
 				2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */,
 				F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */,
 				95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */,
+				E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */,
+				E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */,
 				606BAA5DC9CA94875F25E76D /* WaveformCanvasView.swift in Sources */,
 				A92AF27FC144C57548EEDE72 /* WorkoutClass.swift in Sources */,
 				58507492178C6A241A6F23AE /* WorkoutCue.swift in Sources */,

@@ -160,4 +160,93 @@ final class FitnessRiderTests: XCTestCase {
         audio.resetRate()
         XCTAssertEqual(audio.currentRate, 1.0)
     }
+
+    func testTapTempoDetectorAccuracy() {
+        let detector = TapTempoDetector()
+
+        // 1. Initial state
+        XCTAssertNil(detector.calculateCurrentBpm())
+        XCTAssertEqual(detector.tapCount, 0)
+
+        // 2. Simulate 120 BPM taps (interval 0.5s)
+        let startTime: TimeInterval = 1000.0
+        detector.recordTap(at: startTime)
+        XCTAssertNil(detector.calculateCurrentBpm()) // 1 tap is not enough
+
+        detector.recordTap(at: startTime + 0.5)
+        XCTAssertEqual(detector.calculateCurrentBpm()!, 120.0, accuracy: 0.5)
+
+        detector.recordTap(at: startTime + 1.0)
+        XCTAssertEqual(detector.calculateCurrentBpm()!, 120.0, accuracy: 0.5)
+
+        detector.recordTap(at: startTime + 1.5)
+        XCTAssertEqual(detector.calculateCurrentBpm()!, 120.0, accuracy: 0.5)
+        XCTAssertEqual(detector.tapCount, 4)
+
+        // 3. Simulate 140 BPM taps (~0.4286s)
+        detector.reset()
+        XCTAssertEqual(detector.tapCount, 0)
+        var t = startTime
+        detector.recordTap(at: t)
+        for _ in 1...4 {
+            t += 0.4286
+            detector.recordTap(at: t)
+        }
+        let calculated140 = detector.calculateCurrentBpm()
+        XCTAssertNotNil(calculated140)
+        XCTAssertEqual(calculated140!, 140.0, accuracy: 1.0)
+
+        // 4. Test auto-reset on gap > 2.5s
+        detector.recordTap(at: t + 3.0)
+        XCTAssertEqual(detector.tapCount, 1)
+        XCTAssertNil(detector.calculateCurrentBpm())
+
+        // 5. Test static helper
+        let bpm120 = TapTempoDetector.calculateBpm(from: [0.5, 0.5, 0.5])
+        XCTAssertEqual(bpm120!, 120.0, accuracy: 0.1)
+    }
+
+    func testSyntheticWaveformAndDatabaseCache() {
+        let analyzer = WaveformAnalyzer.shared
+        let samples = analyzer.generateSyntheticWaveform(sampleCount: 800)
+        XCTAssertEqual(samples.count, 800)
+
+        for sample in samples {
+            XCTAssertTrue(sample >= 0.0 && sample <= 1.0, "Sample \(sample) should be in [0.0, 1.0]")
+        }
+
+        // Test SQLite waveform cache round-trip
+        let testFileName = "test_unit_track_\(UUID().uuidString).mp3"
+        let repo = ClassRepository.shared
+        repo.saveWaveform(for: testFileName, samples: samples, durationMs: 180000, bpm: 132.5)
+
+        let cached = repo.fetchWaveform(for: testFileName)
+        XCTAssertNotNil(cached)
+        XCTAssertEqual(cached?.samples.count, 800)
+        guard let cachedSamples = cached?.samples, let firstCached = cachedSamples.first, let firstSample = samples.first else {
+            XCTFail("Samples should not be empty")
+            return
+        }
+        XCTAssertEqual(firstCached, firstSample, accuracy: 0.0001)
+    }
+
+    func testBpmEstimationFromWaveformEnvelope() {
+        let analyzer = WaveformAnalyzer.shared
+        let durationMs = 100_000
+        let sampleCount = 800
+        let beatsPerSec = 128.0 / 60.0
+        let totalBeats = Int(beatsPerSec * (Double(durationMs) / 1000.0))
+
+        var envelope = [Float](repeating: 0.2, count: sampleCount)
+        for b in 0..<totalBeats {
+            let beatTimeSec = Double(b) / beatsPerSec
+            let sampleIdx = Int((beatTimeSec / (Double(durationMs) / 1000.0)) * Double(sampleCount))
+            if sampleIdx < envelope.count {
+                envelope[sampleIdx] = 0.9
+            }
+        }
+
+        let estimatedBpm = analyzer.estimateBpm(from: envelope, durationMs: durationMs)
+        XCTAssertEqual(estimatedBpm, 128.0, accuracy: 2.0)
+    }
 }

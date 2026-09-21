@@ -48,8 +48,10 @@ yarn-debug.log*
 yarn-error.log*
 .vercel/
 
-# 6. IDE 與編輯器設定
-.idea/
-.vscode/
-*.swp
-*~
+# 7. 暫存大型媒體與展示建置產出
+*.mp4
+*.apk
+*.riderclass
+demo_output/
+musics/
+tools/__pycache__/

@@ -27,8 +27,30 @@ public struct WaveformCanvasView: View {
             let playheadX = geo.size.width * CGFloat(progress)
 
             ZStack(alignment: .leading) {
-                // Background waveform bars
+                // Background waveform bars & grid
                 Canvas { context, size in
+                    // 1. Time Grid Lines & Labels
+                    let totalSeconds = durationMs / 1000
+                    let intervalSeconds = totalSeconds <= 120 ? 30 : (totalSeconds <= 300 ? 60 : 120)
+                    var sec = intervalSeconds
+
+                    while sec < totalSeconds {
+                        let gridX = size.width * (CGFloat(sec) / CGFloat(totalSeconds))
+                        var gridPath = Path()
+                        gridPath.move(to: CGPoint(x: gridX, y: 0))
+                        gridPath.addLine(to: CGPoint(x: gridX, y: size.height))
+                        context.stroke(gridPath, with: .color(FitnessRiderTheme.cardBorder), lineWidth: 1)
+
+                        let timeStr = String(format: "%02d:%02d", sec / 60, sec % 60)
+                        let text = Text(timeStr)
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundColor(FitnessRiderTheme.textSecondary.opacity(0.8))
+                        context.draw(text, at: CGPoint(x: gridX + 16, y: 8))
+
+                        sec += intervalSeconds
+                    }
+
+                    // 2. Waveform Bars
                     guard !samples.isEmpty else { return }
                     let barWidth: CGFloat = 2.5
                     let spacing: CGFloat = 1.5
@@ -39,7 +61,7 @@ public struct WaveformCanvasView: View {
                     for i in 0..<barCount {
                         let sampleIdx = min(samples.count - 1, Int(Double(i) / Double(barCount) * Double(samples.count)))
                         let amplitude = CGFloat(samples[sampleIdx])
-                        let barHeight = max(4.0, amplitude * (size.height * 0.85))
+                        let barHeight = max(4.0, amplitude * (size.height * 0.72))
                         let x = CGFloat(i) * totalBarSpace
                         let isPlayed = x <= playheadX
 
@@ -51,7 +73,7 @@ public struct WaveformCanvasView: View {
                         )
 
                         let color = isPlayed ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.cardBorder
-                        context.fill(Path(roundedRect: rect, cornerRadius: 1.0), with: .color(color))
+                        context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(color))
                     }
                 }
 
@@ -62,25 +84,34 @@ public struct WaveformCanvasView: View {
 
                     VStack(spacing: 2) {
                         Image(systemName: cue.posture.sfSymbol)
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(4)
+                            .frame(width: 18, height: 18)
                             .background(FitnessRiderTheme.topBarGreenDark)
                             .clipShape(Circle())
-                            .shadow(radius: 2)
+                            .shadow(radius: 1)
 
                         Rectangle()
                             .fill(FitnessRiderTheme.topBarGreenDark)
-                            .frame(width: 2, height: geo.size.height - 24)
+                            .frame(width: 2, height: geo.size.height - 34)
+
+                        Text("\(cue.targetRpm)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
                     }
                     .position(x: cueX, y: geo.size.height / 2.0)
                 }
 
-                // Playhead Line
-                Rectangle()
-                    .fill(FitnessRiderTheme.accentRed)
-                    .frame(width: 2, height: geo.size.height)
-                    .position(x: playheadX, y: geo.size.height / 2.0)
+                // Playhead Line & Indicator
+                VStack(spacing: 0) {
+                    Image(systemName: "arrowtriangle.down.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(FitnessRiderTheme.accentRed)
+                    Rectangle()
+                        .fill(FitnessRiderTheme.accentRed)
+                        .frame(width: 2.5, height: geo.size.height - 10)
+                }
+                .position(x: playheadX, y: geo.size.height / 2.0)
             }
             .contentShape(Rectangle())
             .gesture(

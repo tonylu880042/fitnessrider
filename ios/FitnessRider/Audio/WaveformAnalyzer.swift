@@ -10,7 +10,7 @@ public final class WaveformAnalyzer: Sendable {
         // 1. Check SQLite Cache
         if let cached = ClassRepository.shared.fetchWaveform(for: fileName) {
             DispatchQueue.main.async {
-                completion(cached, 128.0)
+                completion(cached.samples, cached.bpm)
             }
             return
         }
@@ -92,6 +92,13 @@ public final class WaveformAnalyzer: Sendable {
                     finalPoints = self.generateSyntheticWaveform(sampleCount: targetPoints)
                 }
 
+                // Smooth dropouts and normalize
+                let maxAmp = finalPoints.max() ?? 1.0
+                let scale: Float = maxAmp > 0.05 ? 0.95 / maxAmp : 1.0
+                for i in 0..<finalPoints.count {
+                    finalPoints[i] = min(1.0, max(0.05, finalPoints[i] * scale))
+                }
+
                 // Simple peak-rate BPM estimation
                 let durationMs = Int(CMTimeGetSeconds(asset.duration) * 1000)
                 let calculatedBpm = self.estimateBpm(from: finalPoints, durationMs: durationMs)
@@ -109,14 +116,25 @@ public final class WaveformAnalyzer: Sendable {
         }
     }
 
-    private func estimateBpm(from samples: [Float], durationMs: Int) -> Double {
+    public func analyzeWaveform(for fileName: String) async -> ([Float], Double) {
+        await withCheckedContinuation { continuation in
+            analyzeWaveform(for: fileName) { samples, bpm in
+                continuation.resume(returning: (samples, bpm))
+            }
+        }
+    }
+
+    public func estimateBpm(from samples: [Float], durationMs: Int) -> Double {
         guard durationMs > 10_000, samples.count > 100 else { return 128.0 }
         let durationSeconds = Double(durationMs) / 1000.0
 
-        // Find peaks above 0.6 threshold
+        let maxVal = samples.max() ?? 1.0
+        let threshold = maxVal * 0.55
+
+        // Find peaks above threshold
         var peakIndices: [Int] = []
         for i in 1..<(samples.count - 1) {
-            if samples[i] > 0.55 && samples[i] > samples[i-1] && samples[i] > samples[i+1] {
+            if samples[i] > threshold && samples[i] >= samples[i-1] && samples[i] >= samples[i+1] {
                 peakIndices.append(i)
             }
         }
@@ -127,18 +145,25 @@ public final class WaveformAnalyzer: Sendable {
         for i in 1..<peakIndices.count {
             let sampleDiff = peakIndices[i] - peakIndices[i-1]
             let timeDiff = (Double(sampleDiff) / Double(samples.count)) * durationSeconds
-            if timeDiff > 0.3 && timeDiff < 1.0 { // 60~200 BPM interval
-                intervals.append(timeDiff)
+            if timeDiff >= 0.25 && timeDiff <= 1.2 {
+                var t = timeDiff
+                while t > 1.05 { t /= 2.0 }
+                while t < 0.27 { t *= 2.0 }
+                intervals.append(t)
             }
         }
 
         guard !intervals.isEmpty else { return 128.0 }
+
         let avgInterval = intervals.reduce(0.0, +) / Double(intervals.count)
-        let bpm = 60.0 / avgInterval
-        return (bpm * 10).rounded() / 10
+        guard avgInterval > 0 else { return 128.0 }
+        var bpm = 60.0 / avgInterval
+        while bpm < 65.0 { bpm *= 2.0 }
+        while bpm > 175.0 { bpm /= 2.0 }
+        return (bpm * 10.0).rounded() / 10.0
     }
 
-    private func generateSyntheticWaveform(sampleCount: Int) -> [Float] {
+    public func generateSyntheticWaveform(sampleCount: Int = 800) -> [Float] {
         var result: [Float] = []
         for i in 0..<sampleCount {
             let progress = Double(i) / Double(sampleCount)

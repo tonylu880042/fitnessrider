@@ -59,6 +59,15 @@ public enum PostureType: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public var assetImageName: String {
+        switch self {
+        case .seatedFlat, .recovery: return "icon_sit"
+        case .standingFlat, .jumps: return "icon_stand"
+        case .seatedClimb: return "icon_sit_climbing"
+        case .standingClimb, .sprint: return "icon_stand_climbing"
+        }
+    }
+
     public var trainingGoalDescription: String {
         switch self {
         case .seatedFlat:

@@ -26,4 +26,12 @@ public enum HandPosition: Int, Codable, CaseIterable, Identifiable, Sendable {
         case .position3: return "雙手握在把手最前端牛角突起處，利用槓桿原理發力，站立對抗重阻力"
         }
     }
+
+    public var assetImageName: String {
+        switch self {
+        case .position1: return "icon_hand_position_1"
+        case .position2: return "icon_hand_position_2"
+        case .position3: return "icon_hand_position_3"
+        }
+    }
 }
