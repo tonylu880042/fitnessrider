@@ -122,6 +122,10 @@ class AudioEngineManager(private val context: Context) {
         }
     }
 
+    fun seekBy(deltaSeconds: Double) {
+        seekTo(_currentOffsetSeconds.value + deltaSeconds)
+    }
+
     // Rate adjustment (±15% -> 0.85 ~ 1.15, ±2% steps)
     fun adjustRatePercent(deltaPercent: Double) {
         val newRate = _currentRate.value + (deltaPercent / 100.0)

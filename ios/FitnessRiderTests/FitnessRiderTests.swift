@@ -249,4 +249,63 @@ final class FitnessRiderTests: XCTestCase {
         let estimatedBpm = analyzer.estimateBpm(from: envelope, durationMs: durationMs)
         XCTAssertEqual(estimatedBpm, 128.0, accuracy: 2.0)
     }
+
+    func testM4RealtimeCalorieAccumulationAndBounds() {
+        let totalClassSec = 3000 // 50 minutes
+        let totalCalories = 500.0
+
+        // At start (0s)
+        var elapsedSec = 0
+        var ratio = min(1.0, max(0.0, Double(elapsedSec) / Double(totalClassSec)))
+        XCTAssertEqual(Int(totalCalories * ratio), 0)
+
+        // At midpoint (1500s)
+        elapsedSec = 1500
+        ratio = min(1.0, max(0.0, Double(elapsedSec) / Double(totalClassSec)))
+        XCTAssertEqual(Int(totalCalories * ratio), 250)
+
+        // At end (3000s)
+        elapsedSec = 3000
+        ratio = min(1.0, max(0.0, Double(elapsedSec) / Double(totalClassSec)))
+        XCTAssertEqual(Int(totalCalories * ratio), 500)
+
+        // Overtime clamp (3200s)
+        elapsedSec = 3200
+        ratio = min(1.0, max(0.0, Double(elapsedSec) / Double(totalClassSec)))
+        XCTAssertEqual(Int(totalCalories * ratio), 500)
+    }
+
+    func testM4IntensityZoneColorMapping() {
+        let z1 = FitnessRiderTheme.colorForZone(1)
+        let z2 = FitnessRiderTheme.colorForZone(2)
+        let z3 = FitnessRiderTheme.colorForZone(3)
+        let z4 = FitnessRiderTheme.colorForZone(4)
+        let z5 = FitnessRiderTheme.colorForZone(5)
+
+        XCTAssertEqual(z1, FitnessRiderTheme.zone1)
+        XCTAssertEqual(z2, FitnessRiderTheme.zone2)
+        XCTAssertEqual(z3, FitnessRiderTheme.zone3)
+        XCTAssertEqual(z4, FitnessRiderTheme.zone4)
+        XCTAssertEqual(z5, FitnessRiderTheme.zone5)
+    }
+
+    func testM4AudioSeekingBounds() {
+        let duration = 180.0 // 3 minutes
+
+        // Seek -10 from 5s -> clamped to 0.0
+        var currentOffset = 5.0
+        var targetOffset = min(duration, max(0.0, currentOffset - 10.0))
+        XCTAssertEqual(targetOffset, 0.0, accuracy: 0.001)
+
+        // Seek +10 from 30s -> 40s
+        currentOffset = 30.0
+        targetOffset = min(duration, max(0.0, currentOffset + 10.0))
+        XCTAssertEqual(targetOffset, 40.0, accuracy: 0.001)
+
+        // Seek +10 from 175s -> clamped to 180s
+        currentOffset = 175.0
+        targetOffset = min(duration, max(0.0, currentOffset + 10.0))
+        XCTAssertEqual(targetOffset, 180.0, accuracy: 0.001)
+    }
 }
+

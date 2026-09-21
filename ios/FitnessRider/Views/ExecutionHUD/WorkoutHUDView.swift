@@ -11,6 +11,7 @@ public struct WorkoutHUDView: View {
     @State private var isPlaylistDrawerOpen: Bool = true
     @State private var isShowingPostureInfoSheet: Bool = false
     @State private var reminderRotationTick: Int = 0
+    @State private var pulseAlpha: CGFloat = 1.0
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
@@ -20,6 +21,10 @@ public struct WorkoutHUDView: View {
 
     private var activeSegment: WorkoutSegment? {
         audioManager.currentSegment ?? workoutClass.segments.first
+    }
+
+    private var currentZoneColor: Color {
+        FitnessRiderTheme.colorForZone(activeSegment?.intensityZone ?? 2)
     }
 
     private var activeCue: WorkoutCue? {
@@ -83,6 +88,12 @@ public struct WorkoutHUDView: View {
         return workoutClass.segments.reduce(0) { $0 + $1.durationMs } / 1000
     }
 
+    private var realtimeCalories: Int {
+        guard totalClassSeconds > 0 else { return 0 }
+        let ratio = min(1.0, max(0.0, Double(totalElapsedSeconds) / Double(totalClassSeconds)))
+        return Int(workoutClass.estimatedCalories * ratio)
+    }
+
     private var formattedTotalElapsed: String {
         let clamped = max(0, min(totalElapsedSeconds, totalClassSeconds))
         let min = clamped / 60
@@ -134,6 +145,9 @@ public struct WorkoutHUDView: View {
                 if AppSettings.shared.keepScreenAwakeInHUD {
                     UIApplication.shared.isIdleTimerDisabled = true
                 }
+                withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) {
+                    pulseAlpha = 0.35
+                }
                 audioManager.loadClass(workoutClass)
                 audioManager.play()
             }
@@ -142,14 +156,14 @@ public struct WorkoutHUDView: View {
                 UIApplication.shared.isIdleTimerDisabled = false
                 audioManager.pause()
             }
-            .alert("結束課堂", isPresented: $isShowingExitAlert) {
-                Button("繼續授課", role: .cancel) {}
-                Button("退出結束", role: .destructive) {
+            .alert("退出課堂確認", isPresented: $isShowingExitAlert) {
+                Button("繼續騎乘", role: .cancel) {}
+                Button("結束課堂", role: .destructive) {
                     audioManager.pause()
                     dismiss()
                 }
             } message: {
-                Text("確定要結束當前飛輪課堂並退出中控台嗎？")
+                Text("確定要結束並退出課堂嗎？目前授課進度將不會儲存。")
             }
         }
     }
@@ -178,28 +192,37 @@ public struct WorkoutHUDView: View {
                     .foregroundColor(.white)
             }
 
-            // Title & Estimated Calorie
+            // Title & Real-time Calorie Accumulator
             VStack(alignment: .leading, spacing: 2) {
                 Text(workoutClass.title)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                     .lineLimit(1)
 
-                Text("預估卡路里: \(Int(workoutClass.estimatedCalories)) kcal")
+                Text("即時消耗: \(realtimeCalories) / \(Int(workoutClass.estimatedCalories)) kcal")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(.white.opacity(0.9))
             }
 
             Spacer()
 
             // Playback Seek Bar & Controls
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 // Previous Track
                 Button {
                     audioManager.previousSegment()
                 } label: {
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                // Seek -10s
+                Button {
+                    audioManager.seekBy(deltaSeconds: -10.0)
+                } label: {
+                    Image(systemName: "gobackward.10")
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.white)
                 }
 
@@ -216,12 +239,21 @@ public struct WorkoutHUDView: View {
                         .shadow(radius: 3)
                 }
 
+                // Seek +10s
+                Button {
+                    audioManager.seekBy(deltaSeconds: 10.0)
+                } label: {
+                    Image(systemName: "goforward.10")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
                 // Next Track
                 Button {
                     audioManager.nextSegment()
                 } label: {
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.white)
                 }
             }
@@ -397,10 +429,19 @@ public struct WorkoutHUDView: View {
         CircleProgressBar(
             progress: progressRatio,
             strokeWidth: 18.0,
-            ringColor: FitnessRiderTheme.topBarGreen,
+            ringColor: currentZoneColor,
             trackColor: FitnessRiderTheme.cardBorder
         ) {
             VStack(spacing: 4) {
+                // Intensity Zone Badge
+                Text("ZONE \(activeSegment?.intensityZone ?? 2)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 2)
+                    .background(currentZoneColor)
+                    .cornerRadius(12)
+
                 Text("目標轉速")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
@@ -658,10 +699,11 @@ public struct WorkoutHUDView: View {
     // MARK: - Next Cue Preview Banner
 
     private var nextCueBanner: some View {
-        HStack(spacing: 12) {
+        let isWarning = remainingCueSeconds <= 5 && nextCue != nil
+        return HStack(spacing: 12) {
             Image(systemName: "arrow.right.circle.fill")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
 
             if let next = nextCue {
                 HStack(spacing: 6) {
@@ -675,13 +717,13 @@ public struct WorkoutHUDView: View {
 
                     Text("(\(next.targetRpm) RPM, \(next.resistanceLevel), \(next.handPosition.shortTitle))")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
 
                     Spacer()
 
                     Text("\(remainingCueSeconds) 秒後轉換")
                         .font(.system(size: 15, weight: .bold, design: .monospaced))
-                        .foregroundColor(remainingCueSeconds <= 5 ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
+                        .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
                 }
             } else {
                 Text("此段落最後動作，堅持踩到底！")
@@ -692,11 +734,11 @@ public struct WorkoutHUDView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(Color.white)
+        .background(isWarning ? FitnessRiderTheme.accentRed.opacity(0.10 * pulseAlpha) : Color.white)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(remainingCueSeconds <= 5 ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreen, lineWidth: 2)
+                .stroke(isWarning ? FitnessRiderTheme.accentRed.opacity(pulseAlpha) : FitnessRiderTheme.topBarGreen, lineWidth: 2)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
     }

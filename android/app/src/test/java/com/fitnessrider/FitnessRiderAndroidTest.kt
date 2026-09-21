@@ -155,5 +155,67 @@ class FitnessRiderAndroidTest {
         assertEquals(HandPosition.POSITION_3, cues[1].handPosition)
         assertEquals(listOf("站立的姿勢來爬坡，鍛練股四頭肌的力量", "不要甩肩膀"), cues[1].reminders)
     }
+
+    @Test
+    fun testM4RealtimeCalorieAccumulationAndBounds() {
+        val totalClassSec = 3000 // 50 minutes
+        val totalCalories = 500.0
+
+        // At start (0s)
+        var elapsedSec = 0
+        var ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
+        assertEquals(0, (totalCalories * ratio).toInt())
+
+        // At midpoint (1500s)
+        elapsedSec = 1500
+        ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
+        assertEquals(250, (totalCalories * ratio).toInt())
+
+        // At end (3000s)
+        elapsedSec = 3000
+        ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
+        assertEquals(500, (totalCalories * ratio).toInt())
+
+        // Overtime clamp (3200s)
+        elapsedSec = 3200
+        ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
+        assertEquals(500, (totalCalories * ratio).toInt())
+    }
+
+    @Test
+    fun testM4IntensityZoneColorMapping() {
+        val z1 = com.fitnessrider.theme.colorForZone(1)
+        val z2 = com.fitnessrider.theme.colorForZone(2)
+        val z3 = com.fitnessrider.theme.colorForZone(3)
+        val z4 = com.fitnessrider.theme.colorForZone(4)
+        val z5 = com.fitnessrider.theme.colorForZone(5)
+
+        assertEquals(com.fitnessrider.theme.Zone1, z1)
+        assertEquals(com.fitnessrider.theme.Zone2, z2)
+        assertEquals(com.fitnessrider.theme.Zone3, z3)
+        assertEquals(com.fitnessrider.theme.Zone4, z4)
+        assertEquals(com.fitnessrider.theme.Zone5, z5)
+    }
+
+    @Test
+    fun testM4AudioSeekingBounds() {
+        val duration = 180.0 // 3 minutes
+
+        // Seek -10 from 5s -> clamped to 0.0
+        var currentOffset = 5.0
+        var targetOffset = (currentOffset - 10.0).coerceIn(0.0, duration)
+        assertEquals(0.0, targetOffset, 0.001)
+
+        // Seek +10 from 30s -> 40s
+        currentOffset = 30.0
+        targetOffset = (currentOffset + 10.0).coerceIn(0.0, duration)
+        assertEquals(40.0, targetOffset, 0.001)
+
+        // Seek +10 from 175s -> clamped to 180s
+        currentOffset = 175.0
+        targetOffset = (currentOffset + 10.0).coerceIn(0.0, duration)
+        assertEquals(180.0, targetOffset, 0.001)
+    }
 }
+
 

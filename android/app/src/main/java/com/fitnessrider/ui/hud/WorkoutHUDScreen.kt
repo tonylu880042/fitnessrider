@@ -2,6 +2,8 @@ package com.fitnessrider.ui.hud
 
 import android.app.Activity
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,7 +72,25 @@ fun WorkoutHUDScreen(
 
     var isDrawerOpen by remember { mutableStateOf(true) }
     var isShowingPostureInfo by remember { mutableStateOf(false) }
+    var isShowingExitConfirmDialog by remember { mutableStateOf(false) }
     var reminderTick by remember { mutableStateOf(0) }
+
+    // Intercept hardware/gesture back press to prevent accidental class exit
+    BackHandler(enabled = true) {
+        isShowingExitConfirmDialog = true
+    }
+
+    // 5-second Next Cue warning pulse animation
+    val infiniteTransition = rememberInfiniteTransition(label = "nextCuePulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
 
     val activeSegment = audioManager.currentSegment
     val currentMs = (currentOffsetSec * 1000).toInt()
@@ -131,6 +151,14 @@ fun WorkoutHUDScreen(
     val formattedTotalElapsed = String.format("%02d:%02d", totalElapsedSec / 60, totalElapsedSec % 60)
     val formattedTotalDuration = String.format("%02d:%02d", totalClassSec / 60, totalClassSec % 60)
 
+    // Dynamic real-time calorie calculation
+    val realtimeCalories = remember(totalElapsedSec, totalClassSec, workoutClass.estimatedCalories) {
+        if (totalClassSec > 0) {
+            val ratio = (totalElapsedSec.toDouble() / totalClassSec.toDouble()).coerceIn(0.0, 1.0)
+            (workoutClass.estimatedCalories * ratio).toInt()
+        } else 0
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -140,7 +168,7 @@ fun WorkoutHUDScreen(
         TopNavBar(
             title = "",
             leading = {
-                IconButton(onClick = onExitClick) {
+                IconButton(onClick = { isShowingExitConfirmDialog = true }) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "退出課堂", tint = Color.White)
                 }
                 IconButton(onClick = { isDrawerOpen = !isDrawerOpen }) {
@@ -154,9 +182,9 @@ fun WorkoutHUDScreen(
                         color = Color.White
                     )
                     Text(
-                        text = "預估卡路里: ${workoutClass.estimatedCalories.toInt()} kcal",
+                        text = "即時消耗: $realtimeCalories / ${workoutClass.estimatedCalories.toInt()} kcal",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.85f)
+                        color = Color.White.copy(alpha = 0.9f)
                     )
                 }
             },
@@ -164,6 +192,9 @@ fun WorkoutHUDScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     IconButton(onClick = { audioManager.previousSegment() }) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White)
+                    }
+                    IconButton(onClick = { audioManager.seekBy(-10.0) }) {
+                        Icon(Icons.Default.FastRewind, contentDescription = "快退10秒", tint = Color.White)
                     }
                     IconButton(
                         onClick = { audioManager.togglePlayPause() },
@@ -176,6 +207,9 @@ fun WorkoutHUDScreen(
                             contentDescription = "播放/暫停",
                             tint = TopBarGreenDark
                         )
+                    }
+                    IconButton(onClick = { audioManager.seekBy(10.0) }) {
+                        Icon(Icons.Default.FastForward, contentDescription = "快進10秒", tint = Color.White)
                     }
                     IconButton(onClick = { audioManager.nextSegment() }) {
                         Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White)
@@ -288,14 +322,30 @@ fun WorkoutHUDScreen(
                     Spacer(modifier = Modifier.width(28.dp))
 
                     // Center: Giant Circle Progress Bar (300dp)
+                    val currentZoneColor = colorForZone(activeSegment?.intensityZone ?: 2)
                     CircleProgressBar(
                         progress = progressRatio,
                         strokeWidth = 20.dp,
-                        ringColor = TopBarGreen,
+                        ringColor = currentZoneColor,
                         trackColor = CardBorder,
                         modifier = Modifier.size(300.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(
+                                color = currentZoneColor,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "ZONE ${activeSegment?.intensityZone ?: 2}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
                             Text(
                                 text = "目標轉速",
                                 fontSize = 14.sp,
@@ -529,17 +579,18 @@ fun WorkoutHUDScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Bottom Next Cue Preview Banner
+                // Bottom Next Cue Preview Banner with <= 5s pulsing warning
+                val isNextCueWarning = remainingCueSec <= 5 && nextCue != null
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
                             2.dp,
-                            if (remainingCueSec <= 5) AccentRed else TopBarGreen,
+                            if (isNextCueWarning) AccentRed.copy(alpha = pulseAlpha) else TopBarGreen,
                             RoundedCornerShape(12.dp)
                         ),
                     shape = RoundedCornerShape(12.dp),
-                    color = Color.White,
+                    color = if (isNextCueWarning) AccentRed.copy(alpha = 0.10f * pulseAlpha) else Color.White,
                     shadowElevation = 2.dp
                 ) {
                     Row(
@@ -551,7 +602,7 @@ fun WorkoutHUDScreen(
                         Icon(
                             Icons.Default.ArrowForward,
                             contentDescription = null,
-                            tint = TopBarGreenDark,
+                            tint = if (isNextCueWarning) AccentRed else TopBarGreenDark,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -563,7 +614,7 @@ fun WorkoutHUDScreen(
                             Text(
                                 text = "(${nextCue.targetRpm} RPM, ${nextCue.resistanceLevel}, ${nextCue.handPosition.shortTitle})",
                                 fontSize = 13.sp,
-                                color = TopBarGreenDark
+                                color = if (isNextCueWarning) AccentRed else TopBarGreenDark
                             )
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
@@ -571,7 +622,7 @@ fun WorkoutHUDScreen(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (remainingCueSec <= 5) AccentRed else TopBarGreenDark
+                                color = if (isNextCueWarning) AccentRed else TopBarGreenDark
                             )
                         } else {
                             Text(text = "此段落最後動作，堅持踩到底！", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
@@ -624,6 +675,55 @@ fun WorkoutHUDScreen(
                 confirmButton = {
                     TextButton(onClick = { isShowingPostureInfo = false }) {
                         Text("我知道了", color = TopBarGreenDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            )
+        }
+
+        // Exit Confirmation Dialog
+        if (isShowingExitConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { isShowingExitConfirmDialog = false },
+                title = {
+                    Text(
+                        text = "退出課堂確認",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = "確定要結束並退出課堂嗎？目前授課進度將不會儲存。",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            isShowingExitConfirmDialog = false
+                            onExitClick()
+                        }
+                    ) {
+                        Text(
+                            text = "結束課堂",
+                            color = AccentRed,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { isShowingExitConfirmDialog = false }
+                    ) {
+                        Text(
+                            text = "繼續騎乘",
+                            color = TopBarGreenDark,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
                 }
             )

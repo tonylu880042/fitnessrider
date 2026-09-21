@@ -172,6 +172,10 @@ public final class AudioEngineManager: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    public func seekBy(deltaSeconds: Double) {
+        seek(to: currentOffsetSeconds + deltaSeconds)
+    }
+
     // MARK: - Tempo & Pitch Shift (0.85x ~ 1.15x, ±2% steps)
 
     public func adjustRatePercent(by deltaPercent: Double) {
