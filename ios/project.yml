@@ -1,0 +1,45 @@
+name: FitnessRider
+options:
+  bundleIdPrefix: app.fitnessrider
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+  defaultConfig: Release
+settings:
+  SWIFT_VERSION: "6.0"
+  ENABLE_USER_SCRIPT_SANDBOXING: NO
+  IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+  CURRENT_PROJECT_VERSION: "1"
+  MARKETING_VERSION: "1.0.0"
+
+targets:
+  FitnessRider:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitnessRider
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: app.fitnessrider.coach
+      INFOPLIST_FILE: FitnessRider/Resources/Info.plist
+      TARGETED_DEVICE_FAMILY: "1,2" # 1 = iPhone, 2 = iPad
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      GENERATE_INFOPLIST_FILE: NO
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+    systemFrameworks:
+      - AVFoundation
+      - AudioToolbox
+      - MediaPlayer
+      - Security
+      - UniformTypeIdentifiers
+    dependencies:
+      - sdk: libsqlite3.tbd
+
+  FitnessRiderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FitnessRiderTests
+    dependencies:
+      - target: FitnessRider
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: app.fitnessrider.tests
