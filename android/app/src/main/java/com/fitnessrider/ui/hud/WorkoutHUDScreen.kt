@@ -120,6 +120,17 @@ fun WorkoutHUDScreen(
         }
     }
 
+    val totalClassMs = remember(workoutClass) {
+        if (workoutClass.totalDurationMs > 0) workoutClass.totalDurationMs else workoutClass.segments.sumOf { it.durationMs }
+    }
+    val totalClassSec = (totalClassMs / 1000).coerceAtLeast(1)
+    val priorSegmentsSec = remember(currentSegmentIndex, workoutClass) {
+        workoutClass.segments.take(currentSegmentIndex).sumOf { it.durationMs } / 1000
+    }
+    val totalElapsedSec = (priorSegmentsSec + currentOffsetSec.toInt()).coerceIn(0, totalClassSec)
+    val formattedTotalElapsed = String.format("%02d:%02d", totalElapsedSec / 60, totalElapsedSec % 60)
+    val formattedTotalDuration = String.format("%02d:%02d", totalClassSec / 60, totalClassSec % 60)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -265,10 +276,10 @@ fun WorkoutHUDScreen(
             ) {
                 Spacer(modifier = Modifier.weight(1f))
 
-                // 3-Column Telemetry Row (Hand Position, Giant Gauge, Riding Posture)
+                // 3-Column Telemetry Row (Hand Position, Giant Gauge, Riding Posture with Elapsed Time on top)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     // Left: Hand Position Card (Large Graphic)
@@ -337,11 +348,74 @@ fun WorkoutHUDScreen(
 
                     Spacer(modifier = Modifier.width(28.dp))
 
-                    // Right: Posture Figure Card (Rider Illustration + Benefits info)
-                    PostureFigureCockpitCard(
-                        cue = activeCue,
-                        onInfoClick = { isShowingPostureInfo = true }
-                    )
+                    // Right: Posture Figure Card with Total Workout Elapsed Time Badge directly on top
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Total Workout Elapsed Time Badge (課程進行時間)
+                        Surface(
+                            modifier = Modifier
+                                .width(170.dp)
+                                .border(1.dp, CardBorder, RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 3.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .background(TopBarGreen.copy(alpha = 0.15f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = "課程進行時間",
+                                        tint = TopBarGreenDark,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = "課程時間",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextSecondary
+                                    )
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            text = formattedTotalElapsed,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Black,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = " / $formattedTotalDuration",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(bottom = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Right: Posture Figure Card (Rider Illustration + Benefits info)
+                        PostureFigureCockpitCard(
+                            cue = activeCue,
+                            onInfoClick = { isShowingPostureInfo = true }
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

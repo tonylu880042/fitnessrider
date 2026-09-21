@@ -71,6 +71,31 @@ public struct WorkoutHUDView: View {
         return min(1.0, max(0.0, audioManager.currentOffsetSeconds / audioManager.currentDurationSeconds))
     }
 
+    private var totalElapsedSeconds: Int {
+        let priorMs = workoutClass.segments.prefix(audioManager.currentSegmentIndex).reduce(0) { $0 + $1.durationMs }
+        return (priorMs / 1000) + Int(audioManager.currentOffsetSeconds)
+    }
+
+    private var totalClassSeconds: Int {
+        if workoutClass.totalDurationMs > 0 {
+            return workoutClass.totalDurationMs / 1000
+        }
+        return workoutClass.segments.reduce(0) { $0 + $1.durationMs } / 1000
+    }
+
+    private var formattedTotalElapsed: String {
+        let clamped = max(0, min(totalElapsedSeconds, totalClassSeconds))
+        let min = clamped / 60
+        let sec = clamped % 60
+        return String(format: "%02d:%02d", min, sec)
+    }
+
+    private var formattedTotalDuration: String {
+        let min = totalClassSeconds / 60
+        let sec = totalClassSeconds % 60
+        return String(format: "%02d:%02d", min, sec)
+    }
+
     public var body: some View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
@@ -286,13 +311,19 @@ public struct WorkoutHUDView: View {
             Spacer()
 
             if isLandscape {
-                HStack(spacing: 28) {
+                HStack(alignment: .bottom, spacing: 28) {
                     handPositionCockpitCard
                     circleProgressGauge(isLandscape: true)
-                    postureFigureCockpitCard
+                    VStack(spacing: 8) {
+                        totalElapsedTimeBadge
+                        postureFigureCockpitCard
+                    }
                 }
             } else {
-                circleProgressGauge(isLandscape: false)
+                VStack(spacing: 8) {
+                    totalElapsedTimeBadge
+                    circleProgressGauge(isLandscape: false)
+                }
             }
 
             // Coaching Live Prompt Banner
@@ -404,6 +435,44 @@ public struct WorkoutHUDView: View {
             }
         }
         .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
+    }
+
+    private var totalElapsedTimeBadge: some View {
+        HStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .fill(FitnessRiderTheme.topBarGreen.opacity(0.15))
+                    .frame(width: 22, height: 22)
+                Image(systemName: "timer")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("課程時間")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(formattedTotalElapsed)
+                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                    Text("/ \(formattedTotalDuration)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                }
+            }
+        }
+        .frame(width: 170)
+        .padding(.vertical, 6)
+        .background(Color.white)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
     }
 
     private var handPositionCockpitCard: some View {
