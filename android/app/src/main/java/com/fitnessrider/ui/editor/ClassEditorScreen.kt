@@ -1,5 +1,6 @@
 package com.fitnessrider.ui.editor
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -26,7 +27,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.fitnessrider.audio.WaveformAnalyzer
+import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.model.*
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.HandPositionBadge
@@ -46,6 +52,18 @@ fun ClassEditorScreen(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
+    val repository = remember { ClassRepository(context) }
+    val previewPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_OFF
+        }
+    }
+    DisposableEffect(previewPlayer) {
+        onDispose {
+            previewPlayer.release()
+        }
+    }
+
     var workoutClass by remember { mutableStateOf(initialClass) }
     var selectedSegmentIndex by remember { mutableStateOf(0) }
     var isEditingCueDialogVisible by remember { mutableStateOf(false) }
@@ -93,6 +111,14 @@ fun ClassEditorScreen(
         if (activeSegment != null) {
             previewPlayheadMs = 0
             isPreviewPlaying = false
+            previewPlayer.pause()
+            if (activeSegment.musicFileName.isNotBlank()) {
+                val file = File(repository.musicDirectory, activeSegment.musicFileName)
+                if (file.exists()) {
+                    previewPlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                    previewPlayer.prepare()
+                }
+            }
             val analyzer = WaveformAnalyzer.getInstance(context)
             val result = analyzer.analyzeWaveform(activeSegment.musicFileName)
             waveformSamples = result.samples
@@ -103,21 +129,30 @@ fun ClassEditorScreen(
             }
         } else {
             waveformSamples = FloatArray(0)
+            previewPlayer.stop()
         }
     }
 
     LaunchedEffect(isPreviewPlaying, activeSegment?.playbackRate) {
-        if (isPreviewPlaying && activeSegment != null) {
-            while (isActive && isPreviewPlaying) {
-                delay(100)
-                val step = (100 * activeSegment.playbackRate).toInt()
-                val next = previewPlayheadMs + step
-                if (next >= activeSegment.durationMs) {
-                    previewPlayheadMs = 0
-                    isPreviewPlaying = false
-                } else {
-                    previewPlayheadMs = next
+        if (activeSegment != null) {
+            if (isPreviewPlaying) {
+                previewPlayer.playbackParameters = PlaybackParameters(activeSegment.playbackRate.toFloat())
+                previewPlayer.seekTo(previewPlayheadMs.toLong())
+                previewPlayer.play()
+                while (isActive && isPreviewPlaying) {
+                    delay(50)
+                    val pos = previewPlayer.currentPosition.toInt()
+                    if (previewPlayer.playbackState == Player.STATE_ENDED || pos >= activeSegment.durationMs) {
+                        previewPlayheadMs = 0
+                        isPreviewPlaying = false
+                        previewPlayer.pause()
+                        previewPlayer.seekTo(0)
+                    } else {
+                        previewPlayheadMs = pos
+                    }
                 }
+            } else {
+                previewPlayer.pause()
             }
         }
     }
@@ -131,12 +166,18 @@ fun ClassEditorScreen(
         TopNavBar(
             title = "",
             leading = {
-                TextButton(onClick = onCancel) {
+                TextButton(onClick = {
+                    previewPlayer.stop()
+                    onCancel()
+                }) {
                     Text(text = "取消", color = Color.White, fontSize = 16.sp)
                 }
             },
             trailing = {
-                TextButton(onClick = { onSave(workoutClass) }) {
+                TextButton(onClick = {
+                    previewPlayer.stop()
+                    onSave(workoutClass)
+                }) {
                     Text(text = "儲存", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             },
@@ -332,7 +373,10 @@ fun ClassEditorScreen(
                         cues = activeSegment.cues,
                         durationMs = activeSegment.durationMs,
                         currentOffsetMs = previewPlayheadMs,
-                        onSeek = { previewPlayheadMs = it }
+                        onSeek = {
+                            previewPlayheadMs = it
+                            previewPlayer.seekTo(it.toLong())
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
