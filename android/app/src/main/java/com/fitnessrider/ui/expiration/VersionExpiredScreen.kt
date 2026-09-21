@@ -35,10 +35,17 @@ import com.fitnessrider.util.VersionLifecycleManager
 
 @Composable
 fun VersionExpiredScreen(
-    onUpdateClick: (() -> Unit)? = null
+    onUpdateClick: (() -> Unit)? = null,
+    onUnlocked: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val deviceService = remember { com.fitnessrider.auth.DeviceIdentifierService(context) }
+    val licenseService = remember { com.fitnessrider.auth.LicenseVerificationService(context) }
     var showBrowserlessDialog by remember { mutableStateOf(false) }
+    var showActivationDialog by remember { mutableStateOf(false) }
+    var showDeviceTransferDialog by remember { mutableStateOf(false) }
+    var enteredLicenseCode by remember { mutableStateOf("") }
+    var activationStatusMessage by remember { mutableStateOf<String?>(null) }
 
     fun copyUpdateUrlToClipboard() {
         try {
@@ -46,6 +53,17 @@ fun VersionExpiredScreen(
             val clip = ClipData.newPlainText("FitnessRider Update URL", VersionLifecycleManager.updateUrl)
             clipboard.setPrimaryClip(clip)
             Toast.makeText(context, "已複製更新網址至剪貼簿", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun copyDeviceIdToClipboard() {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("FitnessRider Device ID", deviceService.deviceFingerprint)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "已複製設備識別碼", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -72,53 +90,67 @@ fun VersionExpiredScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
-                modifier = Modifier.padding(32.dp),
+                modifier = Modifier.padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Warning Badge Icon
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(68.dp)
                         .clip(CircleShape)
                         .background(AccentRed.copy(alpha = 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.HourglassDisabled,
-                        contentDescription = "版本到期",
+                        contentDescription = "試用到期",
                         tint = AccentRed,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(36.dp)
                     )
                 }
 
                 Text(
-                    text = "版本已過期",
-                    fontSize = 24.sp,
+                    text = "免費試用已結束",
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
                     color = TextPrimary
                 )
 
                 Text(
-                    text = "為確保課堂中控穩定度、最新音樂分析演算法與各項功能體驗，每個發行版本的有效使用期限固定為 30 天。\n\n此版本已超過使用期限，請更新至最新版本後繼續使用。",
-                    fontSize = 14.sp,
+                    text = "感謝體驗 FitnessRider！您的 30 天全功能免費試用期已結束。\n\n如需繼續在課堂中使用專業中控與變速音樂播放，請輸入授權碼開通 VIP，或更新至最新版本。",
+                    fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
-                    lineHeight = 22.sp
+                    lineHeight = 20.sp
                 )
 
-                HorizontalDivider(color = CardBorder, modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(color = CardBorder, modifier = Modifier.padding(vertical = 2.dp))
 
-                // Version telemetry detail box
+                // Version telemetry & Device ID detail box
                 Surface(
                     color = CardHeaderBackground,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "授權狀態", fontSize = 12.sp, color = TextSecondary)
+                            Text(text = "30 天試用期滿", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "試用起算日", fontSize = 12.sp, color = TextSecondary)
+                            Text(text = VersionLifecycleManager.getFormattedTrialStartDate(context), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -126,27 +158,69 @@ fun VersionExpiredScreen(
                             Text(text = "目前版本", fontSize = 12.sp, color = TextSecondary)
                             Text(text = "v${VersionLifecycleManager.versionName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
+
+                        HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 2.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "建置時間", fontSize = 12.sp, color = TextSecondary)
-                            Text(text = VersionLifecycleManager.getFormattedBuildDate(), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                            Text(text = "設備識別碼 (Device ID)", fontSize = 11.sp, color = TextSecondary)
+                            TextButton(
+                                onClick = { copyDeviceIdToClipboard() },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp), tint = TopBarGreenDark)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "複製", fontSize = 11.sp, color = TopBarGreenDark, fontWeight = FontWeight.Bold)
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(text = "到期日期", fontSize = 12.sp, color = TextSecondary)
-                            Text(text = VersionLifecycleManager.getFormattedExpirationDate(), fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = AccentRed)
-                        }
+                        Text(
+                            text = deviceService.deviceFingerprint,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = TextPrimary
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // Primary Action: Download Latest Version
+                // Primary Action: Activate VIP Code
                 Button(
+                    onClick = { showActivationDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = "🔑 輸入授權碼開通 VIP",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                // Transfer Action: Transfer Existing Device License
+                TextButton(
+                    onClick = { showDeviceTransferDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                ) {
+                    Text(
+                        text = "🔄 舊機換新機？轉移既有授權",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TopBarGreenDark
+                    )
+                }
+
+                // Secondary Action: Download Latest Version
+                OutlinedButton(
                     onClick = {
                         if (onUpdateClick != null) {
                             onUpdateClick()
@@ -165,19 +239,17 @@ fun VersionExpiredScreen(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .height(42.dp)
                 ) {
-                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextSecondary)
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "前往更新最新版本",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 13.sp,
+                        color = TextSecondary
                     )
                 }
 
@@ -186,11 +258,11 @@ fun VersionExpiredScreen(
                     onClick = { copyUpdateUrlToClipboard() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextSecondary)
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp), tint = TextSecondary)
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "複製更新網址 (若無瀏覽器)",
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = TextSecondary
                     )
                 }
@@ -204,12 +276,63 @@ fun VersionExpiredScreen(
                 ) {
                     Text(
                         text = "結束應用程式",
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = TextSecondary
                     )
                 }
             }
         }
+    }
+
+    if (showActivationDialog) {
+        AlertDialog(
+            onDismissRequest = { showActivationDialog = false },
+            title = {
+                Text(text = "輸入授權碼開通", fontWeight = FontWeight.Bold, color = TextPrimary)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "請輸入教練授權序號以開通專業版：", fontSize = 13.sp, color = TextSecondary)
+                    OutlinedTextField(
+                        value = enteredLicenseCode,
+                        onValueChange = { enteredLicenseCode = it.uppercase() },
+                        placeholder = { Text("例如: RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (activationStatusMessage != null) {
+                        Text(
+                            text = activationStatusMessage!!,
+                            fontSize = 12.sp,
+                            color = AccentRed,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val res = VersionLifecycleManager.activateLicenseCode(context, enteredLicenseCode)
+                        if (res.first) {
+                            Toast.makeText(context, res.second, Toast.LENGTH_LONG).show()
+                            showActivationDialog = false
+                            onUnlocked?.invoke()
+                        } else {
+                            activationStatusMessage = res.second
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                ) {
+                    Text("開通", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showActivationDialog = false }) {
+                    Text("取消", color = TextSecondary)
+                }
+            }
+        )
     }
 
     if (showBrowserlessDialog) {
@@ -252,6 +375,17 @@ fun VersionExpiredScreen(
                 }) {
                     Text("再次複製網址並確定", color = TopBarGreen, fontWeight = FontWeight.Bold)
                 }
+            }
+        )
+    }
+
+    if (showDeviceTransferDialog) {
+        com.fitnessrider.ui.settings.DeviceTransferDialog(
+            onDismissRequest = { showDeviceTransferDialog = false },
+            licenseService = licenseService,
+            onTransferSuccess = { msg ->
+                activationStatusMessage = msg
+                onUnlocked?.invoke()
             }
         )
     }

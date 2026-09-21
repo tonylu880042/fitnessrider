@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// 匯入單一音樂檔後、建立段落前所需的資料（檔名、實際曲長、偵測 BPM）。
 /// 拆成獨立型別與純函式是為了讓「檔名碰撞後綴」與「N 個檔案 -> N 個段落」
@@ -75,6 +76,7 @@ public struct ClassEditorView: View {
     @State private var isShowingMusicLibrary: Bool = false
     @State private var previewPlayheadMs: Int = 0
     @State private var isPreviewPlaying: Bool = false
+    @State private var previewPlayer: AVAudioPlayer?
     @State private var previewTimer: Timer?
     @State private var importErrorMessage: String?
 
@@ -201,9 +203,11 @@ public struct ClassEditorView: View {
         .onAppear {
             loadWaveformForActiveSegment()
         }
+        .onDisappear {
+            stopPreview(resetPlayhead: true)
+        }
         .onChange(of: selectedSegmentIndex) { _, _ in
-            stopPreview()
-            previewPlayheadMs = 0
+            stopPreview(resetPlayhead: true)
             loadWaveformForActiveSegment()
         }
         .sheet(item: $editingCue) { cue in
@@ -319,6 +323,7 @@ public struct ClassEditorView: View {
                     currentOffsetMs: previewPlayheadMs
                 ) { seekMs in
                     previewPlayheadMs = seekMs
+                    previewPlayer?.currentTime = Double(seekMs) / 1000.0
                 }
                 .frame(height: 90)
                 .background(Color.white)
@@ -536,28 +541,32 @@ public struct ClassEditorView: View {
 
     private func setRate(for segment: WorkoutSegment, rate: Double) {
         guard selectedSegmentIndex < workoutClass.segments.count else { return }
-        workoutClass.segments[selectedSegmentIndex].playbackRate = (rate * 100).rounded() / 100
+        let rounded = (rate * 100).rounded() / 100
+        workoutClass.segments[selectedSegmentIndex].playbackRate = rounded
+        previewPlayer?.rate = Float(rounded)
     }
 
     private func loadWaveformForActiveSegment() {
         guard let segment = activeSegment else { return }
         isAnalyzingWaveform = true
         WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName) { samples, durationMs, bpm in
-            self.waveformSamples = samples
-            self.isAnalyzingWaveform = false
-            guard self.selectedSegmentIndex < self.workoutClass.segments.count else { return }
-            var didChange = false
-            if segment.baseBpm == 128.0 && bpm != 128.0 {
-                self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
-                didChange = true
-            }
-            // 寫回時長：WaveformAnalyzer 算出的 durationMs 之前完全沒有回傳，段落永遠停在預設 300_000（Layer 1 第 1 項）。
-            if durationMs > 0 && durationMs != segment.durationMs {
-                self.workoutClass.segments[self.selectedSegmentIndex].durationMs = durationMs
-                didChange = true
-            }
-            if didChange {
-                self.workoutClass.recalculateTotals()
+            Task { @MainActor in
+                self.waveformSamples = samples
+                self.isAnalyzingWaveform = false
+                guard self.selectedSegmentIndex < self.workoutClass.segments.count else { return }
+                var didChange = false
+                if segment.baseBpm == 128.0 && bpm != 128.0 {
+                    self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
+                    didChange = true
+                }
+                // 寫回時長：WaveformAnalyzer 算出的 durationMs 之前完全沒有回傳，段落永遠停在預設 300_000（Layer 1 第 1 項）。
+                if durationMs > 0 && durationMs != segment.durationMs {
+                    self.workoutClass.segments[self.selectedSegmentIndex].durationMs = durationMs
+                    didChange = true
+                }
+                if didChange {
+                    self.workoutClass.recalculateTotals()
+                }
             }
         }
     }
@@ -573,19 +582,60 @@ public struct ClassEditorView: View {
     private func startPreview(for segment: WorkoutSegment) {
         isPreviewPlaying = true
         previewTimer?.invalidate()
-        previewTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            self.previewPlayheadMs += Int(100 * segment.playbackRate)
-            if self.previewPlayheadMs >= segment.durationMs {
-                self.previewPlayheadMs = 0
-                self.stopPreview()
+
+        // 嘗試建立或沿用真實音訊播放（本機檔案或外部資料夾），支援變速與 Seeking（對齊 Android）
+        let player: AVAudioPlayer?
+        if let existing = previewPlayer {
+            player = existing
+        } else {
+            player = MusicSource.withResolvedFileURL(for: segment.musicFileName) { url in
+                try? AVAudioPlayer(contentsOf: url)
+            }.flatMap { $0 }
+            if let p = player {
+                p.enableRate = true
+                self.previewPlayer = p
+            }
+        }
+
+        if let player = player {
+            player.enableRate = true
+            player.rate = Float(segment.playbackRate)
+            player.currentTime = Double(previewPlayheadMs) / 1000.0
+            player.prepareToPlay()
+            player.play()
+        }
+
+        previewTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            Task { @MainActor in
+                guard self.isPreviewPlaying else { return }
+                if let player = self.previewPlayer {
+                    let currentMs = Int(player.currentTime * 1000.0)
+                    if currentMs >= segment.durationMs || (!player.isPlaying && currentMs >= (segment.durationMs - 200)) {
+                        self.stopPreview(resetPlayhead: true)
+                    } else {
+                        self.previewPlayheadMs = currentMs
+                    }
+                } else {
+                    // 若音檔不存在則跑模擬進度（與 Android 容錯行為一致）
+                    self.previewPlayheadMs += Int(50 * segment.playbackRate)
+                    if self.previewPlayheadMs >= segment.durationMs {
+                        self.stopPreview(resetPlayhead: true)
+                    }
+                }
             }
         }
     }
 
-    private func stopPreview() {
+    private func stopPreview(resetPlayhead: Bool = false) {
         isPreviewPlaying = false
+        previewPlayer?.pause()
         previewTimer?.invalidate()
         previewTimer = nil
+        if resetPlayhead {
+            previewPlayheadMs = 0
+            previewPlayer?.currentTime = 0
+            previewPlayer = nil
+        }
     }
 
     // Layer 2：音樂庫（新建立或既有曲目多選）回傳的段落一律經這裡併入課表並重算總時長，

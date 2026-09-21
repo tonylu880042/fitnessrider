@@ -31,15 +31,32 @@ export async function POST(req: NextRequest) {
           userId = user.id;
         }
       }
+      if (!userId && deviceFingerprint) {
+        const dev = await db.getDeviceByFingerprint(deviceFingerprint);
+        if (dev) {
+          userId = dev.user_id;
+        }
+      }
     } catch {
       // body parsing optional
     }
 
-    if (!userId || !deviceFingerprint) {
+    if (!deviceFingerprint) {
       return NextResponse.json(
-        { success: false, error: '未授權或缺少必要驗證參數', is_valid: false },
-        { status: 401 }
+        { success: false, error: '缺少必要設備識別碼', is_valid: false },
+        { status: 400 }
       );
+    }
+
+    if (!userId) {
+      // Unregistered device: returns valid = false (prompts registration or code entry)
+      return NextResponse.json({
+        success: true,
+        is_valid: false,
+        days_remaining: 0,
+        plan_type: 'none',
+        status: 'unregistered',
+      });
     }
 
     // 1. 檢驗設備綁定

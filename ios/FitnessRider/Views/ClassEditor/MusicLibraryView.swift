@@ -101,6 +101,16 @@ private func formatDuration(_ durationMs: Int) -> String {
 ///
 /// 試聽沿用 AVFoundation（app 既有的音訊框架，`WaveformAnalyzer`／`AudioEngineManager` 都建構在它上面），
 /// 用內建的 `AVAudioPlayer` 播放單一檔案，沒有引入任何新的播放器套件或依賴。
+final class MusicLibraryAudioDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
+    var onDidFinish: (@MainActor @Sendable () -> Void)?
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            self.onDidFinish?()
+        }
+    }
+}
+
 struct MusicLibraryView: View {
     let classId: UUID
     let startOrderIndex: Int
@@ -130,6 +140,7 @@ struct MusicLibraryView: View {
     // "lib:<fileName>" 代表已匯入音樂庫項目，"ext:<relativePath>" 代表外部資料夾項目。
     @State private var previewPlayer: AVAudioPlayer?
     @State private var playingKey: String?
+    @State private var audioDelegate = MusicLibraryAudioDelegate()
 
     private var filteredTracks: [MusicLibraryTrack] {
         filterMusicLibraryTracks(allTracks, query: searchQuery)
@@ -220,6 +231,9 @@ struct MusicLibraryView: View {
         }
         .background(FitnessRiderTheme.canvasWhite)
         .onAppear {
+            audioDelegate.onDidFinish = {
+                stopPreview()
+            }
             reload()
             if folderConfigured { reloadExternalEntries() }
         }
@@ -514,6 +528,7 @@ struct MusicLibraryView: View {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         do {
             let player = try AVAudioPlayer(contentsOf: fileURL)
+            player.delegate = audioDelegate
             player.prepareToPlay()
             player.play()
             previewPlayer = player
@@ -537,6 +552,7 @@ struct MusicLibraryView: View {
             try? AVAudioPlayer(contentsOf: url)
         }.flatMap { $0 }
         guard let player = player else { return }
+        player.delegate = audioDelegate
         player.prepareToPlay()
         player.play()
         previewPlayer = player

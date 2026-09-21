@@ -417,6 +417,19 @@ public struct WorkoutHUDView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
+        .gesture(
+            DragGesture(minimumDistance: 40)
+                .onEnded { value in
+                    // Horizontal swipe: width displacement dominates height by at least 1.5x
+                    if abs(value.translation.width) > abs(value.translation.height) * 1.5 {
+                        if value.translation.width < -70 {
+                            audioManager.nextSegment()
+                        } else if value.translation.width > 70 {
+                            audioManager.previousSegment()
+                        }
+                    }
+                }
+        )
         .onReceive(reminderTimer) { _ in
             reminderRotationTick += 1
         }
@@ -476,6 +489,10 @@ public struct WorkoutHUDView: View {
             }
         }
         .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
+        .contentShape(Circle())
+        .onTapGesture(count: 2) {
+            audioManager.togglePlayPause()
+        }
     }
 
     private var totalElapsedTimeBadge: some View {
@@ -752,10 +769,12 @@ struct HUDTempoButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 14, weight: .bold))
             .foregroundColor(isPrimary ? .white : FitnessRiderTheme.textPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minWidth: 54, minHeight: 44)
             .background(isPrimary ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.cardBorder)
             .cornerRadius(8)
+            .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1.0)
     }
 }

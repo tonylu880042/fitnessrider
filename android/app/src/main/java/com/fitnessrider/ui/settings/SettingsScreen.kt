@@ -9,7 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +28,7 @@ import com.fitnessrider.data.SQLiteBackupService
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
+import com.fitnessrider.util.VersionLifecycleManager
 
 @Composable
 fun SettingsScreen(
@@ -40,10 +41,31 @@ fun SettingsScreen(
     val backupService = remember { SQLiteBackupService(context) }
 
     var isBeepEnabled by remember { mutableStateOf(settings.isCountdownBeepEnabled) }
+    var isHapticEnabled by remember { mutableStateOf(settings.isHapticFeedbackEnabled) }
     var isAutoPauseEnabled by remember { mutableStateOf(settings.isAutoPauseBetweenSegmentsEnabled) }
+    var crossfadeDuration by remember { mutableStateOf(settings.crossfadeDurationSeconds) }
     var isKeepAwakeEnabled by remember { mutableStateOf(settings.keepScreenAwakeInHUD) }
 
     var notificationMessage by remember { mutableStateOf<String?>(null) }
+    var showActivationDialog by remember { mutableStateOf(false) }
+    var showDeviceTransferDialog by remember { mutableStateOf(false) }
+    var enteredLicenseCode by remember { mutableStateOf("") }
+    var activationError by remember { mutableStateOf<String?>(null) }
+
+    val currentPlanType by licenseService.planType.collectAsState()
+    val remainingDays by licenseService.remainingDays.collectAsState()
+    val isLicensed by licenseService.isLicensed.collectAsState()
+
+    fun copyDeviceIdToClipboard() {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("FitnessRider Device ID", deviceService.deviceFingerprint)
+            clipboard.setPrimaryClip(clip)
+            android.widget.Toast.makeText(context, "已複製設備識別碼", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -54,7 +76,7 @@ fun SettingsScreen(
             title = "系統設定與備份",
             leading = {
                 IconButton(onClick = onBackClick) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Color.White)
                 }
             }
         )
@@ -88,6 +110,17 @@ fun SettingsScreen(
                     }
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "動作切換車把觸覺震動回饋", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = isHapticEnabled,
+                            onCheckedChange = {
+                                isHapticEnabled = it
+                                settings.isHapticFeedbackEnabled = it
+                            }
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "曲目段落結束自動暫停", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
                         Switch(
                             checked = isAutoPauseEnabled,
@@ -97,6 +130,60 @@ fun SettingsScreen(
                             }
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "曲目平滑切換 (Crossfade)",
+                            fontSize = 14.sp,
+                            color = if (isAutoPauseEnabled) TextSecondary else TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val options = listOf(
+                                0.0 to "關閉 (0s)",
+                                1.0 to "1 秒",
+                                2.0 to "2 秒 (預設)",
+                                3.0 to "3 秒"
+                            )
+                            options.forEach { (sec, label) ->
+                                val selected = crossfadeDuration == sec
+                                OutlinedButton(
+                                    onClick = {
+                                        crossfadeDuration = sec
+                                        settings.crossfadeDurationSeconds = sec
+                                    },
+                                    enabled = !isAutoPauseEnabled,
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (selected) TopBarGreen.copy(alpha = 0.15f) else Color.Transparent,
+                                        contentColor = if (selected) TopBarGreenDark else TextPrimary
+                                    ),
+                                    border = ButtonDefaults.outlinedButtonBorder(enabled = !isAutoPauseEnabled)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                        if (isAutoPauseEnabled) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "啟用「段落結束自動暫停」時，將自動停用 Crossfade",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "課堂進行中螢幕強制常亮", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
@@ -152,16 +239,63 @@ fun SettingsScreen(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(text = "授權方案:", fontSize = 13.sp, color = TextSecondary)
                         Spacer(modifier = Modifier.weight(1f))
-                        Text(text = "專業年繳版 (VIP)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+                        Text(text = currentPlanType, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TopBarGreenDark)
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(text = "授權狀態:", fontSize = 13.sp, color = TextSecondary)
                         Spacer(modifier = Modifier.weight(1f))
-                        Text(text = "有效 (剩餘 365 天)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+                        Text(
+                            text = if (isLicensed) "有效 (剩餘 $remainingDays 天)" else "試用已結束",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isLicensed) TopBarGreenDark else AccentRed
+                        )
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            enteredLicenseCode = ""
+                            activationError = null
+                            showActivationDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text(text = "🔑 輸入授權碼開通 / 啟用 VIP", fontSize = 13.sp, color = Color.White)
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "設備唯一識別碼 (Device ID):", fontSize = 12.sp, color = TextSecondary)
+
+                    Button(
+                        onClick = {
+                            showDeviceTransferDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text(text = "🔄 轉移設備授權 (換新機)", fontSize = 13.sp, color = Color.White)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "設備唯一識別碼 (Device ID):", fontSize = 12.sp, color = TextSecondary)
+                        TextButton(
+                            onClick = { copyDeviceIdToClipboard() },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = "點擊複製", fontSize = 11.sp, color = TopBarGreenDark, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Text(
                         text = deviceService.deviceFingerprint,
                         fontSize = 11.sp,
@@ -180,6 +314,68 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showActivationDialog) {
+        val coroutineScope = rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = { showActivationDialog = false },
+            title = {
+                Text(text = "輸入授權碼開通", fontWeight = FontWeight.Bold, color = TextPrimary)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "請輸入專業版授權序號：", fontSize = 13.sp, color = TextSecondary)
+                    OutlinedTextField(
+                        value = enteredLicenseCode,
+                        onValueChange = { enteredLicenseCode = it.uppercase() },
+                        placeholder = { Text("例如: RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (activationError != null) {
+                        Text(
+                            text = activationError!!,
+                            fontSize = 12.sp,
+                            color = AccentRed,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val res = VersionLifecycleManager.activateLicenseCode(context, enteredLicenseCode)
+                        if (res.first) {
+                            licenseService.refreshLicenseState()
+                            notificationMessage = res.second
+                            showActivationDialog = false
+                        } else {
+                            activationError = res.second
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                ) {
+                    Text("開通", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showActivationDialog = false }) {
+                    Text("取消", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    if (showDeviceTransferDialog) {
+        DeviceTransferDialog(
+            onDismissRequest = { showDeviceTransferDialog = false },
+            licenseService = licenseService,
+            onTransferSuccess = { msg ->
+                notificationMessage = msg
+            }
+        )
     }
 }
 

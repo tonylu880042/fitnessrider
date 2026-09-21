@@ -62,11 +62,16 @@ class RiderClassArchiveService(private val context: Context) {
                         zis.copyTo(buffer)
                         jsonString = buffer.toString(Charsets.UTF_8.name())
                     } else if (!entry.isDirectory) {
-                        // Extract music file
+                        // Extract music file with Zip Slip path traversal protection
                         val destFile = File(musicDir, entry.name)
-                        if (!destFile.exists()) {
-                            FileOutputStream(destFile).use { fos ->
-                                zis.copyTo(fos)
+                        val canonicalDest = destFile.canonicalPath
+                        val canonicalDir = musicDir.canonicalPath
+                        if (canonicalDest.startsWith(canonicalDir + File.separator)) {
+                            if (!destFile.exists()) {
+                                destFile.parentFile?.mkdirs()
+                                FileOutputStream(destFile).use { fos ->
+                                    zis.copyTo(fos)
+                                }
                             }
                         }
                     }

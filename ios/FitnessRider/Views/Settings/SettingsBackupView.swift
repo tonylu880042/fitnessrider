@@ -14,6 +14,10 @@ public struct SettingsBackupView: View {
     @State private var isShowingRiderClassPicker: Bool = false
     @State private var alertMessage: String = ""
     @State private var isShowingAlert: Bool = false
+    @State private var isShowingActivationAlert: Bool = false
+    @State private var isShowingDeviceTransferSheet: Bool = false
+    @State private var licenseCodeInput: String = ""
+    @State private var isCopiedDeviceId: Bool = false
 
     public init(onDataChanged: @escaping () -> Void) {
         self.onDataChanged = onDataChanged
@@ -26,7 +30,25 @@ public struct SettingsBackupView: View {
                 Section("課堂與音訊體驗") {
                     Toggle("動作切換 3-2-1 倒數提示音", isOn: $settings.isCountdownBeepEnabled)
 
+                    Toggle("動作切換車把觸覺震動回饋", isOn: $settings.isHapticFeedbackEnabled)
+
                     Toggle("曲目段落結束自動暫停", isOn: $settings.isAutoPauseBetweenSegmentsEnabled)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("曲目平滑切換 (Crossfade)", selection: $settings.crossfadeDurationSeconds) {
+                            Text("關閉 (0 秒)").tag(0.0)
+                            Text("1 秒").tag(1.0)
+                            Text("2 秒 (預設)").tag(2.0)
+                            Text("3 秒").tag(3.0)
+                        }
+                        .disabled(settings.isAutoPauseBetweenSegmentsEnabled)
+
+                        if settings.isAutoPauseBetweenSegmentsEnabled {
+                            Text("啟用「段落結束自動暫停」時，將自動停用 Crossfade")
+                                .font(.caption2)
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                        }
+                    }
 
                     Toggle("課堂進行中螢幕強制常亮", isOn: $settings.keepScreenAwakeInHUD)
                 }
@@ -68,14 +90,44 @@ public struct SettingsBackupView: View {
                     HStack {
                         Text("授權狀態")
                         Spacer()
-                        Text(licenseService.isLicensed ? "有效 (剩餘 \(licenseService.remainingDays) 天)" : "已過期")
+                        Text(licenseService.isLicensed ? "有效 (剩餘 \(licenseService.remainingDays) 天)" : "試用已結束")
                             .foregroundColor(licenseService.isLicensed ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.accentRed)
                     }
 
+                    Button {
+                        isShowingActivationAlert = true
+                    } label: {
+                        Label("輸入授權碼開通 / 啟用 VIP", systemImage: "key.fill")
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .fontWeight(.semibold)
+                    }
+
+                    Button {
+                        isShowingDeviceTransferSheet = true
+                    } label: {
+                        Label("轉移設備授權 (換新機)", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundColor(FitnessRiderTheme.accentOrange)
+                            .fontWeight(.semibold)
+                    }
+
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("設備唯一識別碼 (Device ID)")
-                            .font(.caption)
-                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                        HStack {
+                            Text("設備唯一識別碼 (Device ID)")
+                                .font(.caption)
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = DeviceIdentifierService.shared.deviceFingerprint
+                                isCopiedDeviceId = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    isCopiedDeviceId = false
+                                }
+                            } label: {
+                                Text(isCopiedDeviceId ? "已複製" : "點擊複製")
+                                    .font(.caption2)
+                                    .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            }
+                        }
 
                         Text(DeviceIdentifierService.shared.deviceFingerprint)
                             .font(.system(.caption, design: .monospaced))
@@ -112,6 +164,9 @@ public struct SettingsBackupView: View {
                     ShareActivityView(activityItems: [url])
                 }
             }
+            .sheet(isPresented: $isShowingDeviceTransferSheet) {
+                DeviceTransferSheet()
+            }
             .fileImporter(
                 isPresented: $isShowingRestorePicker,
                 allowedContentTypes: [.data],
@@ -130,6 +185,21 @@ public struct SettingsBackupView: View {
                 Button("確定", role: .cancel) {}
             } message: {
                 Text(alertMessage)
+            }
+            .alert("輸入授權碼開通", isPresented: $isShowingActivationAlert) {
+                TextField("例如: RIDER-VIP-2026-PASS", text: $licenseCodeInput)
+                    .textInputAutocapitalization(.characters)
+                Button("開通") {
+                    let code = licenseCodeInput
+                    Task {
+                        let res = await licenseService.activateCode(code: code)
+                        alertMessage = res.1
+                        isShowingAlert = true
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("請輸入專業版授權序號：")
             }
         }
     }

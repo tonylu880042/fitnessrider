@@ -7,12 +7,17 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -74,6 +79,8 @@ fun WorkoutHUDScreen(
     var isShowingPostureInfo by remember { mutableStateOf(false) }
     var isShowingExitConfirmDialog by remember { mutableStateOf(false) }
     var reminderTick by remember { mutableStateOf(0) }
+    var totalDragX by remember { mutableFloatStateOf(0f) }
+    var totalDragY by remember { mutableFloatStateOf(0f) }
 
     // Intercept hardware/gesture back press to prevent accidental class exit
     BackHandler(enabled = true) {
@@ -169,7 +176,7 @@ fun WorkoutHUDScreen(
             title = "",
             leading = {
                 IconButton(onClick = { isShowingExitConfirmDialog = true }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "退出課堂", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "退出課堂", tint = Color.White)
                 }
                 IconButton(onClick = { isDrawerOpen = !isDrawerOpen }) {
                     Icon(Icons.Default.Menu, contentDescription = "曲目清單", tint = Color.White)
@@ -312,7 +319,31 @@ fun WorkoutHUDScreen(
 
                 // 3-Column Telemetry Row (Hand Position, Giant Gauge, Riding Posture with Elapsed Time on top)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    totalDragX = 0f
+                                    totalDragY = 0f
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    totalDragX += dragAmount.x
+                                    totalDragY += dragAmount.y
+                                },
+                                onDragEnd = {
+                                    // Horizontal swipe: horizontal distance must exceed vertical by 1.5x, threshold 120px
+                                    if (kotlin.math.abs(totalDragX) > kotlin.math.abs(totalDragY) * 1.5f) {
+                                        if (totalDragX < -120f) {
+                                            audioManager.nextSegment()
+                                        } else if (totalDragX > 120f) {
+                                            audioManager.previousSegment()
+                                        }
+                                    }
+                                }
+                            )
+                        },
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -328,7 +359,15 @@ fun WorkoutHUDScreen(
                         strokeWidth = 20.dp,
                         ringColor = currentZoneColor,
                         trackColor = CardBorder,
-                        modifier = Modifier.size(300.dp)
+                        modifier = Modifier
+                            .size(300.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        audioManager.togglePlayPause()
+                                    }
+                                )
+                            }
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Surface(
@@ -544,7 +583,8 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.adjustRatePercent(-2.0) },
                             colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             Text(text = "-2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
@@ -553,7 +593,8 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.resetRate() },
                             colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             Text(text = "100%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
@@ -562,7 +603,8 @@ fun WorkoutHUDScreen(
                             onClick = { audioManager.adjustRatePercent(2.0) },
                             colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             Text(text = "+2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
@@ -600,7 +642,7 @@ fun WorkoutHUDScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.ArrowForward,
+                            Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
                             tint = if (isNextCueWarning) AccentRed else TopBarGreenDark,
                             modifier = Modifier.size(24.dp)

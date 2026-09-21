@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -10,12 +13,21 @@ android {
     namespace = "com.fitnessrider"
     compileSdk = 35
 
+    val versionPropsFile = rootProject.projectDir.parentFile.resolve("version.properties")
+    val versionProps = Properties().apply {
+        if (versionPropsFile.exists()) {
+            FileInputStream(versionPropsFile).use { load(it) }
+        }
+    }
+    val appVersionCode = versionProps.getProperty("VERSION_CODE", "1").trim().toIntOrNull() ?: 1
+    val appVersionName = versionProps.getProperty("VERSION_NAME", "1.0.0").trim()
+
     defaultConfig {
         applicationId = "com.fitnessrider.coach"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         val gitTimestamp = providers.exec {
             commandLine("git", "log", "-1", "--format=%ct")

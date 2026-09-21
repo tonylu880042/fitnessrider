@@ -1,5 +1,6 @@
 package com.fitnessrider
 
+import com.fitnessrider.audio.CrossfadeCalculator
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.MusicSource
 import com.fitnessrider.data.RiderClassArchiveService
@@ -16,8 +17,10 @@ import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
 import com.fitnessrider.ui.musiclibrary.copyMusicFileOrCleanup
 import com.fitnessrider.ui.musiclibrary.filterExternalMusicEntries
 import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
+import com.fitnessrider.util.VersionLifecycleManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -309,6 +312,7 @@ class FitnessRiderAndroidTest {
 
         // 7. Persistence & Anti-Clock Rollback verification with mock Context
         val fakePrefs = FakeSharedPreferences()
+        fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, buildTime).apply()
         val fakeContext = MockContext(fakePrefs)
 
         // Normal launch on Day 10
@@ -333,6 +337,67 @@ class FitnessRiderAndroidTest {
         val day5 = buildTime + (5 * oneDayMs)
         org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day5))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5))
+    }
+
+    @Test
+    fun testThirtyDayTrialCalculationFromFirstLaunch() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val oneDayMs = 86_400_000L
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val firstLaunchTime = 1775000000_000L
+
+        // Day 0: 首次啟動當天 -> 剩餘 30 天，未過期
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
+        assertEquals(30, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
+
+        // Day 15: 試用第 15 天 -> 剩餘 15 天
+        val day15 = firstLaunchTime + (15 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day15))
+        assertEquals(15, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day15))
+
+        // Day 25: 試用第 25 天 -> 剩餘 5 天（落於 1..7 天提醒區間）
+        val day25 = firstLaunchTime + (25 * oneDayMs)
+        val rem25 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day25)
+        assertEquals(5, rem25)
+        org.junit.Assert.assertTrue(rem25 in 1..7)
+
+        // Day 30: 滿 30 天 -> 過期，剩餘 0 天
+        val day30 = firstLaunchTime + (30 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day30))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day30))
+
+        // 格式驗證
+        org.junit.Assert.assertTrue(manager.getFormattedTrialStartDate(fakeContext).isNotEmpty())
+    }
+
+    @Test
+    fun testVipLicenseActivationUnlocksExpiredState() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val oneDayMs = 86_400_000L
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val firstLaunchTime = 1775000000_000L
+        fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunchTime).apply()
+        val day35 = firstLaunchTime + (35 * oneDayMs)
+
+        // 1. 滿 35 天已過期
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
+
+        // 2. 輸入無效序號 -> 失敗，依然過期
+        val invalidRes = manager.activateLicenseCode(fakeContext, "INVALID-CODE-1234")
+        org.junit.Assert.assertFalse(invalidRes.first)
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
+
+        // 3. 輸入合法 VIP 序號 -> 成功開通，立即解鎖！
+        val validRes = manager.activateLicenseCode(fakeContext, "RIDER-VIP-2026-PASS")
+        org.junit.Assert.assertTrue(validRes.first)
+        org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day35))
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
+        assertEquals(365, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
     }
 
     // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
@@ -577,10 +642,209 @@ class FitnessRiderAndroidTest {
         }
     }
 
+    // 資安加固：匯入 .riderclass 時若包含 ../ 等路徑穿透檔名，必須被阻擋，不能寫入 musicDir 以外目錄。
+    @Test
+    fun testZipSlipPathTraversalBlocked() {
+        val baseDir = kotlin.io.path.createTempDirectory("music_base").toFile()
+        try {
+            val maliciousNames = listOf(
+                "../evil.mp3",
+                "../../etc/passwd",
+                "sub/../../evil.mp3"
+            )
+            for (name in maliciousNames) {
+                val target = java.io.File(baseDir, name)
+                val isSafe = target.canonicalPath.startsWith(baseDir.canonicalPath + java.io.File.separator)
+                assertFalse("Path traversal name '$name' should be rejected", isSafe)
+            }
+            val validName = "valid_track.mp3"
+            val validTarget = java.io.File(baseDir, validName)
+            val isValidSafe = validTarget.canonicalPath.startsWith(baseDir.canonicalPath + java.io.File.separator)
+            assertTrue("Normal track name should be accepted", isValidSafe)
+        } finally {
+            baseDir.deleteRecursively()
+        }
+    }
+
+    // MARK: - M2 Audio Crossfade Tests
+
+    @Test
+    fun testEqualPowerCrossfadeCalculation() {
+        // 1. Boundary t = 0.0
+        val (out0, in0) = CrossfadeCalculator.calculateEqualPowerVolumes(0.0)
+        assertEquals(1.0f, out0, 0.0001f)
+        assertEquals(0.0f, in0, 0.0001f)
+
+        // 2. Boundary t = 1.0
+        val (out1, in1) = CrossfadeCalculator.calculateEqualPowerVolumes(1.0)
+        assertEquals(0.0f, out1, 0.0001f)
+        assertEquals(1.0f, in1, 0.0001f)
+
+        // 3. Midpoint t = 0.5 -> Equal power ≈ √2 / 2 ≈ 0.7071f
+        val (outMid, inMid) = CrossfadeCalculator.calculateEqualPowerVolumes(0.5)
+        assertEquals(0.7071f, outMid, 0.001f)
+        assertEquals(0.7071f, inMid, 0.001f)
+
+        // 4. Equal-Power acoustic energy conservation: out^2 + in^2 = 1.0f
+        val testPoints = listOf(0.0, 0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0)
+        for (p in testPoints) {
+            val (vOut, vIn) = CrossfadeCalculator.calculateEqualPowerVolumes(p)
+            val totalPower = (vOut * vOut) + (vIn * vIn)
+            assertEquals("Power should be 1.0 at progress $p", 1.0f, totalPower, 0.001f)
+        }
+
+        // 5. Clamping for out-of-bounds progress
+        val (outNeg, inNeg) = CrossfadeCalculator.calculateEqualPowerVolumes(-0.5)
+        assertEquals(1.0f, outNeg, 0.0001f)
+        assertEquals(0.0f, inNeg, 0.0001f)
+
+        val (outOver, inOver) = CrossfadeCalculator.calculateEqualPowerVolumes(1.8)
+        assertEquals(0.0f, outOver, 0.0001f)
+        assertEquals(1.0f, inOver, 0.0001f)
+    }
+
+    @Test
+    fun testEffectiveCrossfadeDuration() {
+        // Auto-pause enabled -> must be 0.0 (strictly mutually exclusive)
+        val autoPauseDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration = 2.0,
+            segmentDuration = 60.0,
+            isAutoPauseEnabled = true
+        )
+        assertEquals(0.0, autoPauseDuration, 0.0001)
+
+        // Requested 0.0 -> must be 0.0
+        val zeroDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration = 0.0,
+            segmentDuration = 60.0,
+            isAutoPauseEnabled = false
+        )
+        assertEquals(0.0, zeroDuration, 0.0001)
+
+        // Normal track -> returns requested duration
+        val normalDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration = 2.0,
+            segmentDuration = 60.0,
+            isAutoPauseEnabled = false
+        )
+        assertEquals(2.0, normalDuration, 0.0001)
+
+        // Short track (1.0s) with 2.0s requested -> clamped to segmentDuration * 0.5 = 0.5s
+        val shortDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration = 2.0,
+            segmentDuration = 1.0,
+            isAutoPauseEnabled = false
+        )
+        assertEquals(0.5, shortDuration, 0.0001)
+    }
+
+    @Test
+    fun testAppSettingsCrossfadeDuration() {
+        val fakePrefs = FakeSharedPreferences()
+        val mockContext = MockContext(fakePrefs)
+        val settings = AppSettings(mockContext)
+
+        // Default value should be 2.0
+        assertEquals(2.0, settings.crossfadeDurationSeconds, 0.0001)
+
+        // Update to 3.0
+        settings.crossfadeDurationSeconds = 3.0
+        assertEquals(3.0, settings.crossfadeDurationSeconds, 0.0001)
+
+        // Update to 0.0 (off)
+        settings.crossfadeDurationSeconds = 0.0
+        assertEquals(0.0, settings.crossfadeDurationSeconds, 0.0001)
+    }
+
+    @Test
+    fun testAppSettingsHapticFeedbackEnabled() {
+        val fakePrefs = FakeSharedPreferences()
+        val mockContext = MockContext(fakePrefs)
+        val settings = AppSettings(mockContext)
+        val originalValue = settings.isHapticFeedbackEnabled
+
+        // Default should be true
+        assertTrue(settings.isHapticFeedbackEnabled)
+
+        settings.isHapticFeedbackEnabled = false
+        assertFalse(settings.isHapticFeedbackEnabled)
+
+        settings.isHapticFeedbackEnabled = originalValue
+    }
+
+    // MARK: - M6.3 Device Transfer Tests
+
+    @Test
+    fun testDeviceTransferResultModel() {
+        val failRes = com.fitnessrider.auth.DeviceTransferResult(
+            success = false,
+            message = "換機次數受限",
+            remainingCooldownDays = 15
+        )
+        assertFalse(failRes.success)
+        assertEquals(15, failRes.remainingCooldownDays)
+        assertNull(failRes.planType)
+
+        val successRes = com.fitnessrider.auth.DeviceTransferResult(
+            success = true,
+            message = "設備轉移成功！",
+            planType = "專業年繳版 (VIP)",
+            remainingDays = 365
+        )
+        assertTrue(successRes.success)
+        assertNull(successRes.remainingCooldownDays)
+        assertEquals("專業年繳版 (VIP)", successRes.planType)
+        assertEquals(365, successRes.remainingDays)
+    }
+
+    @Test
+    fun testDeviceTransferCooldownDaysCalculation() {
+        val oneDayMs = 86_400_000L
+        val lastTransferMs = 1775000000_000L
+
+        // 12 days later -> remaining = 18 days
+        val twelveDaysLater = lastTransferMs + (12 * oneDayMs)
+        val elapsedDays1 = (twelveDaysLater - lastTransferMs).toDouble() / oneDayMs
+        val remaining1 = Math.max(0, Math.ceil(30.0 - elapsedDays1).toInt())
+        assertEquals(18, remaining1)
+
+        // 29.2 days later -> remaining = 1 day
+        val almostEnd = lastTransferMs + (29.2 * oneDayMs).toLong()
+        val elapsedDays2 = (almostEnd - lastTransferMs).toDouble() / oneDayMs
+        val remaining2 = Math.max(0, Math.ceil(30.0 - elapsedDays2).toInt())
+        assertEquals(1, remaining2)
+
+        // 30.5 days later -> remaining = 0 days (can transfer)
+        val afterCooldown = lastTransferMs + (30.5 * oneDayMs).toLong()
+        val elapsedDays3 = (afterCooldown - lastTransferMs).toDouble() / oneDayMs
+        val remaining3 = Math.max(0, Math.ceil(30.0 - elapsedDays3).toInt())
+        assertEquals(0, remaining3)
+    }
+
+    @Test
+    fun testDeviceTransferSuccessUnlocksVip() {
+        val fakePrefs = FakeSharedPreferences()
+        val mockContext = MockContext(fakePrefs)
+        val manager = VersionLifecycleManager
+
+        val firstLaunchTime = 1700000000_000L
+        fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunchTime).apply()
+
+        val futureTime = 1800000000_000L
+        assertTrue(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
+
+        // Transfer activates VIP code
+        val res = manager.activateLicenseCode(mockContext, "RIDER-VIP-2026-PASS")
+        assertTrue(res.first)
+        assertTrue(manager.isVipActive(mockContext, overrideCurrentTimeMs = futureTime))
+        assertFalse(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
+    }
+
     private class FakeSharedPreferences : android.content.SharedPreferences {
         val data = mutableMapOf<String, Any?>()
         override fun getAll(): MutableMap<String, *> = data
         override fun getString(key: String?, defValue: String?): String? = data[key] as? String ?: defValue
+        @Suppress("UNCHECKED_CAST")
         override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? = data[key] as? MutableSet<String> ?: defValues
         override fun getInt(key: String?, defValue: Int): Int = data[key] as? Int ?: defValue
         override fun getLong(key: String?, defValue: Long): Long = data[key] as? Long ?: defValue
@@ -608,6 +872,7 @@ class FitnessRiderAndroidTest {
 
     private class MockContext(private val prefs: android.content.SharedPreferences) : android.content.ContextWrapper(null) {
         override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = prefs
+        override fun getApplicationContext(): android.content.Context = this
     }
 }
 

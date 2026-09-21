@@ -58,10 +58,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             FitnessRiderTheme {
-                val isExpired = remember { VersionLifecycleManager.isExpired(this@MainActivity) }
+                var isExpired by remember { mutableStateOf(VersionLifecycleManager.isExpired(this@MainActivity)) }
 
                 if (isExpired) {
-                    VersionExpiredScreen()
+                    VersionExpiredScreen(
+                        onUnlocked = { isExpired = false }
+                    )
                 } else {
                     val classes by repository.getAllClassesFlow().collectAsState(initial = emptyList())
 

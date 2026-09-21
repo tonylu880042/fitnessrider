@@ -43,17 +43,17 @@ public struct ClassListView: View {
                 )
 
                 // Advance expiration warning banner (1 <= remainingDays <= 7)
-                if !isWarningDismissed && remainingDays >= 1 && remainingDays <= 7 {
+                if !isWarningDismissed && !VersionLifecycleManager.shared.isVIP && remainingDays >= 1 && remainingDays <= 7 {
                     HStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02))
                             .font(.system(size: 20))
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("版本即將到期提醒")
+                            Text("試用即將到期提醒")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02))
-                            Text("目前測試版本將於 \(remainingDays) 天後到期。請提前更新以避免影響上課。")
+                            Text("目前全功能免費試用將於 \(remainingDays) 天後到期。可前往設定輸入授權碼啟用專業版。")
                                 .font(.system(size: 12))
                                 .foregroundColor(Color(red: 0.52, green: 0.39, blue: 0.02).opacity(0.85))
                         }

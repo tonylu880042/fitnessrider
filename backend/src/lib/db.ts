@@ -160,6 +160,60 @@ export const db = {
     }
   },
 
+  async getDeviceByFingerprint(fingerprint: string): Promise<Device | null> {
+    if (pgPool) {
+      await initPgTables();
+      const res = await pgPool.query('SELECT * FROM devices WHERE device_fingerprint = $1 LIMIT 1', [fingerprint]);
+      return res.rows[0] || null;
+    } else {
+      const data = ensureLocalDb();
+      return data.devices.find(d => d.device_fingerprint === fingerprint) || null;
+    }
+  },
+
+  async activateLicenseWithCode(deviceFingerprint: string, code: string): Promise<{ success: boolean; error?: string; license?: License }> {
+    const validCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
+    const isValid = validCodes.includes(code) || (code.startsWith('RIDER-VIP-') && code.length >= 14);
+    if (!isValid) {
+      return { success: false, error: '無效的授權碼' };
+    }
+
+    let dev = await this.getDeviceByFingerprint(deviceFingerprint);
+    let userId = dev?.user_id;
+
+    if (!userId) {
+      const crypto = await import('crypto');
+      userId = crypto.randomUUID();
+      await this.createUser({
+        id: userId,
+        email: `coach_${deviceFingerprint.slice(0, 8)}@fitnessrider.local`,
+        password_hash: 'local_license_auth',
+        name: '飛輪教練',
+      });
+      dev = await this.bindDevice({
+        id: crypto.randomUUID(),
+        user_id: userId,
+        device_fingerprint: deviceFingerprint,
+        platform: 'ios',
+        device_model: 'Coach Device',
+      });
+    }
+
+    const oneYear = 365 * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + oneYear).toISOString();
+    const crypto = await import('crypto');
+    const license = await this.setLicense({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      plan_type: 'yearly',
+      expires_at: expiresAt,
+      status: 'active',
+      revenuecat_entitlement_id: code,
+    });
+
+    return { success: true, license };
+  },
+
   async bindDevice(device: {
     id: string;
     user_id: string;
@@ -228,6 +282,17 @@ export const db = {
     } else {
       const data = ensureLocalDb();
       return data.licenses.find(l => l.user_id === userId) || null;
+    }
+  },
+
+  async getLicenseByCode(code: string): Promise<License | null> {
+    if (pgPool) {
+      await initPgTables();
+      const res = await pgPool.query('SELECT * FROM licenses WHERE revenuecat_entitlement_id = $1 LIMIT 1', [code]);
+      return res.rows[0] || null;
+    } else {
+      const data = ensureLocalDb();
+      return data.licenses.find(l => l.revenuecat_entitlement_id === code) || null;
     }
   },
 

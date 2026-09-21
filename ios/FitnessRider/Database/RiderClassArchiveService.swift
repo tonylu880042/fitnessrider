@@ -64,9 +64,13 @@ public final class RiderClassArchiveService: Sendable {
         decoder.dateDecodingStrategy = .iso8601
         let workoutClass = try decoder.decode(WorkoutClass.self, from: jsonFile.data)
 
-        // 2. Save Audio Files to App Music Directory
+        // 2. Save Audio Files to App Music Directory (with Zip Slip path traversal protection)
+        let standardizedMusicPath = musicDir.standardizedFileURL.path
         for file in extractedFiles where file.name != "workout_class.json" {
-            let destAudioURL = musicDir.appendingPathComponent(file.name)
+            let destAudioURL = musicDir.appendingPathComponent(file.name).standardizedFileURL
+            guard destAudioURL.path.hasPrefix(standardizedMusicPath + "/") else {
+                continue
+            }
             // Don't overwrite if existing
             if !FileManager.default.fileExists(atPath: destAudioURL.path) {
                 try? file.data.write(to: destAudioURL)

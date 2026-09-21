@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsBike
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,8 +63,8 @@ fun ClassListScreen(
             }
         )
 
-        // Advance expiration warning banner (shows when 1 <= remainingDays <= 7)
-        if (!isWarningDismissed && remainingDays in 1..7) {
+        // Advance expiration warning banner (shows when 1 <= remainingDays <= 7 and not VIP)
+        if (!isWarningDismissed && !VersionLifecycleManager.isVipActive(context) && remainingDays in 1..7) {
             Surface(
                 color = Color(0xFFFFF3CD),
                 shape = RoundedCornerShape(8.dp),
@@ -87,13 +88,13 @@ fun ClassListScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "版本即將到期提醒",
+                            text = "試用即將到期提醒",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF856404)
                         )
                         Text(
-                            text = "目前測試版本將於 ${remainingDays} 天後到期。請提前更新以避免影響上課。",
+                            text = "目前全功能免費試用將於 ${remainingDays} 天後到期。可前往設定輸入授權碼啟用專業版。",
                             fontSize = 12.sp,
                             color = Color(0xFF856404).copy(alpha = 0.85f)
                         )
@@ -137,7 +138,7 @@ fun ClassListScreen(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.Default.DirectionsBike,
+                        Icons.AutoMirrored.Filled.DirectionsBike,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = TopBarGreen
@@ -231,7 +232,7 @@ private fun ClassCard(
             }
         }
 
-        Divider(color = CardBorder)
+        HorizontalDivider(color = CardBorder)
 
         // Lower Card (Actions & Segments Preview)
         Row(
@@ -272,7 +273,7 @@ private fun ClassCard(
                 onClick = onEditClick,
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TopBarGreenDark),
-                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(TopBarGreenDark)),
+                border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(brush = androidx.compose.ui.graphics.SolidColor(TopBarGreenDark)),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))

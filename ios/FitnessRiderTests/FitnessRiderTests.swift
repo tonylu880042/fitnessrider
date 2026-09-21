@@ -684,5 +684,259 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertFalse(manager.expirationDateFormatted.isEmpty)
         XCTAssertTrue(VersionLifecycleManager.updateURL.absoluteString.hasPrefix("https://"))
     }
+
+    // 30 天全功能免費試用（設備首次啟動日基準）測試
+    func testThirtyDayTrialCalculationFromFirstLaunch() {
+        let launchDate = Date(timeIntervalSince1970: 1775000000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "TrialTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        // Day 0: 首次啟動當天 -> 剩餘 30 天，未過期
+        XCTAssertFalse(manager.isExpired(currentTime: launchDate, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: launchDate, defaults: testDefaults), 30)
+
+        // Day 15: 試用第 15 天 -> 剩餘 15 天
+        let day15 = launchDate.addingTimeInterval(15 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day15, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day15, defaults: testDefaults), 15)
+
+        // Day 25: 試用第 25 天 -> 剩餘 5 天（落於 1..7 天到期警告區間）
+        let day25 = launchDate.addingTimeInterval(25 * oneDay)
+        let rem25 = manager.remainingDays(currentTime: day25, defaults: testDefaults)
+        XCTAssertEqual(rem25, 5)
+        XCTAssertTrue((1...7).contains(rem25))
+
+        // Day 30: 滿 30 天 -> 過期，剩餘 0 天
+        let day30 = launchDate.addingTimeInterval(30 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day30, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day30, defaults: testDefaults), 0)
+
+        // 格式驗證
+        XCTAssertFalse(manager.trialStartDateFormatted.isEmpty)
+        XCTAssertEqual(manager.expirationDate.timeIntervalSince(launchDate), 30.0 * 86400.0, accuracy: 0.001)
+    }
+
+    // VIP 授權碼開通與過期狀態解鎖測試
+    func testVipLicenseCodeActivationUnlocksExpiredState() {
+        let launchDate = Date(timeIntervalSince1970: 1775000000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "VipTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        // 1. 滿 35 天已過期
+        let day35 = launchDate.addingTimeInterval(35 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
+
+        // 2. 輸入無效序號 -> 失敗，維持過期
+        let invalidRes = manager.activateLicenseCode("INVALID-KEY-1234", defaults: testDefaults)
+        XCTAssertFalse(invalidRes.success)
+        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
+
+        // 3. 輸入合法 VIP 序號 -> 成功，立即解鎖！
+        let validRes = manager.activateLicenseCode("RIDER-VIP-2026-PASS", defaults: testDefaults)
+        XCTAssertTrue(validRes.success)
+        XCTAssertTrue(manager.evaluateVipStatus(currentTime: day35, defaults: testDefaults))
+        XCTAssertFalse(manager.isExpired(currentTime: day35, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day35, defaults: testDefaults), 365)
+    }
+
+    // Keychain 存取方法測試
+    func testDeviceIdentifierServiceKeychainAccessors() {
+        let service = DeviceIdentifierService.shared
+        let testKey = "app.fitnessrider.unit_test_key"
+        let testVal = "test_value_\(UUID().uuidString)"
+
+        service.setKeychainString(key: testKey, value: testVal)
+        XCTAssertEqual(service.getKeychainString(key: testKey), testVal)
+
+        service.deleteKeychainString(key: testKey)
+        XCTAssertNil(service.getKeychainString(key: testKey))
+    }
+
+    // 資安加固：匯入 .riderclass 時若包含 ../ 等路徑穿透檔名，必須被阻擋，不能寫入 musicDirectory 以外目錄。
+    func testZipSlipPathTraversalBlocked() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let baseStandardized = tempDir.standardizedFileURL.path
+        let maliciousNames = [
+            "../evil.mp3",
+            "../../etc/passwd",
+            "sub/../../evil.mp3"
+        ]
+        for name in maliciousNames {
+            let destURL = tempDir.appendingPathComponent(name).standardizedFileURL
+            let isSafe = destURL.path.hasPrefix(baseStandardized + "/")
+            XCTAssertFalse(isSafe, "Path traversal name '\(name)' should be rejected")
+        }
+
+        let validURL = tempDir.appendingPathComponent("normal_track.mp3").standardizedFileURL
+        XCTAssertTrue(validURL.path.hasPrefix(baseStandardized + "/"))
+    }
+
+    // MARK: - M2 Audio Crossfade Tests
+
+    func testEqualPowerCrossfadeCalculation() {
+        // 1. Boundary t = 0.0
+        let (out0, in0) = CrossfadeCalculator.equalPowerVolumes(progress: 0.0)
+        XCTAssertEqual(out0, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(in0, 0.0, accuracy: 0.0001)
+
+        // 2. Boundary t = 1.0
+        let (out1, in1) = CrossfadeCalculator.equalPowerVolumes(progress: 1.0)
+        XCTAssertEqual(out1, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(in1, 1.0, accuracy: 0.0001)
+
+        // 3. Midpoint t = 0.5 -> Equal power ≈ √2 / 2 ≈ 0.7071
+        let (outMid, inMid) = CrossfadeCalculator.equalPowerVolumes(progress: 0.5)
+        XCTAssertEqual(outMid, 0.7071, accuracy: 0.001)
+        XCTAssertEqual(inMid, 0.7071, accuracy: 0.001)
+
+        // 4. Equal-Power acoustic energy conservation: out^2 + in^2 = 1.0
+        let testPoints = [0.0, 0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0]
+        for p in testPoints {
+            let (vOut, vIn) = CrossfadeCalculator.equalPowerVolumes(progress: p)
+            let totalPower = (vOut * vOut) + (vIn * vIn)
+            XCTAssertEqual(totalPower, 1.0, accuracy: 0.001, "Power should be 1.0 at progress \(p)")
+        }
+
+        // 5. Clamping for out-of-bounds progress
+        let (outNeg, inNeg) = CrossfadeCalculator.equalPowerVolumes(progress: -0.5)
+        XCTAssertEqual(outNeg, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(inNeg, 0.0, accuracy: 0.0001)
+
+        let (outOver, inOver) = CrossfadeCalculator.equalPowerVolumes(progress: 1.8)
+        XCTAssertEqual(outOver, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(inOver, 1.0, accuracy: 0.0001)
+    }
+
+    func testEffectiveCrossfadeDuration() {
+        // Auto-pause enabled -> must be 0.0 (strictly mutually exclusive)
+        let autoPauseDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration: 2.0,
+            segmentDuration: 60.0,
+            isAutoPauseEnabled: true
+        )
+        XCTAssertEqual(autoPauseDuration, 0.0)
+
+        // Requested 0.0 -> must be 0.0
+        let zeroDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration: 0.0,
+            segmentDuration: 60.0,
+            isAutoPauseEnabled: false
+        )
+        XCTAssertEqual(zeroDuration, 0.0)
+
+        // Normal track -> returns requested duration
+        let normalDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration: 2.0,
+            segmentDuration: 60.0,
+            isAutoPauseEnabled: false
+        )
+        XCTAssertEqual(normalDuration, 2.0)
+
+        // Short track (1.0s) with 2.0s requested -> clamped to segmentDuration * 0.5 = 0.5s
+        let shortDuration = CrossfadeCalculator.effectiveDuration(
+            requestedDuration: 2.0,
+            segmentDuration: 1.0,
+            isAutoPauseEnabled: false
+        )
+        XCTAssertEqual(shortDuration, 0.5)
+    }
+
+    @MainActor
+    func testAppSettingsCrossfadeDuration() {
+        let settings = AppSettings.shared
+        let originalValue = settings.crossfadeDurationSeconds
+
+        // Set to 3.0s
+        settings.crossfadeDurationSeconds = 3.0
+        XCTAssertEqual(settings.crossfadeDurationSeconds, 3.0)
+
+        // Set to 0.0s (off)
+        settings.crossfadeDurationSeconds = 0.0
+        XCTAssertEqual(settings.crossfadeDurationSeconds, 0.0)
+
+        // Restore original
+        settings.crossfadeDurationSeconds = originalValue
+    }
+
+    @MainActor
+    func testAppSettingsHapticFeedbackEnabled() {
+        let settings = AppSettings.shared
+        let originalValue = settings.isHapticFeedbackEnabled
+
+        settings.isHapticFeedbackEnabled = false
+        XCTAssertFalse(settings.isHapticFeedbackEnabled)
+
+        settings.isHapticFeedbackEnabled = true
+        XCTAssertTrue(settings.isHapticFeedbackEnabled)
+
+        settings.isHapticFeedbackEnabled = originalValue
+    }
+
+    // MARK: - M6.3 Device Transfer Tests
+
+    func testDeviceTransferResultModel() {
+        let failureRes = DeviceTransferResult(
+            success: false,
+            message: "換機次數受限",
+            remainingCooldownDays: 14
+        )
+        XCTAssertFalse(failureRes.success)
+        XCTAssertEqual(failureRes.remainingCooldownDays, 14)
+        XCTAssertNil(failureRes.planType)
+
+        let successRes = DeviceTransferResult(
+            success: true,
+            message: "設備轉移成功",
+            planType: "專業年繳版 (VIP)",
+            remainingDays: 365
+        )
+        XCTAssertTrue(successRes.success)
+        XCTAssertNil(successRes.remainingCooldownDays)
+        XCTAssertEqual(successRes.planType, "專業年繳版 (VIP)")
+        XCTAssertEqual(successRes.remainingDays, 365)
+    }
+
+    func testDeviceTransferCooldownDaysCalculation() {
+        let oneDay: TimeInterval = 86400
+        let lastTransfer = Date(timeIntervalSince1970: 1775000000)
+
+        // 10 days later -> elapsed = 10 -> remaining = 20
+        let tenDaysLater = lastTransfer.addingTimeInterval(10 * oneDay)
+        let elapsed1 = tenDaysLater.timeIntervalSince(lastTransfer) / oneDay
+        let remaining1 = max(0, Int(ceil(30.0 - elapsed1)))
+        XCTAssertEqual(remaining1, 20)
+
+        // 29.5 days later -> remaining = 1
+        let almostEnd = lastTransfer.addingTimeInterval(29.5 * oneDay)
+        let elapsed2 = almostEnd.timeIntervalSince(lastTransfer) / oneDay
+        let remaining2 = max(0, Int(ceil(30.0 - elapsed2)))
+        XCTAssertEqual(remaining2, 1)
+
+        // 30.1 days later -> remaining = 0 (can transfer)
+        let expiredCooldown = lastTransfer.addingTimeInterval(30.1 * oneDay)
+        let elapsed3 = expiredCooldown.timeIntervalSince(lastTransfer) / oneDay
+        let remaining3 = max(0, Int(ceil(30.0 - elapsed3)))
+        XCTAssertEqual(remaining3, 0)
+    }
+
+    func testDeviceTransferUnlocksLocalVip() {
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: Date(timeIntervalSince1970: 1700000000))
+        let testDefaults = UserDefaults(suiteName: "TransferTestDefaults_\(UUID().uuidString)")!
+
+        // Initially expired
+        let future = Date(timeIntervalSince1970: 1800000000)
+        XCTAssertTrue(manager.isExpired(currentTime: future, defaults: testDefaults))
+
+        // Transfer activates VIP code
+        let result = manager.activateLicenseCode("RIDER-VIP-2026-PASS", defaults: testDefaults)
+        XCTAssertTrue(result.success)
+        XCTAssertFalse(manager.isExpired(currentTime: future, defaults: testDefaults))
+        XCTAssertTrue(manager.evaluateVipStatus(currentTime: future, defaults: testDefaults))
+    }
 }
 

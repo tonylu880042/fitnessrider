@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
       device_model: device_model || 'Unknown Device',
     });
 
-    // 3. 發放 7 天免費 VIP 試用授權
-    const trialDays = 7;
+    // 3. 發放 30 天全功能免費試用授權
+    const trialDays = 30;
     const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
     const license = await db.setLicense({
       id: crypto.randomUUID(),

@@ -17,9 +17,10 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - 刻意的簡化用 `ponytail:` 註解標註，並寫明上限與升級路徑。
 - 不要為了「以後可能需要」而加抽象層、介面、設定項。最短可行的 diff 優先。
 
-## 已知落差（尚未排程）
+## 已知落差（已修復對齊）
 
-- **iOS 編輯器的段落試聽沒有聲音。** `ClassEditorView.startPreview` 只是個推進播放頭的 `Timer`，整個檔案沒有任何播放器；Android 同一個位置用的是真的 ExoPlayer。兩平台體驗不對等，但不在三層計畫範圍內，尚未決定要不要修。
+- **iOS 編輯器的段落試聽（已對齊）**：`ClassEditorView.startPreview` 已全面引入 `AVAudioPlayer` 真實放音，支援變速不變調、即時波形 Scrubbing 與結束自動重置，與 Android 的 `ExoPlayer` 達成完全功能對等。
+- **雙平台曲目切換平滑轉場 (Crossfade)（已對齊）**：雙端均採用雙軌／雙 Deck 架構（iOS `AVAudioEngine` 雙 `AudioDeck`；Android 雙 `ExoPlayer`），實現 1~3 秒等能量（Equal-Power: $\cos$ fade-out, $\sin$ fade-in）平滑交錯淡入淡出，並與「段落結束自動暫停 (Auto-Pause)」嚴格互斥，雙端設定提供 0s / 1s / 2s / 3s 設定。
 
 ## 產品決策（不要當成 bug 修掉）
 

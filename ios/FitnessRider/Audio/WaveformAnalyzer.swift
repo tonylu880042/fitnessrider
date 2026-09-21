@@ -6,7 +6,7 @@ public final class WaveformAnalyzer: Sendable {
 
     private init() {}
 
-    public func analyzeWaveform(for fileName: String, completion: @escaping @Sendable ([Float], Int, Double) -> Void) {
+    public func analyzeWaveform(for fileName: String, completion: @escaping @MainActor @Sendable ([Float], Int, Double) -> Void) {
         // 1. Check SQLite Cache（本地檔名、Layer 3 外部資料夾的 "extfolder://" 字串都用同一張
         //    快取表，fileName 本身就是 key，不需要另外的快取結構）
         if let cached = ClassRepository.shared.fetchWaveform(for: fileName) {

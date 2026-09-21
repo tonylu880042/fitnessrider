@@ -8,27 +8,27 @@
 
 /* Begin PBXBuildFile section */
 		06ECF1E137422CA156B2055C /* FitnessRiderTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BB44E3E41EE897521C65E7 /* FitnessRiderTheme.swift */; };
+		0F9F9158EE392A8CE334B2EC /* VersionLifecycleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56CFED0F3443C4AA32CD713 /* VersionLifecycleManager.swift */; };
+		11D9D263BDEE1690DDBAC4D3 /* VersionExpiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63DA88175A690F978D9455C /* VersionExpiredView.swift */; };
 		13FDC3990E6FE0C5A739D0B8 /* HandPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5B98767E33F68C6567AB2C /* HandPosition.swift */; };
 		156087771BD525DE33AE0AEB /* ClassRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */; };
 		17CC464CD4CA188178C4BA58 /* WorkoutHUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A0A7B142FA00B0B33D36 /* WorkoutHUDView.swift */; };
 		2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */; };
+		46388FA037A4438155652F8B /* ExternalMusicFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B4A3FA576F862F60998BAE /* ExternalMusicFolderStore.swift */; };
 		52FB471677D3FFFB4E4A3F52 /* SQLiteBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE803BA7F2F5F2C4055C80FC /* SQLiteBackupService.swift */; };
+		55A21C3D13D77679FF833741 /* DeviceTransferSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E8EDB25C80101BFF55684F /* DeviceTransferSheet.swift */; };
 		58507492178C6A241A6F23AE /* WorkoutCue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E959DCF787BBF19BA2073 /* WorkoutCue.swift */; };
 		606BAA5DC9CA94875F25E76D /* WaveformCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FC2FA700C3366446B089691 /* WaveformCanvasView.swift */; };
 		69561E525B9B8C0EA8FBB3DC /* AudioEngineManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D24707BF5F2B200C158031 /* AudioEngineManager.swift */; };
 		6CD9FDD0F354BD1807D4DD51 /* WorkoutSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B3E06E385637055E106E37 /* WorkoutSegment.swift */; };
+		7157B3699498D4D743AA18E2 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */; };
 		71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4236271B7A4EFA9C32B4B507 /* LicenseVerificationService.swift */; };
 		7BC7B878861A3FD7903474F2 /* FitnessRiderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD9DF65222DF574532D752 /* FitnessRiderTests.swift */; };
 		80455490167853B04B9D9475 /* HandPositionBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */; };
 		87AA2AD36743DDEB17611BFD /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92BD3C95326013660D39116 /* AppSettings.swift */; };
 		8B6B2D4655E2CD3A9CE2A60A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */; };
+		8D318FAD9B22DB312A6B028F /* BpmCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AC8E6581031DCFCC9E888A /* BpmCalibrationSheet.swift */; };
 		95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */; };
-		EFC69C72BE8131A34FFB229E /* MusicSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C477539DC25328EF22472324 /* MusicSource.swift */; };
-		EA7F56FDEFC1F82D6708B306 /* ExternalMusicFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */; };
-		E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100022C9B800100000001 /* TapTempoDetector.swift */; };
-		E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */; };
-		E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A100022C9B800100000001 /* VersionLifecycleManager.swift */; };
-		E5A100032C9B800100000002 /* VersionExpiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A100042C9B800100000002 /* VersionExpiredView.swift */; };
 		9648C09D13608505B0145810 /* FitnessRiderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */; };
 		999093BC9A827D1AB76E8B3D /* SegmentProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */; };
 		9D8E9CF48C4551175D4FE682 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B9540016F25DEC18089446E0 /* libsqlite3.tbd */; };
@@ -37,10 +37,11 @@
 		ABF3B9382E46FC1DDB1F699F /* ClassListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E05D9C6A9E8B3BD4FF02C1A /* ClassListView.swift */; };
 		AC5F464F895A6D039612C850 /* RiderClassArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */; };
 		B581E14F29765830BFA19D6B /* SQLiteDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */; };
+		B704D086609C03463C22B955 /* MusicSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B5C651FDE0ADBE3FFB5279 /* MusicSource.swift */; };
 		D464988C98A08DA31CA814EC /* DeviceIdentifierService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FB4C94AA0CAB3CE75206759 /* DeviceIdentifierService.swift */; };
+		D62CDA980EA2491E94FBE6E0 /* MusicLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD81D494166DC965E76E48A /* MusicLibraryView.swift */; };
 		DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */; };
 		EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */; };
-		9200583031C87E49120B5F09 /* MusicLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */; };
 		ECEADC544C061140A1D17C54 /* CircleProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */; };
 		F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */; };
 		F4A47D9E5A3913DEE93C69D7 /* CueAudioBeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */; };
@@ -66,33 +67,34 @@
 		223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiderClassArchiveService.swift; sourceTree = "<group>"; };
 		239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachingReminderLibrary.swift; sourceTree = "<group>"; };
 		2620A0A7B142FA00B0B33D36 /* WorkoutHUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHUDView.swift; sourceTree = "<group>"; };
+		32B5C651FDE0ADBE3FFB5279 /* MusicSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicSource.swift; sourceTree = "<group>"; };
 		3FC2FA700C3366446B089691 /* WaveformCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformCanvasView.swift; sourceTree = "<group>"; };
 		41C496CD142CD5C9C768992E /* FitnessRider.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FitnessRider.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4236271B7A4EFA9C32B4B507 /* LicenseVerificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseVerificationService.swift; sourceTree = "<group>"; };
 		44D24707BF5F2B200C158031 /* AudioEngineManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineManager.swift; sourceTree = "<group>"; };
 		46B3E06E385637055E106E37 /* WorkoutSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSegment.swift; sourceTree = "<group>"; };
+		47B4A3FA576F862F60998BAE /* ExternalMusicFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalMusicFolderStore.swift; sourceTree = "<group>"; };
 		4FB4C94AA0CAB3CE75206759 /* DeviceIdentifierService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentifierService.swift; sourceTree = "<group>"; };
 		5212617614AF55277248379B /* WorkoutClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutClass.swift; sourceTree = "<group>"; };
+		52E8EDB25C80101BFF55684F /* DeviceTransferSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTransferSheet.swift; sourceTree = "<group>"; };
+		53AC8E6581031DCFCC9E888A /* BpmCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BpmCalibrationSheet.swift; sourceTree = "<group>"; };
 		5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBackupView.swift; sourceTree = "<group>"; };
 		743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueAudioBeepPlayer.swift; sourceTree = "<group>"; };
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
-		C477539DC25328EF22472324 /* MusicSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicSource.swift; sourceTree = "<group>"; };
-		C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalMusicFolderStore.swift; sourceTree = "<group>"; };
-		E4A100022C9B800100000001 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
-		E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BpmCalibrationSheet.swift; sourceTree = "<group>"; };
-		E5A100022C9B800100000001 /* VersionLifecycleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionLifecycleManager.swift; sourceTree = "<group>"; };
-		E5A100042C9B800100000002 /* VersionExpiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionExpiredView.swift; sourceTree = "<group>"; };
 		7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassRepository.swift; sourceTree = "<group>"; };
+		7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
 		8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentProgressBar.swift; sourceTree = "<group>"; };
 		98018669BA114F7F3866B19A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		998E959DCF787BBF19BA2073 /* WorkoutCue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCue.swift; sourceTree = "<group>"; };
+		A56CFED0F3443C4AA32CD713 /* VersionLifecycleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionLifecycleManager.swift; sourceTree = "<group>"; };
+		A63DA88175A690F978D9455C /* VersionExpiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionExpiredView.swift; sourceTree = "<group>"; };
 		B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassEditorView.swift; sourceTree = "<group>"; };
-		1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryView.swift; sourceTree = "<group>"; };
 		B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleProgressBar.swift; sourceTree = "<group>"; };
 		B9540016F25DEC18089446E0 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueEditorSheet.swift; sourceTree = "<group>"; };
 		CB5B98767E33F68C6567AB2C /* HandPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandPosition.swift; sourceTree = "<group>"; };
+		CCD81D494166DC965E76E48A /* MusicLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryView.swift; sourceTree = "<group>"; };
 		D05784222ADE0045CB15594E /* FitnessRiderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FitnessRiderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopNavBar.swift; sourceTree = "<group>"; };
 		E92BD3C95326013660D39116 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -146,10 +148,10 @@
 			isa = PBXGroup;
 			children = (
 				7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */,
+				47B4A3FA576F862F60998BAE /* ExternalMusicFolderStore.swift */,
 				223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */,
 				FE803BA7F2F5F2C4055C80FC /* SQLiteBackupService.swift */,
 				041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */,
-				C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */,
 			);
 			path = Database;
 			sourceTree = "<group>";
@@ -159,8 +161,8 @@
 			children = (
 				F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */,
 				21BB44E3E41EE897521C65E7 /* FitnessRiderTheme.swift */,
-				E5A100022C9B800100000001 /* VersionLifecycleManager.swift */,
-				E5A100042C9B800100000002 /* VersionExpiredView.swift */,
+				A63DA88175A690F978D9455C /* VersionExpiredView.swift */,
+				A56CFED0F3443C4AA32CD713 /* VersionLifecycleManager.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -199,10 +201,10 @@
 		78FEBD9D6986335924BA7905 /* ClassEditor */ = {
 			isa = PBXGroup;
 			children = (
+				53AC8E6581031DCFCC9E888A /* BpmCalibrationSheet.swift */,
 				B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */,
-				1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */,
 				CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */,
-				E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */,
+				CCD81D494166DC965E76E48A /* MusicLibraryView.swift */,
 			);
 			path = ClassEditor;
 			sourceTree = "<group>";
@@ -264,9 +266,9 @@
 			children = (
 				44D24707BF5F2B200C158031 /* AudioEngineManager.swift */,
 				743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */,
+				32B5C651FDE0ADBE3FFB5279 /* MusicSource.swift */,
+				7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */,
 				754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */,
-				E4A100022C9B800100000001 /* TapTempoDetector.swift */,
-				C477539DC25328EF22472324 /* MusicSource.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -274,6 +276,7 @@
 		D3B6CD31CA67792501095328 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				52E8EDB25C80101BFF55684F /* DeviceTransferSheet.swift */,
 				61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */,
 			);
 			path = Settings;
@@ -385,34 +388,35 @@
 			files = (
 				87AA2AD36743DDEB17611BFD /* AppSettings.swift in Sources */,
 				69561E525B9B8C0EA8FBB3DC /* AudioEngineManager.swift in Sources */,
+				8D318FAD9B22DB312A6B028F /* BpmCalibrationSheet.swift in Sources */,
 				ECEADC544C061140A1D17C54 /* CircleProgressBar.swift in Sources */,
 				EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */,
-				9200583031C87E49120B5F09 /* MusicLibraryView.swift in Sources */,
 				ABF3B9382E46FC1DDB1F699F /* ClassListView.swift in Sources */,
 				156087771BD525DE33AE0AEB /* ClassRepository.swift in Sources */,
 				DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */,
 				F4A47D9E5A3913DEE93C69D7 /* CueAudioBeepPlayer.swift in Sources */,
 				F625B8B33957A4FADE25A1F0 /* CueEditorSheet.swift in Sources */,
 				D464988C98A08DA31CA814EC /* DeviceIdentifierService.swift in Sources */,
+				55A21C3D13D77679FF833741 /* DeviceTransferSheet.swift in Sources */,
+				46388FA037A4438155652F8B /* ExternalMusicFolderStore.swift in Sources */,
 				9648C09D13608505B0145810 /* FitnessRiderApp.swift in Sources */,
 				06ECF1E137422CA156B2055C /* FitnessRiderTheme.swift in Sources */,
 				13FDC3990E6FE0C5A739D0B8 /* HandPosition.swift in Sources */,
 				80455490167853B04B9D9475 /* HandPositionBadge.swift in Sources */,
 				71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */,
+				D62CDA980EA2491E94FBE6E0 /* MusicLibraryView.swift in Sources */,
+				B704D086609C03463C22B955 /* MusicSource.swift in Sources */,
 				A2A878EF73458BFC8E24215E /* PostureType.swift in Sources */,
 				AC5F464F895A6D039612C850 /* RiderClassArchiveService.swift in Sources */,
 				52FB471677D3FFFB4E4A3F52 /* SQLiteBackupService.swift in Sources */,
 				B581E14F29765830BFA19D6B /* SQLiteDatabase.swift in Sources */,
 				999093BC9A827D1AB76E8B3D /* SegmentProgressBar.swift in Sources */,
 				2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */,
+				7157B3699498D4D743AA18E2 /* TapTempoDetector.swift in Sources */,
 				F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */,
+				11D9D263BDEE1690DDBAC4D3 /* VersionExpiredView.swift in Sources */,
+				0F9F9158EE392A8CE334B2EC /* VersionLifecycleManager.swift in Sources */,
 				95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */,
-				EFC69C72BE8131A34FFB229E /* MusicSource.swift in Sources */,
-				EA7F56FDEFC1F82D6708B306 /* ExternalMusicFolderStore.swift in Sources */,
-				E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */,
-				E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */,
-				E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */,
-				E5A100032C9B800100000002 /* VersionExpiredView.swift in Sources */,
 				606BAA5DC9CA94875F25E76D /* WaveformCanvasView.swift in Sources */,
 				A92AF27FC144C57548EEDE72 /* WorkoutClass.swift in Sources */,
 				58507492178C6A241A6F23AE /* WorkoutCue.swift in Sources */,
@@ -466,7 +470,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -480,7 +484,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -560,7 +564,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -580,7 +584,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
