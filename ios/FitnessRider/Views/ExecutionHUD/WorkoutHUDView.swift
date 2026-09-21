@@ -9,6 +9,10 @@ public struct WorkoutHUDView: View {
 
     @State private var isShowingExitAlert: Bool = false
     @State private var isPlaylistDrawerOpen: Bool = true
+    @State private var isShowingPostureInfoSheet: Bool = false
+    @State private var reminderRotationTick: Int = 0
+
+    private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
     public init(workoutClass: WorkoutClass) {
         self.workoutClass = workoutClass
@@ -28,6 +32,29 @@ public struct WorkoutHUDView: View {
         guard let segment = activeSegment else { return nil }
         let currentMs = Int(audioManager.currentOffsetSeconds * 1000)
         return segment.cues.first(where: { $0.offsetMs > currentMs })
+    }
+
+    private var resistanceDelta: (text: String, isUp: Bool)? {
+        guard let current = activeCue, let segment = activeSegment else { return nil }
+        guard let currentIndex = segment.cues.firstIndex(where: { $0.id == current.id }), currentIndex > 0 else { return nil }
+        let prev = segment.cues[currentIndex - 1]
+        let currNum = Int(current.resistanceLevel.filter { $0.isNumber }) ?? 0
+        let prevNum = Int(prev.resistanceLevel.filter { $0.isNumber }) ?? 0
+        if currNum > prevNum {
+            return ("▲ 阻力加重 (+1)", true)
+        } else if currNum < prevNum {
+            return ("▼ 阻力減輕 (-1)", false)
+        }
+        return nil
+    }
+
+    private var currentCoachingPrompt: String {
+        guard let cue = activeCue else { return "專注踩踏，維持穩定節拍" }
+        if !cue.reminders.isEmpty {
+            let index = reminderRotationTick % cue.reminders.count
+            return cue.reminders[index]
+        }
+        return cue.posture.trainingGoalDescription
     }
 
     private var remainingCueSeconds: Int {
@@ -266,15 +293,22 @@ public struct WorkoutHUDView: View {
                 trackColor: FitnessRiderTheme.cardBorder
             ) {
                 VStack(spacing: 4) {
-                    // Posture Icon & Title
+                    // Posture Icon & Title (Tap for Purpose Details)
                     if let cue = activeCue {
-                        HStack(spacing: 6) {
-                            Image(systemName: cue.posture.sfSymbol)
-                                .font(.system(size: 20, weight: .bold))
-                            Text(cue.posture.localizedName)
-                                .font(.system(size: 20, weight: .bold))
+                        Button {
+                            isShowingPostureInfoSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: cue.posture.sfSymbol)
+                                    .font(.system(size: 20, weight: .bold))
+                                Text(cue.posture.localizedName)
+                                    .font(.system(size: 20, weight: .bold))
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(FitnessRiderTheme.topBarGreen)
+                            }
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
                         }
-                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
                     }
 
                     // GIANT Target RPM
@@ -308,22 +342,42 @@ public struct WorkoutHUDView: View {
             }
             .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
 
-            // Info Strip (Resistance & Tempo Controls)
-            HStack(spacing: 24) {
-                // Resistance Badge
-                HStack(spacing: 6) {
-                    Image(systemName: "gauge.with.needle.fill")
-                    Text(activeCue?.resistanceLevel ?? "LEVEL 5")
+            // Coaching Live Prompt Banner
+            coachingPromptBanner
+
+            // Info Strip (Hand Position, Resistance & Tempo Controls)
+            HStack(spacing: 16) {
+                // Hand Position Badge
+                if let cue = activeCue {
+                    HandPositionBadge(position: cue.handPosition, isCompact: false)
                 }
-                .font(.system(size: 15, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(FitnessRiderTheme.topBarGreenDark)
-                .cornerRadius(20)
+
+                // Resistance Badge + Delta Indicator
+                HStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gauge.with.needle.fill")
+                        Text(activeCue?.resistanceLevel ?? "LEVEL 5")
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(FitnessRiderTheme.topBarGreenDark)
+                    .cornerRadius(20)
+
+                    if let delta = resistanceDelta {
+                        Text(delta.text)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(delta.isUp ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(delta.isUp ? FitnessRiderTheme.accentRed.opacity(0.15) : FitnessRiderTheme.topBarGreen.opacity(0.15))
+                            .cornerRadius(12)
+                    }
+                }
 
                 // Tempo Steppers (-2%, 100%, +2%)
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Button("-2%") {
                         audioManager.adjustRatePercent(by: -2.0)
                     }
@@ -340,7 +394,7 @@ public struct WorkoutHUDView: View {
                     .buttonStyle(HUDTempoButtonStyle())
 
                     Text(String(format: "%.0f%%", audioManager.currentRate * 100))
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
             }
@@ -352,6 +406,105 @@ public struct WorkoutHUDView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
+        .onReceive(reminderTimer) { _ in
+            reminderRotationTick += 1
+        }
+        .sheet(isPresented: $isShowingPostureInfoSheet) {
+            postureInfoSheet
+        }
+    }
+
+    // MARK: - Coaching Prompt Banner
+
+    private var coachingPromptBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "quote.bubble.fill")
+                .font(.system(size: 14))
+                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+
+            Text(currentCoachingPrompt)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(FitnessRiderTheme.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(FitnessRiderTheme.topBarGreen.opacity(0.12))
+        .cornerRadius(20)
+    }
+
+    // MARK: - Posture Info Sheet
+
+    private var postureInfoSheet: some View {
+        NavigationView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let cue = activeCue {
+                    HStack(spacing: 14) {
+                        Image(systemName: cue.posture.sfSymbol)
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(cue.posture.localizedName)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(FitnessRiderTheme.textPrimary)
+                            Text("建議踏頻: \(cue.posture.defaultRpm) RPM")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(FitnessRiderTheme.cardHeaderBackground)
+                    .cornerRadius(12)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("訓練目標與生理效益")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+                        Text(cue.posture.trainingGoalDescription)
+                            .font(.system(size: 15))
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                            .lineSpacing(4)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("握把把位指引")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                        HStack(spacing: 12) {
+                            HandPositionBadge(position: cue.handPosition, isCompact: false)
+                            Text(cue.handPosition.gripDescription)
+                                .font(.system(size: 13))
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("姿勢教學說明")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("關閉") {
+                        isShowingPostureInfoSheet = false
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Next Cue Preview Banner
@@ -372,7 +525,7 @@ public struct WorkoutHUDView: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
 
-                    Text("(\(next.targetRpm) RPM, \(next.resistanceLevel))")
+                    Text("(\(next.targetRpm) RPM, \(next.resistanceLevel), \(next.handPosition.shortTitle))")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(FitnessRiderTheme.topBarGreenDark)
 
@@ -416,3 +569,4 @@ struct HUDTempoButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1.0)
     }
 }
+

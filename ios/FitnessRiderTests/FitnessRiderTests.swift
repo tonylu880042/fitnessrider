@@ -31,7 +31,9 @@ final class FitnessRiderTests: XCTestCase {
                             posture: .sprint,
                             targetRpm: 110,
                             resistanceLevel: "LEVEL 5",
-                            message: "衝刺！"
+                            message: "衝刺！",
+                            handPosition: .position3,
+                            reminders: ["全力衝刺，跟上最快節奏！", "核心收緊，骨盆保持穩定"]
                         )
                     ]
                 )
@@ -47,8 +49,12 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(fetched?.title, "單元測試爬坡課")
         XCTAssertEqual(fetched?.segments.count, 1)
         XCTAssertEqual(fetched?.segments.first?.cues.count, 1)
-        XCTAssertEqual(fetched?.segments.first?.cues.first?.posture, .sprint)
-        XCTAssertEqual(fetched?.segments.first?.cues.first?.targetRpm, 110)
+        let cue = fetched?.segments.first?.cues.first
+        XCTAssertEqual(cue?.posture, .sprint)
+        XCTAssertEqual(cue?.targetRpm, 110)
+        XCTAssertEqual(cue?.handPosition, .position3)
+        XCTAssertEqual(cue?.reminders.count, 2)
+        XCTAssertEqual(cue?.reminders.first, "全力衝刺，跟上最快節奏！")
 
         // Clean up
         repo.deleteClass(byId: testClass.id)
@@ -90,7 +96,18 @@ final class FitnessRiderTests: XCTestCase {
                     baseBpm: 125.0,
                     playbackRate: 1.0,
                     intensityZone: 3,
-                    cues: []
+                    cues: [
+                        WorkoutCue(
+                            id: UUID(),
+                            offsetMs: 5000,
+                            posture: .standingClimb,
+                            targetRpm: 60,
+                            resistanceLevel: "LEVEL 7",
+                            message: "站姿爬坡！",
+                            handPosition: .position3,
+                            reminders: ["站立姿勢來爬坡，鍛鍊股四頭肌力量", "開始爬斜坡"]
+                        )
+                    ]
                 )
             ]
         )
@@ -105,6 +122,10 @@ final class FitnessRiderTests: XCTestCase {
         let unpacked = try archiveService.importRiderClass(from: archiveURL)
         XCTAssertEqual(unpacked.title, testClass.title)
         XCTAssertEqual(unpacked.segments.count, testClass.segments.count)
+        let unpackedCue = unpacked.segments.first?.cues.first
+        XCTAssertEqual(unpackedCue?.handPosition, .position3)
+        XCTAssertEqual(unpackedCue?.reminders.count, 2)
+        XCTAssertEqual(unpackedCue?.reminders.first, "站立姿勢來爬坡，鍛鍊股四頭肌力量")
 
         // Clean up
         try? FileManager.default.removeItem(at: archiveURL)

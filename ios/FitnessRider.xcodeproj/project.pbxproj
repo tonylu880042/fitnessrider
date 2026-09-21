@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		06ECF1E137422CA156B2055C /* FitnessRiderTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BB44E3E41EE897521C65E7 /* FitnessRiderTheme.swift */; };
+		13FDC3990E6FE0C5A739D0B8 /* HandPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5B98767E33F68C6567AB2C /* HandPosition.swift */; };
 		156087771BD525DE33AE0AEB /* ClassRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */; };
 		17CC464CD4CA188178C4BA58 /* WorkoutHUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2620A0A7B142FA00B0B33D36 /* WorkoutHUDView.swift */; };
 		2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */; };
@@ -18,6 +19,7 @@
 		6CD9FDD0F354BD1807D4DD51 /* WorkoutSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B3E06E385637055E106E37 /* WorkoutSegment.swift */; };
 		71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4236271B7A4EFA9C32B4B507 /* LicenseVerificationService.swift */; };
 		7BC7B878861A3FD7903474F2 /* FitnessRiderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD9DF65222DF574532D752 /* FitnessRiderTests.swift */; };
+		80455490167853B04B9D9475 /* HandPositionBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */; };
 		87AA2AD36743DDEB17611BFD /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92BD3C95326013660D39116 /* AppSettings.swift */; };
 		8B6B2D4655E2CD3A9CE2A60A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */; };
 		95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */; };
@@ -30,6 +32,7 @@
 		AC5F464F895A6D039612C850 /* RiderClassArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */; };
 		B581E14F29765830BFA19D6B /* SQLiteDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */; };
 		D464988C98A08DA31CA814EC /* DeviceIdentifierService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FB4C94AA0CAB3CE75206759 /* DeviceIdentifierService.swift */; };
+		DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */; };
 		EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */; };
 		ECEADC544C061140A1D17C54 /* CircleProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */; };
 		F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */; };
@@ -50,9 +53,11 @@
 /* Begin PBXFileReference section */
 		041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteDatabase.swift; sourceTree = "<group>"; };
 		07AD9DF65222DF574532D752 /* FitnessRiderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessRiderTests.swift; sourceTree = "<group>"; };
+		18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandPositionBadge.swift; sourceTree = "<group>"; };
 		1E05D9C6A9E8B3BD4FF02C1A /* ClassListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassListView.swift; sourceTree = "<group>"; };
 		21BB44E3E41EE897521C65E7 /* FitnessRiderTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessRiderTheme.swift; sourceTree = "<group>"; };
 		223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiderClassArchiveService.swift; sourceTree = "<group>"; };
+		239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachingReminderLibrary.swift; sourceTree = "<group>"; };
 		2620A0A7B142FA00B0B33D36 /* WorkoutHUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHUDView.swift; sourceTree = "<group>"; };
 		3FC2FA700C3366446B089691 /* WaveformCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformCanvasView.swift; sourceTree = "<group>"; };
 		41C496CD142CD5C9C768992E /* FitnessRider.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FitnessRider.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -73,6 +78,7 @@
 		B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleProgressBar.swift; sourceTree = "<group>"; };
 		B9540016F25DEC18089446E0 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueEditorSheet.swift; sourceTree = "<group>"; };
+		CB5B98767E33F68C6567AB2C /* HandPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandPosition.swift; sourceTree = "<group>"; };
 		D05784222ADE0045CB15594E /* FitnessRiderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FitnessRiderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopNavBar.swift; sourceTree = "<group>"; };
 		E92BD3C95326013660D39116 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -114,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */,
+				18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */,
 				8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */,
 				D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */,
 				3FC2FA700C3366446B089691 /* WaveformCanvasView.swift */,
@@ -145,6 +152,8 @@
 			isa = PBXGroup;
 			children = (
 				E92BD3C95326013660D39116 /* AppSettings.swift */,
+				239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */,
+				CB5B98767E33F68C6567AB2C /* HandPosition.swift */,
 				F7E6D9CA3BF3DD5B1F033E0B /* PostureType.swift */,
 				5212617614AF55277248379B /* WorkoutClass.swift */,
 				998E959DCF787BBF19BA2073 /* WorkoutCue.swift */,
@@ -359,11 +368,14 @@
 				EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */,
 				ABF3B9382E46FC1DDB1F699F /* ClassListView.swift in Sources */,
 				156087771BD525DE33AE0AEB /* ClassRepository.swift in Sources */,
+				DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */,
 				F4A47D9E5A3913DEE93C69D7 /* CueAudioBeepPlayer.swift in Sources */,
 				F625B8B33957A4FADE25A1F0 /* CueEditorSheet.swift in Sources */,
 				D464988C98A08DA31CA814EC /* DeviceIdentifierService.swift in Sources */,
 				9648C09D13608505B0145810 /* FitnessRiderApp.swift in Sources */,
 				06ECF1E137422CA156B2055C /* FitnessRiderTheme.swift in Sources */,
+				13FDC3990E6FE0C5A739D0B8 /* HandPosition.swift in Sources */,
+				80455490167853B04B9D9475 /* HandPositionBadge.swift in Sources */,
 				71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */,
 				A2A878EF73458BFC8E24215E /* PostureType.swift in Sources */,
 				AC5F464F895A6D039612C850 /* RiderClassArchiveService.swift in Sources */,

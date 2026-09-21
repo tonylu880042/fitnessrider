@@ -120,8 +120,8 @@ public final class ClassRepository: @unchecked Sendable {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
             let cueSql = """
-            INSERT INTO cues (id, segment_id, offset_ms, posture, target_rpm, resistance_level, message)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO cues (id, segment_id, offset_ms, posture, target_rpm, resistance_level, message, hand_position, reminders)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
             for segment in workoutClass.segments {
@@ -150,6 +150,10 @@ public final class ClassRepository: @unchecked Sendable {
                         sqlite3_bind_int(cueStmt, 5, Int32(cue.targetRpm))
                         sqlite3_bind_text(cueStmt, 6, cue.resistanceLevel, -1, SQLITE_TRANSIENT)
                         sqlite3_bind_text(cueStmt, 7, cue.message, -1, SQLITE_TRANSIENT)
+                        sqlite3_bind_int(cueStmt, 8, Int32(cue.handPosition.rawValue))
+                        let remindersData = (try? JSONEncoder().encode(cue.reminders)) ?? Data("[]".utf8)
+                        let remindersJson = String(data: remindersData, encoding: .utf8) ?? "[]"
+                        sqlite3_bind_text(cueStmt, 9, remindersJson, -1, SQLITE_TRANSIENT)
                         sqlite3_step(cueStmt)
                     }
                     sqlite3_finalize(cueStmt)
@@ -219,7 +223,7 @@ public final class ClassRepository: @unchecked Sendable {
         guard let dbPtr = db.getDbPointer() else { return [] }
 
         let query = """
-        SELECT id, offset_ms, posture, target_rpm, resistance_level, message
+        SELECT id, offset_ms, posture, target_rpm, resistance_level, message, hand_position, reminders
         FROM cues WHERE segment_id = ? ORDER BY offset_ms ASC;
         """
         var stmt: OpaquePointer?
@@ -234,9 +238,20 @@ public final class ClassRepository: @unchecked Sendable {
                 let targetRpm = Int(sqlite3_column_int(stmt, 3))
                 let resistance = String(cString: sqlite3_column_text(stmt, 4))
                 let message = String(cString: sqlite3_column_text(stmt, 5))
+                let handPositionRaw = Int(sqlite3_column_int(stmt, 6))
+
+                var reminders: [String] = []
+                if let remindersText = sqlite3_column_text(stmt, 7) {
+                    let jsonStr = String(cString: remindersText)
+                    if let data = jsonStr.data(using: .utf8),
+                       let decoded = try? JSONDecoder().decode([String].self, from: data) {
+                        reminders = decoded
+                    }
+                }
 
                 let cueId = UUID(uuidString: idStr) ?? UUID()
                 let posture = PostureType(rawValue: postureStr) ?? .seatedFlat
+                let handPosition = HandPosition(rawValue: handPositionRaw) ?? posture.defaultHandPosition
 
                 let cue = WorkoutCue(
                     id: cueId,
@@ -245,7 +260,9 @@ public final class ClassRepository: @unchecked Sendable {
                     posture: posture,
                     targetRpm: targetRpm,
                     resistanceLevel: resistance,
-                    message: message
+                    message: message,
+                    handPosition: handPosition,
+                    reminders: reminders
                 )
                 cues.append(cue)
             }

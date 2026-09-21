@@ -9,7 +9,9 @@ data class WorkoutCue(
     val posture: PostureType = PostureType.SEATED_FLAT,
     val targetRpm: Int = 85,
     val resistanceLevel: String = "LEVEL 5",
-    val message: String = ""
+    val message: String = "",
+    val handPosition: HandPosition = posture.defaultHandPosition,
+    val reminders: List<String> = emptyList()
 )
 
 data class WorkoutSegment(

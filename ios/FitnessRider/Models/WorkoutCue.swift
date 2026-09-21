@@ -8,6 +8,8 @@ public struct WorkoutCue: Identifiable, Codable, Equatable, Sendable {
     public var targetRpm: Int
     public var resistanceLevel: String
     public var message: String
+    public var handPosition: HandPosition
+    public var reminders: [String]
 
     public init(
         id: UUID = UUID(),
@@ -16,7 +18,9 @@ public struct WorkoutCue: Identifiable, Codable, Equatable, Sendable {
         posture: PostureType = .seatedFlat,
         targetRpm: Int = 85,
         resistanceLevel: String = "LEVEL 5",
-        message: String = ""
+        message: String = "",
+        handPosition: HandPosition? = nil,
+        reminders: [String] = []
     ) {
         self.id = id
         self.segmentId = segmentId
@@ -25,5 +29,7 @@ public struct WorkoutCue: Identifiable, Codable, Equatable, Sendable {
         self.targetRpm = targetRpm
         self.resistanceLevel = resistanceLevel
         self.message = message
+        self.handPosition = handPosition ?? posture.defaultHandPosition
+        self.reminders = reminders
     }
 }

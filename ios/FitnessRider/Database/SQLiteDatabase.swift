@@ -120,6 +120,8 @@ public final class SQLiteDatabase: @unchecked Sendable {
             target_rpm INTEGER NOT NULL DEFAULT 80,
             resistance_level TEXT NOT NULL,
             message TEXT NOT NULL,
+            hand_position INTEGER NOT NULL DEFAULT 1,
+            reminders TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY (segment_id) REFERENCES segments(id) ON DELETE CASCADE
         );
 
@@ -132,6 +134,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
         );
         """
         _ = executeRaw(schema)
+
+        // Migrations for existing databases
+        _ = executeRaw("ALTER TABLE cues ADD COLUMN hand_position INTEGER NOT NULL DEFAULT 1;")
+        _ = executeRaw("ALTER TABLE cues ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]';")
     }
 
     // Hot backup via sqlite3_backup API

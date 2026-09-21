@@ -1,10 +1,9 @@
 package com.fitnessrider
 
-import com.fitnessrider.model.PostureType
-import com.fitnessrider.model.WorkoutClass
-import com.fitnessrider.model.WorkoutCue
-import com.fitnessrider.model.WorkoutSegment
+import com.fitnessrider.data.RiderClassArchiveService
+import com.fitnessrider.model.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.roundToInt
 
@@ -17,6 +16,38 @@ class FitnessRiderAndroidTest {
         assertEquals(110, PostureType.SPRINT.defaultRpm)
         assertEquals("抽車節奏跳躍", PostureType.JUMPS.localizedName)
         assertEquals(PostureType.STANDING_CLIMB, PostureType.fromRaw("STANDING_CLIMB"))
+    }
+
+    @Test
+    fun testHandPositionAndPostureDefaults() {
+        assertEquals(HandPosition.POSITION_1, PostureType.SEATED_FLAT.defaultHandPosition)
+        assertEquals(HandPosition.POSITION_2, PostureType.STANDING_FLAT.defaultHandPosition)
+        assertEquals(HandPosition.POSITION_3, PostureType.STANDING_CLIMB.defaultHandPosition)
+        assertEquals(HandPosition.POSITION_3, PostureType.SPRINT.defaultHandPosition)
+        assertEquals(HandPosition.POSITION_2, PostureType.JUMPS.defaultHandPosition)
+
+        assertEquals("1 號位", HandPosition.POSITION_1.shortTitle)
+        assertEquals("2 號位", HandPosition.POSITION_2.shortTitle)
+        assertEquals("3 號位", HandPosition.POSITION_3.shortTitle)
+
+        assertEquals(HandPosition.POSITION_1, HandPosition.fromValue(1))
+        assertEquals(HandPosition.POSITION_2, HandPosition.fromValue(2))
+        assertEquals(HandPosition.POSITION_3, HandPosition.fromValue(3))
+        assertEquals(HandPosition.POSITION_1, HandPosition.fromValue(99)) // default fallback
+    }
+
+    @Test
+    fun testCoachingReminderLibrary() {
+        assertEquals(20, CoachingReminderLibrary.generalMotion.size)
+        assertEquals(9, CoachingReminderLibrary.generalBody.size)
+
+        val climbCues = CoachingReminderLibrary.specificReminders(PostureType.STANDING_CLIMB)
+        assertTrue(climbCues.isNotEmpty())
+        assertTrue(climbCues.contains("站立的姿勢來爬坡，鍛練股四頭肌的力量"))
+
+        val categories = CoachingReminderLibrary.categories(PostureType.STANDING_CLIMB)
+        assertEquals(3, categories.size)
+        assertEquals("站姿重爬坡 專屬指令", categories[0].title)
     }
 
     @Test
@@ -54,4 +85,75 @@ class FitnessRiderAndroidTest {
         clampedRate = 0.50.coerceIn(0.85, 1.15)
         assertEquals(0.85, clampedRate, 0.001)
     }
+
+    @Test
+    fun testRiderClassJsonSerializationRoundTrip() {
+        val testClass = WorkoutClass(
+            id = "test-class-1",
+            title = "高燃脂耐力騎行",
+            author = "Tony",
+            totalDurationMs = 300000,
+            estimatedCalories = 150.0,
+            segments = listOf(
+                WorkoutSegment(
+                    id = "seg-1",
+                    classId = "test-class-1",
+                    orderIndex = 0,
+                    title = "熱身爬坡段",
+                    musicFileName = "track1.mp3",
+                    durationMs = 300000,
+                    baseBpm = 128.0,
+                    playbackRate = 1.04,
+                    intensityZone = 3,
+                    cues = listOf(
+                        WorkoutCue(
+                            id = "cue-1",
+                            segmentId = "seg-1",
+                            offsetMs = 0,
+                            posture = PostureType.SEATED_FLAT,
+                            handPosition = HandPosition.POSITION_1,
+                            targetRpm = 85,
+                            resistanceLevel = "LEVEL 4",
+                            message = "坐姿熱身",
+                            reminders = listOf("椅墊坐滿", "身體放輕鬆")
+                        ),
+                        WorkoutCue(
+                            id = "cue-2",
+                            segmentId = "seg-1",
+                            offsetMs = 60000,
+                            posture = PostureType.STANDING_CLIMB,
+                            handPosition = HandPosition.POSITION_3,
+                            targetRpm = 65,
+                            resistanceLevel = "LEVEL 7",
+                            message = "重齒爬坡抽車",
+                            reminders = listOf("站立的姿勢來爬坡，鍛練股四頭肌的力量", "不要甩肩膀")
+                        )
+                    )
+                )
+            )
+        )
+
+        // Serialize to JSON
+        val json = RiderClassArchiveService.serializeClassToJson(testClass)
+        assertTrue(json.contains("\"handPosition\": 3"))
+        assertTrue(json.contains("站立的姿勢來爬坡，鍛練股四頭肌的力量"))
+
+        // Deserialize back
+        val decoded = RiderClassArchiveService.deserializeJsonToClass(json)
+        assertEquals("test-class-1", decoded.id)
+        assertEquals("高燃脂耐力騎行", decoded.title)
+        assertEquals(1, decoded.segments.size)
+
+        val cues = decoded.segments[0].cues
+        assertEquals(2, cues.size)
+
+        assertEquals(PostureType.SEATED_FLAT, cues[0].posture)
+        assertEquals(HandPosition.POSITION_1, cues[0].handPosition)
+        assertEquals(listOf("椅墊坐滿", "身體放輕鬆"), cues[0].reminders)
+
+        assertEquals(PostureType.STANDING_CLIMB, cues[1].posture)
+        assertEquals(HandPosition.POSITION_3, cues[1].handPosition)
+        assertEquals(listOf("站立的姿勢來爬坡，鍛練股四頭肌的力量", "不要甩肩膀"), cues[1].reminders)
+    }
 }
+

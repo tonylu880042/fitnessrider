@@ -88,102 +88,121 @@ class RiderClassArchiveService(private val context: Context) {
         }
     }
 
-    private fun serializeClassToJson(wc: WorkoutClass): String {
-        val root = JSONObject()
-        root.put("id", wc.id)
-        root.put("title", wc.title)
-        root.put("author", wc.author)
-        root.put("createdAt", wc.createdAt)
-        root.put("totalDurationMs", wc.totalDurationMs)
-        root.put("estimatedCalories", wc.estimatedCalories)
+    companion object {
+        fun serializeClassToJson(wc: WorkoutClass): String {
+            val root = JSONObject()
+            root.put("id", wc.id)
+            root.put("title", wc.title)
+            root.put("author", wc.author)
+            root.put("createdAt", wc.createdAt)
+            root.put("totalDurationMs", wc.totalDurationMs)
+            root.put("estimatedCalories", wc.estimatedCalories)
 
-        val segArray = JSONArray()
-        for (seg in wc.segments) {
-            val segObj = JSONObject()
-            segObj.put("id", seg.id)
-            segObj.put("classId", seg.classId)
-            segObj.put("orderIndex", seg.orderIndex)
-            segObj.put("title", seg.title)
-            segObj.put("musicFileName", seg.musicFileName)
-            segObj.put("durationMs", seg.durationMs)
-            segObj.put("baseBpm", seg.baseBpm)
-            segObj.put("playbackRate", seg.playbackRate)
-            segObj.put("intensityZone", seg.intensityZone)
+            val segArray = JSONArray()
+            for (seg in wc.segments) {
+                val segObj = JSONObject()
+                segObj.put("id", seg.id)
+                segObj.put("classId", seg.classId)
+                segObj.put("orderIndex", seg.orderIndex)
+                segObj.put("title", seg.title)
+                segObj.put("musicFileName", seg.musicFileName)
+                segObj.put("durationMs", seg.durationMs)
+                segObj.put("baseBpm", seg.baseBpm)
+                segObj.put("playbackRate", seg.playbackRate)
+                segObj.put("intensityZone", seg.intensityZone)
 
-            val cueArray = JSONArray()
-            for (cue in seg.cues) {
-                val cueObj = JSONObject()
-                cueObj.put("id", cue.id)
-                cueObj.put("segmentId", cue.segmentId)
-                cueObj.put("offsetMs", cue.offsetMs)
-                cueObj.put("posture", cue.posture.rawValue)
-                cueObj.put("targetRpm", cue.targetRpm)
-                cueObj.put("resistanceLevel", cue.resistanceLevel)
-                cueObj.put("message", cue.message)
-                cueArray.put(cueObj)
+                val cueArray = JSONArray()
+                for (cue in seg.cues) {
+                    val cueObj = JSONObject()
+                    cueObj.put("id", cue.id)
+                    cueObj.put("segmentId", cue.segmentId)
+                    cueObj.put("offsetMs", cue.offsetMs)
+                    cueObj.put("posture", cue.posture.rawValue)
+                    cueObj.put("targetRpm", cue.targetRpm)
+                    cueObj.put("resistanceLevel", cue.resistanceLevel)
+                    cueObj.put("message", cue.message)
+                    cueObj.put("handPosition", cue.handPosition.value)
+                    cueObj.put("reminders", JSONArray(cue.reminders))
+                    cueArray.put(cueObj)
+                }
+                segObj.put("cues", cueArray)
+                segArray.put(segObj)
             }
-            segObj.put("cues", cueArray)
-            segArray.put(segObj)
+            root.put("segments", segArray)
+            return root.toString(2)
         }
-        root.put("segments", segArray)
-        return root.toString(2)
-    }
 
-    private fun deserializeJsonToClass(jsonStr: String): WorkoutClass {
-        val root = JSONObject(jsonStr)
-        val id = root.optString("id")
-        val title = root.optString("title")
-        val author = root.optString("author")
-        val createdAt = root.optString("createdAt")
-        val totalDurationMs = root.optInt("totalDurationMs")
-        val estimatedCalories = root.optDouble("estimatedCalories")
+        fun deserializeJsonToClass(jsonStr: String): WorkoutClass {
+            val root = JSONObject(jsonStr)
+            val id = root.optString("id")
+            val title = root.optString("title")
+            val author = root.optString("author")
+            val createdAt = root.optString("createdAt")
+            val totalDurationMs = root.optInt("totalDurationMs")
+            val estimatedCalories = root.optDouble("estimatedCalories")
 
-        val segArray = root.optJSONArray("segments") ?: JSONArray()
-        val segments = mutableListOf<WorkoutSegment>()
+            val segArray = root.optJSONArray("segments") ?: JSONArray()
+            val segments = mutableListOf<WorkoutSegment>()
 
-        for (i in 0 until segArray.length()) {
-            val sObj = segArray.getJSONObject(i)
-            val cues = mutableListOf<WorkoutCue>()
-            val cArray = sObj.optJSONArray("cues") ?: JSONArray()
-            for (j in 0 until cArray.length()) {
-                val cObj = cArray.getJSONObject(j)
-                cues.add(
-                    WorkoutCue(
-                        id = cObj.optString("id"),
-                        segmentId = cObj.optString("segmentId"),
-                        offsetMs = cObj.optInt("offsetMs"),
-                        posture = PostureType.fromRaw(cObj.optString("posture")),
-                        targetRpm = cObj.optInt("targetRpm"),
-                        resistanceLevel = cObj.optString("resistanceLevel"),
-                        message = cObj.optString("message")
+            for (i in 0 until segArray.length()) {
+                val sObj = segArray.getJSONObject(i)
+                val cues = mutableListOf<WorkoutCue>()
+                val cArray = sObj.optJSONArray("cues") ?: JSONArray()
+                for (j in 0 until cArray.length()) {
+                    val cObj = cArray.getJSONObject(j)
+                    val posture = PostureType.fromRaw(cObj.optString("posture"))
+                    val handPos = if (cObj.has("handPosition")) {
+                        HandPosition.fromValue(cObj.optInt("handPosition"))
+                    } else {
+                        posture.defaultHandPosition
+                    }
+                    val remList = mutableListOf<String>()
+                    val rArray = cObj.optJSONArray("reminders")
+                    if (rArray != null) {
+                        for (k in 0 until rArray.length()) {
+                            remList.add(rArray.getString(k))
+                        }
+                    }
+                    cues.add(
+                        WorkoutCue(
+                            id = cObj.optString("id"),
+                            segmentId = cObj.optString("segmentId"),
+                            offsetMs = cObj.optInt("offsetMs"),
+                            posture = posture,
+                            targetRpm = cObj.optInt("targetRpm"),
+                            resistanceLevel = cObj.optString("resistanceLevel"),
+                            message = cObj.optString("message"),
+                            handPosition = handPos,
+                            reminders = remList
+                        )
+                    )
+                }
+
+                segments.add(
+                    WorkoutSegment(
+                        id = sObj.optString("id"),
+                        classId = sObj.optString("classId"),
+                        orderIndex = sObj.optInt("orderIndex"),
+                        title = sObj.optString("title"),
+                        musicFileName = sObj.optString("musicFileName"),
+                        durationMs = sObj.optInt("durationMs"),
+                        baseBpm = sObj.optDouble("baseBpm"),
+                        playbackRate = sObj.optDouble("playbackRate", 1.0),
+                        intensityZone = sObj.optInt("intensityZone", 2),
+                        cues = cues
                     )
                 )
             }
 
-            segments.add(
-                WorkoutSegment(
-                    id = sObj.optString("id"),
-                    classId = sObj.optString("classId"),
-                    orderIndex = sObj.optInt("orderIndex"),
-                    title = sObj.optString("title"),
-                    musicFileName = sObj.optString("musicFileName"),
-                    durationMs = sObj.optInt("durationMs"),
-                    baseBpm = sObj.optDouble("baseBpm"),
-                    playbackRate = sObj.optDouble("playbackRate", 1.0),
-                    intensityZone = sObj.optInt("intensityZone", 2),
-                    cues = cues
-                )
+            return WorkoutClass(
+                id = id,
+                title = title,
+                author = author,
+                createdAt = createdAt,
+                totalDurationMs = totalDurationMs,
+                estimatedCalories = estimatedCalories,
+                segments = segments
             )
         }
-
-        return WorkoutClass(
-            id = id,
-            title = title,
-            author = author,
-            createdAt = createdAt,
-            totalDurationMs = totalDurationMs,
-            estimatedCalories = estimatedCalories,
-            segments = segments
-        )
     }
 }

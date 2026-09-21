@@ -58,7 +58,9 @@ data class CueEntity(
     val posture: String,
     val targetRpm: Int,
     val resistanceLevel: String,
-    val message: String
+    val message: String,
+    val handPosition: Int = 1,
+    val remindersJson: String = "[]"
 )
 
 @Entity(tableName = "waveform_cache")

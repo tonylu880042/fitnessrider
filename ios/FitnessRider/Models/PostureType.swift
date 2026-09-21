@@ -47,4 +47,35 @@ public enum PostureType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .recovery: return 75
         }
     }
+
+    public var defaultHandPosition: HandPosition {
+        switch self {
+        case .seatedFlat, .seatedClimb, .recovery:
+            return .position1
+        case .standingFlat, .jumps:
+            return .position2
+        case .standingClimb, .sprint:
+            return .position3
+        }
+    }
+
+    public var trainingGoalDescription: String {
+        switch self {
+        case .seatedFlat:
+            return "騎車的最基本姿勢，幫忙建立騎車的基本力量以及基本體能"
+        case .seatedClimb:
+            return "以較高的阻力挑戰下半身，尤其是臀肌、腿後腱肌群的力量"
+        case .standingFlat:
+            return "運用到更多核心肌群的穩定，增加騎車速度並鍛鍊耐力"
+        case .standingClimb:
+            return "站立姿勢來爬更重的坡，鍛鍊股四頭肌的力量與爬坡爆發力"
+        case .jumps:
+            return "藉由規律的坐姿與站姿抽車交替，強化核心肌群與動態心肺爆發力"
+        case .sprint:
+            return "在平路或微坡以最快踩踏極限衝刺，激發無氧耐力與乳酸耐受力"
+        case .recovery:
+            return "以輕阻力舒緩踩踏，幫助心率回穩、排解肌肉乳酸並恢復體能"
+        }
+    }
 }
+

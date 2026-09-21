@@ -330,11 +330,13 @@ public struct ClassEditorView: View {
                 .background(FitnessRiderTheme.topBarGreen.opacity(0.12))
                 .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(cue.posture.localizedName)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                    HandPositionBadge(position: cue.handPosition, isCompact: true, showTitle: false)
 
                     Text("\(cue.targetRpm) RPM")
                         .font(.system(size: 13, weight: .bold))
@@ -349,7 +351,12 @@ public struct ClassEditorView: View {
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
 
-                if !cue.message.isEmpty {
+                if !cue.reminders.isEmpty {
+                    Text("口訣: " + cue.reminders.joined(separator: " • "))
+                        .font(.system(size: 12))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        .lineLimit(1)
+                } else if !cue.message.isEmpty {
                     Text(cue.message)
                         .font(.system(size: 13))
                         .foregroundColor(FitnessRiderTheme.textSecondary)

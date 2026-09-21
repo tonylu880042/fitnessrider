@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fitnessrider.model.*
 import com.fitnessrider.theme.*
+import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
 import java.util.UUID
 
@@ -209,14 +212,17 @@ fun ClassEditorScreen(
                     Spacer(modifier = Modifier.weight(1f))
                     Button(
                         onClick = {
+                            val newOffset = if (activeSegment.cues.isEmpty()) 0 else (activeSegment.cues.last().offsetMs + 30_000).coerceAtMost(activeSegment.durationMs)
                             currentEditingCue = WorkoutCue(
                                 id = UUID.randomUUID().toString(),
                                 segmentId = activeSegment.id,
-                                offsetMs = 0,
+                                offsetMs = newOffset,
                                 posture = PostureType.STANDING_CLIMB,
+                                handPosition = PostureType.STANDING_CLIMB.defaultHandPosition,
                                 targetRpm = 65,
                                 resistanceLevel = "LEVEL 6",
-                                message = "起立站姿爬坡"
+                                message = "起立站姿爬坡",
+                                reminders = emptyList()
                             )
                             isEditingCueDialogVisible = true
                         },
@@ -242,9 +248,21 @@ fun ClassEditorScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
                                 .background(Color.White)
+                                .clickable {
+                                    currentEditingCue = cue
+                                    isEditingCueDialogVisible = true
+                                }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Hand Position Badge
+                            HandPositionBadge(
+                                position = cue.handPosition,
+                                isCompact = true,
+                                showTitle = false
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
@@ -266,9 +284,19 @@ fun ClassEditorScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(text = cue.resistanceLevel, fontSize = 12.sp, color = TextSecondary)
                                 }
+                                if (cue.reminders.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "💬 " + cue.reminders.joinToString(" • "),
+                                        fontSize = 11.sp,
+                                        color = TopBarGreenDark,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
                                 if (cue.message.isNotBlank()) {
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text(text = cue.message, fontSize = 12.sp, color = TextSecondary)
+                                    Text(text = cue.message, fontSize = 12.sp, color = TextSecondary, maxLines = 1)
                                 }
                             }
 
@@ -295,4 +323,430 @@ fun ClassEditorScreen(
             }
         }
     }
+
+    if (isEditingCueDialogVisible && currentEditingCue != null) {
+        CueEditorDialog(
+            cue = currentEditingCue!!,
+            onDismiss = {
+                isEditingCueDialogVisible = false
+                currentEditingCue = null
+            },
+            onSave = { savedCue ->
+                if (activeSegment != null) {
+                    val existingIndex = activeSegment.cues.indexOfFirst { it.id == savedCue.id }
+                    val updatedCues = if (existingIndex >= 0) {
+                        activeSegment.cues.toMutableList().also { it[existingIndex] = savedCue }
+                    } else {
+                        (activeSegment.cues + savedCue).sortedBy { it.offsetMs }
+                    }
+                    val updatedSeg = activeSegment.copy(cues = updatedCues)
+                    val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
+                    workoutClass = workoutClass.copy(segments = updatedSegs)
+                }
+                isEditingCueDialogVisible = false
+                currentEditingCue = null
+            }
+        )
+    }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CueEditorDialog(
+    cue: WorkoutCue,
+    onDismiss: () -> Unit,
+    onSave: (WorkoutCue) -> Unit
+) {
+    var editingCue by remember { mutableStateOf(cue) }
+    var isShowingRemindersPicker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "編輯動作提示 (Cue)",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Time code
+                val sec = editingCue.offsetMs / 1000
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("時間點", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        text = String.format("%02d:%02d (%d 秒)", sec / 60, sec % 60, sec),
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = TopBarGreenDark,
+                        fontSize = 14.sp
+                    )
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                // Posture Selection
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("騎乘姿勢", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        PostureType.entries.forEach { posture ->
+                            val isSelected = posture == editingCue.posture
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSelected) TopBarGreenDark else CardBackground,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) TopBarGreenDark else CardBorder
+                                ),
+                                modifier = Modifier.clickable {
+                                    editingCue = editingCue.copy(
+                                        posture = posture,
+                                        handPosition = posture.defaultHandPosition
+                                    )
+                                }
+                            ) {
+                                Text(
+                                    text = posture.localizedName,
+                                    color = if (isSelected) Color.White else TextPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = editingCue.posture.trainingGoalDescription,
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        lineHeight = 16.sp
+                    )
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                // Hand Position Selection
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("握把把位指引", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        HandPosition.entries.forEach { pos ->
+                            val isSelected = pos == editingCue.handPosition
+                            Button(
+                                onClick = { editingCue = editingCue.copy(handPosition = pos) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) TopBarGreenDark else CardBackground,
+                                    contentColor = if (isSelected) Color.White else TextPrimary
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) TopBarGreenDark else CardBorder
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                Text(pos.shortTitle, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CardBackground, RoundedCornerShape(8.dp))
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HandPositionBadge(position = editingCue.handPosition, isCompact = true)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = editingCue.handPosition.gripDescription,
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                // RPM & Resistance
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("目標踏頻 (RPM)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { if (editingCue.targetRpm > 40) editingCue = editingCue.copy(targetRpm = editingCue.targetRpm - 5) }
+                            ) {
+                                Text("-5", fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+                            }
+                            Text(
+                                text = "${editingCue.targetRpm}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            IconButton(
+                                onClick = { if (editingCue.targetRpm < 150) editingCue = editingCue.copy(targetRpm = editingCue.targetRpm + 5) }
+                            ) {
+                                Text("+5", fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = editingCue.resistanceLevel,
+                        onValueChange = { editingCue = editingCue.copy(resistanceLevel = it) },
+                        label = { Text("建議阻力") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                // Coaching Reminders Library Section
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("教練專業口訣提示 (${editingCue.reminders.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        TextButton(onClick = { isShowingRemindersPicker = true }) {
+                            Text("選取口訣庫...", color = TopBarGreenDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    if (editingCue.reminders.isEmpty()) {
+                        Text(
+                            "尚未選取口訣，課堂中將預設輪播姿勢訓練目標",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            editingCue.reminders.forEach { reminder ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(CardBackground, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.FormatQuote,
+                                        contentDescription = null,
+                                        tint = TopBarGreenDark,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = reminder,
+                                        fontSize = 12.sp,
+                                        color = TextPrimary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            editingCue = editingCue.copy(reminders = editingCue.reminders - reminder)
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "移除", tint = AccentRed, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                // Message
+                OutlinedTextField(
+                    value = editingCue.message,
+                    onValueChange = { editingCue = editingCue.copy(message = it) },
+                    label = { Text("備註說明 (Message)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(editingCue) },
+                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreenDark)
+            ) {
+                Text("確定", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = TextSecondary)
+            }
+        }
+    )
+
+    if (isShowingRemindersPicker) {
+        RemindersPickerDialog(
+            posture = editingCue.posture,
+            initialReminders = editingCue.reminders,
+            onDismiss = { isShowingRemindersPicker = false },
+            onSave = { updated ->
+                editingCue = editingCue.copy(reminders = updated)
+                isShowingRemindersPicker = false
+            }
+        )
+    }
+}
+
+@Composable
+fun RemindersPickerDialog(
+    posture: PostureType,
+    initialReminders: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    val selectedReminders = remember { mutableStateListOf<String>().apply { addAll(initialReminders) } }
+    var customInput by remember { mutableStateOf("") }
+    val categories = remember(posture) { CoachingReminderLibrary.categories(posture) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("選擇指導口訣", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+            ) {
+                // Custom input
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it },
+                        placeholder = { Text("輸入自訂口訣...", fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val trimmed = customInput.trim()
+                            if (trimmed.isNotEmpty() && !selectedReminders.contains(trimmed)) {
+                                selectedReminders.add(trimmed)
+                                customInput = ""
+                            }
+                        },
+                        enabled = customInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreenDark),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text("加入", fontSize = 12.sp)
+                    }
+                }
+
+                HorizontalDivider(color = CardBorder)
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    categories.forEach { category ->
+                        item {
+                            Text(
+                                text = category.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = TopBarGreenDark,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(category.reminders.size) { idx ->
+                            val reminder = category.reminders[idx]
+                            val isChecked = selectedReminders.contains(reminder)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isChecked) {
+                                            selectedReminders.remove(reminder)
+                                        } else {
+                                            selectedReminders.add(reminder)
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        if (checked) {
+                                            if (!selectedReminders.contains(reminder)) selectedReminders.add(reminder)
+                                        } else {
+                                            selectedReminders.remove(reminder)
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = TopBarGreenDark)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = reminder,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(selectedReminders.toList()) },
+                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreenDark)
+            ) {
+                Text("完成 (${selectedReminders.size})", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = TextSecondary)
+            }
+        }
+    )
+}
+
