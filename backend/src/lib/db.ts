@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { Pool } from 'pg';
 import { User, Device, License, DeviceTransferLog, PromoRedemption } from './types';
 
@@ -273,7 +274,6 @@ export const db = {
     let dev = await this.getDeviceByFingerprint(deviceFingerprint);
     let userId = dev?.user_id;
 
-    const crypto = await import('crypto');
     if (!userId) {
       userId = crypto.randomUUID();
       await this.createUser({

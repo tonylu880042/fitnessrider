@@ -33,10 +33,11 @@ export async function POST(req: NextRequest) {
       days_remaining: result.trial_days || (isPromo ? 30 : 365),
       is_promo: isPromo,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('License Activate Error:', error);
+    const msg = error instanceof Error ? error.message : '伺服器錯誤，請稍後再試';
     return NextResponse.json(
-      { success: false, error: '伺服器錯誤，請稍後再試' },
+      { success: false, error: msg },
       { status: 500 }
     );
   }
