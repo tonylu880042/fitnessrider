@@ -25,23 +25,26 @@ export default function Navbar() {
         </Link>
 
         <nav className="hidden md:flex items-center gap-8">
-          <Link href="#features" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
+          <Link href="/#features" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
             核心亮點
           </Link>
-          <Link href="#hud-preview" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
+          <Link href="/#hud-preview" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
             課堂中控台
           </Link>
-          <Link href="#pricing" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
+          <Link href="/#pricing" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
             訂閱方案
           </Link>
-          <Link href="#faq" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
+          <Link href="/#faq" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
             常見問答
+          </Link>
+          <Link href="/support" className="text-sm font-medium text-zinc-300 hover:text-emerald-400 transition-colors">
+            技術支援
           </Link>
         </nav>
 
         <div className="hidden md:flex items-center gap-4">
           <Link
-            href="#download"
+            href="/#download"
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-4 py-2 text-sm font-bold text-zinc-950 shadow-md shadow-emerald-500/25 hover:from-emerald-400 hover:to-teal-300 hover:shadow-emerald-500/40 transition-all"
           >
             立即下載體驗
@@ -63,35 +66,42 @@ export default function Navbar() {
         <div className="border-b border-zinc-800 bg-zinc-950 px-4 py-4 md:hidden animate-in slide-in-from-top-2">
           <div className="flex flex-col gap-3">
             <Link
-              href="#features"
+              href="/#features"
               onClick={() => setMobileMenuOpen(false)}
               className="text-sm font-medium text-zinc-300 hover:text-emerald-400 py-1"
             >
               核心亮點
             </Link>
             <Link
-              href="#hud-preview"
+              href="/#hud-preview"
               onClick={() => setMobileMenuOpen(false)}
               className="text-sm font-medium text-zinc-300 hover:text-emerald-400 py-1"
             >
               課堂中控台
             </Link>
             <Link
-              href="#pricing"
+              href="/#pricing"
               onClick={() => setMobileMenuOpen(false)}
               className="text-sm font-medium text-zinc-300 hover:text-emerald-400 py-1"
             >
               訂閱方案
             </Link>
             <Link
-              href="#faq"
+              href="/#faq"
               onClick={() => setMobileMenuOpen(false)}
               className="text-sm font-medium text-zinc-300 hover:text-emerald-400 py-1"
             >
               常見問答
             </Link>
             <Link
-              href="#download"
+              href="/support"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-sm font-medium text-zinc-300 hover:text-emerald-400 py-1"
+            >
+              技術支援
+            </Link>
+            <Link
+              href="/#download"
               onClick={() => setMobileMenuOpen(false)}
               className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-zinc-950"
             >

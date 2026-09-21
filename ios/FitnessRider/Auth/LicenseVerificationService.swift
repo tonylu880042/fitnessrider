@@ -31,7 +31,7 @@ public final class LicenseVerificationService: ObservableObject {
     @Published public private(set) var expirationDate: Date = Date().addingTimeInterval(30 * 86400)
     @Published public private(set) var remainingDays: Int = 30
 
-    private let serverURL = "https://fitnessrider.app"
+    private let serverURL = "https://fitnessrider.vercel.app"
 
     private init() {
         refreshLicenseState()

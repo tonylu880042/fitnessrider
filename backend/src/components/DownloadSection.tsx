@@ -15,7 +15,7 @@ export default function DownloadSection() {
           </h2>
 
           <p className="mx-auto mt-4 max-w-xl text-sm sm:text-base text-zinc-400">
-            支援 iPad 與 Android 平板。新用戶登入即送 <strong className="text-emerald-400">7 天全功能 VIP 試用</strong>，不需預先綁定信用卡。
+            支援 iPad 與 Android 平板。首次啟動即享有 <strong className="text-emerald-400">30 天全功能免費試用</strong>，不需預先綁定信用卡，開箱即騎。
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">

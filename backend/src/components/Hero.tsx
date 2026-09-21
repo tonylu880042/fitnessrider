@@ -32,7 +32,7 @@ export default function Hero() {
         {/* Subtitle */}
         <p className="mx-auto mt-6 max-w-2xl text-base sm:text-lg text-zinc-400 leading-relaxed">
           告別手忙腳亂的紙本小抄與切歌靜音。
-          <strong className="text-zinc-200 font-semibold"> FitnessRider</strong> 整合高音質無損變速、波形 BPM 精準對拍與大字動態倒數 HUD，讓教練專注於帶動全場踩踏激情。
+          <strong className="text-zinc-200 font-semibold"> FitnessRider</strong> 整合高音質無損變速、波形 BPM 精準對拍與大字動態倒數 HUD，更享有 <strong className="text-emerald-400">30 天全功能免費試用</strong>，讓教練專注於帶動全場踩踏激情。
         </p>
 
         {/* CTA Buttons */}
@@ -42,7 +42,7 @@ export default function Hero() {
             className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-8 py-3.5 text-base font-bold text-zinc-950 shadow-lg shadow-emerald-500/25 hover:from-emerald-400 hover:to-teal-300 hover:shadow-emerald-500/40 hover:-translate-y-0.5 transition-all"
           >
             <Play className="h-5 w-5 fill-current" />
-            免費下載體驗 (7天 VIP)
+            免費下載體驗 (30 天全功能試用)
           </Link>
           <Link
             href="#pricing"
@@ -61,7 +61,7 @@ export default function Hero() {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            雙軌歌曲平滑 Crossfade
+            1~3 秒雙軌等能量 Crossfade
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -69,7 +69,7 @@ export default function Hero() {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            100% 離線播音，不吃網路
+            100% 離線播音，地下室零延遲
           </div>
         </div>
 
@@ -79,10 +79,21 @@ export default function Hero() {
             {/* iPad Frame Mockup */}
             <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-4 sm:p-8 text-left">
               {/* Header Bar */}
-              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4 mb-6">
+              <div className="flex flex-wrap items-center justify-between border-b border-zinc-800/80 pb-4 mb-6 gap-3">
                 <div>
-                  <span className="text-xs uppercase tracking-widest text-emerald-400 font-bold">LIVE WORKOUT HUD</span>
-                  <h3 className="text-lg sm:text-xl font-black text-white">45min 高強度燃脂間歇衝刺</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase tracking-widest text-emerald-400 font-bold">LIVE WORKOUT HUD</span>
+                    <span className="rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-mono text-emerald-300">
+                      Crossfade 2s
+                    </span>
+                    <span className="rounded-md bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-mono text-cyan-300">
+                      3-2-1 嗶聲 ON
+                    </span>
+                    <span className="rounded-md bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-mono text-amber-300">
+                      車把震動 ON
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white mt-1">45min 高強度燃脂間歇衝刺</h3>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-mono font-bold text-emerald-400">

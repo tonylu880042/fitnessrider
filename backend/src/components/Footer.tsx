@@ -16,14 +16,17 @@ export default function Footer() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs sm:text-sm">
-            <Link href="#features" className="hover:text-emerald-400 transition-colors">
+            <Link href="/#features" className="hover:text-emerald-400 transition-colors">
               核心特色
             </Link>
-            <Link href="#pricing" className="hover:text-emerald-400 transition-colors">
+            <Link href="/#pricing" className="hover:text-emerald-400 transition-colors">
               訂閱定價
             </Link>
-            <Link href="#faq" className="hover:text-emerald-400 transition-colors">
+            <Link href="/#faq" className="hover:text-emerald-400 transition-colors">
               常見問題
+            </Link>
+            <Link href="/support" className="hover:text-emerald-400 transition-colors text-zinc-300 font-medium">
+              技術支援與客服
             </Link>
             <Link href="/privacy" className="hover:text-emerald-400 transition-colors text-zinc-300 font-medium">
               隱私權政策 (Privacy Policy)

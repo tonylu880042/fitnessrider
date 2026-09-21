@@ -56,7 +56,7 @@ export default function TermsOfService() {
             <h2 className="text-lg font-bold text-white mb-3">3. 訂閱方案與自動續約條款</h2>
             <ul className="list-disc pl-5 space-y-2 text-zinc-400">
               <li>
-                <strong>試用期：</strong>新用戶註冊即享 7 天免費 VIP 試用期，試用期滿後將自動停止 VIP 權益，不會自動產生費用。
+                <strong>試用期：</strong>新用戶首次啟用即享 30 天全功能免費 VIP 試用期（免先綁定信用卡），試用期滿後將自動停止進階功能權益，絕無未經同意之自動扣款。
               </li>
               <li>
                 <strong>扣款與續約：</strong>所有訂閱（月繳 NT$ 390、季繳 NT$ 890、年繳 NT$ 2,390）均由 Apple App Store 或 Google Play 帳戶收取。確認購買後，系統將於當前週期結束前 24 小時內自動扣款續約。

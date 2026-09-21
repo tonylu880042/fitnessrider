@@ -23,7 +23,7 @@ class LicenseVerificationService(private val context: Context) {
     private val _remainingDays = MutableStateFlow(30)
     val remainingDays: StateFlow<Int> = _remainingDays.asStateFlow()
 
-    private val serverUrl = "https://fitnessrider.app"
+    private val serverUrl = "https://fitnessrider.vercel.app"
 
     init {
         refreshLicenseState()
