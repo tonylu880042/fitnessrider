@@ -307,5 +307,51 @@ final class FitnessRiderTests: XCTestCase {
         targetOffset = min(duration, max(0.0, currentOffset + 10.0))
         XCTAssertEqual(targetOffset, 180.0, accuracy: 0.001)
     }
+
+    func testVersionLifecycleExpiration() {
+        let baseDate = Date(timeIntervalSince1970: 1774000000) // Fixed point in time
+        let manager = VersionLifecycleManager(buildDate: baseDate)
+        let testDefaults = UserDefaults(suiteName: "FitnessRiderTestDefaults_\(UUID().uuidString)")!
+
+        let oneDay: TimeInterval = 86400.0
+
+        // 1. Same day as build -> not expired, 30 days remaining
+        let day0 = baseDate
+        XCTAssertFalse(manager.isExpired(currentTime: day0, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day0), 30)
+
+        // 2. Day 15 -> not expired, 15 days remaining
+        let day15 = baseDate.addingTimeInterval(15 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day15, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day15), 15)
+
+        // 3. Day 29 -> not expired, 1 day remaining
+        let day29 = baseDate.addingTimeInterval(29 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day29, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day29), 1)
+
+        // 4. Day 30 -> expired, 0 days remaining
+        let day30 = baseDate.addingTimeInterval(30 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day30, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day30), 0)
+
+        // 5. Day 35 -> expired
+        let day35 = baseDate.addingTimeInterval(35 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day35), 0)
+
+        // 6. Anti-clock rollback test
+        let rollbackDefaults = UserDefaults(suiteName: "FitnessRiderRollback_\(UUID().uuidString)")!
+        let day10 = baseDate.addingTimeInterval(10 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day10, defaults: rollbackDefaults))
+        // Rollback clock by 2 days (< last recorded launch - 1 hour)
+        let day8 = baseDate.addingTimeInterval(8 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day8, defaults: rollbackDefaults))
+
+        // 7. Formatted strings and URL
+        XCTAssertFalse(manager.buildDateFormatted.isEmpty)
+        XCTAssertFalse(manager.expirationDateFormatted.isEmpty)
+        XCTAssertTrue(VersionLifecycleManager.updateURL.absoluteString.hasPrefix("https://"))
+    }
 }
 

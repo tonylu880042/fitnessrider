@@ -12,8 +12,10 @@ import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.theme.FitnessRiderTheme
 import com.fitnessrider.ui.classlist.ClassListScreen
 import com.fitnessrider.ui.editor.ClassEditorScreen
+import com.fitnessrider.ui.expiration.VersionExpiredScreen
 import com.fitnessrider.ui.hud.WorkoutHUDScreen
 import com.fitnessrider.ui.settings.SettingsScreen
+import com.fitnessrider.util.VersionLifecycleManager
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
@@ -56,11 +58,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             FitnessRiderTheme {
-                val classes by repository.getAllClassesFlow().collectAsState(initial = emptyList())
+                val isExpired = remember { VersionLifecycleManager.isExpired(this@MainActivity) }
 
-                var currentScreen by remember { mutableStateOf(ScreenState.LIST) }
-                var activeClassForHUD by remember { mutableStateOf<WorkoutClass?>(null) }
-                var activeClassForEditor by remember { mutableStateOf<WorkoutClass?>(null) }
+                if (isExpired) {
+                    VersionExpiredScreen()
+                } else {
+                    val classes by repository.getAllClassesFlow().collectAsState(initial = emptyList())
+
+                    var currentScreen by remember { mutableStateOf(ScreenState.LIST) }
+                    var activeClassForHUD by remember { mutableStateOf<WorkoutClass?>(null) }
+                    var activeClassForEditor by remember { mutableStateOf<WorkoutClass?>(null) }
 
                 when (currentScreen) {
                     ScreenState.LIST -> {
@@ -141,6 +148,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 
     override fun onDestroy() {
         super.onDestroy()

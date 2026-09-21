@@ -7,15 +7,19 @@ struct FitnessRiderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ClassListView()
-                .onOpenURL { url in
-                    handleIncomingDocument(url)
-                }
-                .alert("匯入成功", isPresented: $isShowingImportNotice) {
-                    Button("確定", role: .cancel) {}
-                } message: {
-                    Text(importedClassNotice ?? "")
-                }
+            if VersionLifecycleManager.shared.isExpired() {
+                VersionExpiredView()
+            } else {
+                ClassListView()
+                    .onOpenURL { url in
+                        handleIncomingDocument(url)
+                    }
+                    .alert("匯入成功", isPresented: $isShowingImportNotice) {
+                        Button("確定", role: .cancel) {}
+                    } message: {
+                        Text(importedClassNotice ?? "")
+                    }
+            }
         }
     }
 

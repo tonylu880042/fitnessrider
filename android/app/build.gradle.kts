@@ -17,6 +17,10 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
+        buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
+        buildConfigField("int", "LIFECYCLE_DAYS", "30")
+        buildConfigField("String", "UPDATE_URL", "\"https://github.com/tonylu880042/fitnessrider/releases\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -38,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

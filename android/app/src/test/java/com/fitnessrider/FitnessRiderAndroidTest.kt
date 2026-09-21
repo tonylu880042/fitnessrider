@@ -216,6 +216,44 @@ class FitnessRiderAndroidTest {
         targetOffset = (currentOffset + 10.0).coerceIn(0.0, duration)
         assertEquals(180.0, targetOffset, 0.001)
     }
+
+    @Test
+    fun testVersionLifecycleExpiration() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val buildTime = manager.buildTimeMs
+        val oneDayMs = 86_400_000L
+
+        // 1. Same day as build -> not expired, ~30 days remaining
+        val day0 = buildTime
+        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day0))
+        assertEquals(30, manager.getRemainingDays(overrideCurrentTimeMs = day0))
+
+        // 2. Day 15 -> not expired, 15 days remaining
+        val day15 = buildTime + (15 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day15))
+        assertEquals(15, manager.getRemainingDays(overrideCurrentTimeMs = day15))
+
+        // 3. Day 29 -> not expired, 1 day remaining
+        val day29 = buildTime + (29 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day29))
+        assertEquals(1, manager.getRemainingDays(overrideCurrentTimeMs = day29))
+
+        // 4. Day 30 -> exactly reached/exceeded 30-day lifecycle -> expired!
+        val day30 = buildTime + (30 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day30))
+        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day30))
+
+        // 5. Day 35 -> expired
+        val day35 = buildTime + (35 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day35))
+        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day35))
+
+        // 6. Formatting tests
+        org.junit.Assert.assertTrue(manager.getFormattedBuildDate().isNotEmpty())
+        org.junit.Assert.assertTrue(manager.getFormattedExpirationDate().isNotEmpty())
+        org.junit.Assert.assertTrue(manager.updateUrl.startsWith("https://"))
+    }
 }
+
 
 

@@ -25,6 +25,8 @@
 		95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */; };
 		E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100022C9B800100000001 /* TapTempoDetector.swift */; };
 		E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */; };
+		E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A100022C9B800100000001 /* VersionLifecycleManager.swift */; };
+		E5A100032C9B800100000002 /* VersionExpiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A100042C9B800100000002 /* VersionExpiredView.swift */; };
 		9648C09D13608505B0145810 /* FitnessRiderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */; };
 		999093BC9A827D1AB76E8B3D /* SegmentProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */; };
 		9D8E9CF48C4551175D4FE682 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B9540016F25DEC18089446E0 /* libsqlite3.tbd */; };
@@ -74,6 +76,8 @@
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
 		E4A100022C9B800100000001 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
 		E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BpmCalibrationSheet.swift; sourceTree = "<group>"; };
+		E5A100022C9B800100000001 /* VersionLifecycleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionLifecycleManager.swift; sourceTree = "<group>"; };
+		E5A100042C9B800100000002 /* VersionExpiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionExpiredView.swift; sourceTree = "<group>"; };
 		7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassRepository.swift; sourceTree = "<group>"; };
 		8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentProgressBar.swift; sourceTree = "<group>"; };
 		98018669BA114F7F3866B19A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -148,6 +152,8 @@
 			children = (
 				F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */,
 				21BB44E3E41EE897521C65E7 /* FitnessRiderTheme.swift */,
+				E5A100022C9B800100000001 /* VersionLifecycleManager.swift */,
+				E5A100042C9B800100000002 /* VersionExpiredView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -393,6 +399,8 @@
 				95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */,
 				E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */,
 				E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */,
+				E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */,
+				E5A100032C9B800100000002 /* VersionExpiredView.swift in Sources */,
 				606BAA5DC9CA94875F25E76D /* WaveformCanvasView.swift in Sources */,
 				A92AF27FC144C57548EEDE72 /* WorkoutClass.swift in Sources */,
 				58507492178C6A241A6F23AE /* WorkoutCue.swift in Sources */,
