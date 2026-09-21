@@ -1,0 +1,54 @@
+# ==========================================
+# FitnessRider - Git Ignore Rules
+# ==========================================
+
+# 1. 歷史舊版原始碼目錄 (Legacy Android Project)
+original/
+
+# 2. macOS 系統產出
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# 3. iOS / Xcode 建置與設定產出
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+*.xcscmblueprint
+xcuserdata/
+Pods/
+.build/
+
+# 4. Android / Gradle 建置產出
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 5. Backend (Next.js / Node.js) 產出
+node_modules/
+.next/
+out/
+.env*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel/
+
+# 6. IDE 與編輯器設定
+.idea/
+.vscode/
+*.swp
+*~
