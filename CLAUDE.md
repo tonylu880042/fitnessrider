@@ -17,6 +17,11 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - 刻意的簡化用 `ponytail:` 註解標註，並寫明上限與升級路徑。
 - 不要為了「以後可能需要」而加抽象層、介面、設定項。最短可行的 diff 優先。
 
+## 已知落差（尚未排程）
+
+- **iOS 編輯器的段落試聽沒有聲音。** `ClassEditorView.startPreview` 只是個推進播放頭的 `Timer`，整個檔案沒有任何播放器；Android 同一個位置用的是真的 ExoPlayer。兩平台體驗不對等，但不在三層計畫範圍內，尚未決定要不要修。
+- **匯入失敗時已寫入一半的檔案沒有清掉**，會在 Music 目錄留下截斷檔並佔住檔名。適合併進 Layer 3 的檔案管理一起處理。
+
 ## 產品決策（不要當成 bug 修掉）
 
 - **`playbackRate` 不計入總時長與預估消耗。** 總時長一律是各段落 `durationMs` 的總和，卡路里一律依 `durationMs` × `intensityZone` 費率推算，兩者都忽略播放速率。所以 5 分鐘的曲子設成 0.85x 時，實際騎乘約 5:53，但編輯器頂端仍顯示 05:00 —— 這是刻意的，舊版與新版、Android 與 iOS 行為一致。不要「修正」成用有效播放時間計算。
@@ -50,7 +55,8 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 
 - 新增 `MusicLibraryScreen`（Android）／`MusicLibraryView`（iOS），列出 `filesDir/Music`（Android）與 `SQLiteDatabase.shared.musicDirectoryURL`（iOS）。
 - 顯示曲名、時長、BPM。**BPM 與波形已由 `WaveformAnalyzer` 算過並經 `saveWaveform` 存起來，直接讀快取，不要重算。**
-- 可搜尋、可試聽（editor 已有 ExoPlayer／`AVAudioPlayer`，沿用，不要新增播放器）。
+- 可搜尋、可試聽。Android 沿用編輯器既有的 ExoPlayer。iOS 用 `AVAudioPlayer`（AVFoundation 內建，非新依賴）——
+  注意編輯器的 `startPreview` 只是個推進 `previewPlayheadMs` 的 `Timer`，**沒有實際聲音**，沒有現成播放器可沿用。
 - 段落指定音樂時開這個列表，不再開系統檔案選擇器；SAF／`fileImporter` 只保留在「＋匯入新檔」一個入口。
 - 重用已匯入曲目不得再產生任何檔案複製。
 

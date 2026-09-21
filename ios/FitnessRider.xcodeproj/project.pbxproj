@@ -38,6 +38,7 @@
 		D464988C98A08DA31CA814EC /* DeviceIdentifierService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FB4C94AA0CAB3CE75206759 /* DeviceIdentifierService.swift */; };
 		DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */; };
 		EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */; };
+		9200583031C87E49120B5F09 /* MusicLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */; };
 		ECEADC544C061140A1D17C54 /* CircleProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */; };
 		F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */; };
 		F4A47D9E5A3913DEE93C69D7 /* CueAudioBeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */; };
@@ -83,6 +84,7 @@
 		98018669BA114F7F3866B19A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		998E959DCF787BBF19BA2073 /* WorkoutCue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCue.swift; sourceTree = "<group>"; };
 		B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassEditorView.swift; sourceTree = "<group>"; };
+		1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryView.swift; sourceTree = "<group>"; };
 		B3A489114CA189F05EF7C226 /* CircleProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleProgressBar.swift; sourceTree = "<group>"; };
 		B9540016F25DEC18089446E0 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueEditorSheet.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 			isa = PBXGroup;
 			children = (
 				B017AB1955F6AD1580D9DB96 /* ClassEditorView.swift */,
+				1980936DB2E00D7ACB9ABFE5 /* MusicLibraryView.swift */,
 				CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */,
 				E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */,
 			);
@@ -378,6 +381,7 @@
 				69561E525B9B8C0EA8FBB3DC /* AudioEngineManager.swift in Sources */,
 				ECEADC544C061140A1D17C54 /* CircleProgressBar.swift in Sources */,
 				EB90D61C0A4513434F18A0BB /* ClassEditorView.swift in Sources */,
+				9200583031C87E49120B5F09 /* MusicLibraryView.swift in Sources */,
 				ABF3B9382E46FC1DDB1F699F /* ClassListView.swift in Sources */,
 				156087771BD525DE33AE0AEB /* ClassRepository.swift in Sources */,
 				DF0E3CABEE44B6D5B08A3DCD /* CoachingReminderLibrary.swift in Sources */,

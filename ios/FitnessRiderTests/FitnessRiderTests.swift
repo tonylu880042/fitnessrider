@@ -406,6 +406,67 @@ final class FitnessRiderTests: XCTestCase {
         segments.forEach { XCTAssertFalse($0.cues.isEmpty) }
     }
 
+    // Layer 2：音樂庫列表要從檔名 + 波形快取建立，快取命中時直接讀值、不重新分析；
+    // 查無快取（理論上不該發生，但保底）才 fallback 回段落預設值，且一律依曲名排序。
+    func testBuildMusicLibraryTracksReadsCacheAndSortsByTitle() {
+        let cache: [String: (Int, Double)] = [
+            "b_track.mp3": (210_000, 118.0),
+            "a_track.mp3": (190_000, 126.0)
+            // "c_no_cache.mp3" 故意沒有快取
+        ]
+        let tracks = buildMusicLibraryTracks(fileNames: ["b_track.mp3", "c_no_cache.mp3", "a_track.mp3"]) { cache[$0] }
+
+        // 依曲名排序：a_track -> b_track -> c_no_cache
+        XCTAssertEqual(tracks.map { $0.title }, ["a_track", "b_track", "c_no_cache"])
+
+        let aTrack = tracks.first { $0.fileName == "a_track.mp3" }!
+        XCTAssertEqual(aTrack.durationMs, 190_000)
+        XCTAssertEqual(aTrack.bpm, 126.0, accuracy: 0.001)
+
+        // 沒有快取 -> fallback 回段落預設值，不是 0
+        let noCacheTrack = tracks.first { $0.fileName == "c_no_cache.mp3" }!
+        XCTAssertEqual(noCacheTrack.durationMs, 300_000)
+        XCTAssertEqual(noCacheTrack.bpm, 128.0, accuracy: 0.001)
+    }
+
+    // Layer 2：即時搜尋要比照舊版 FragDialogSelectMusic，不分大小寫比對曲名子字串。
+    func testFilterMusicLibraryTracksMatchesTitleCaseInsensitive() {
+        let tracks = [
+            MusicLibraryTrack(fileName: "Sprint Fire.mp3", title: "Sprint Fire", durationMs: 240_000, bpm: 140.0),
+            MusicLibraryTrack(fileName: "warmup_groove.mp3", title: "warmup_groove", durationMs: 300_000, bpm: 120.0),
+            MusicLibraryTrack(fileName: "climb_anthem.mp3", title: "climb_anthem", durationMs: 420_000, bpm: 130.0)
+        ]
+
+        XCTAssertEqual(filterMusicLibraryTracks(tracks, query: "").count, 3)
+        XCTAssertEqual(filterMusicLibraryTracks(tracks, query: "sprint").count, 1)
+        XCTAssertEqual(filterMusicLibraryTracks(tracks, query: "SPRINT").first?.title, "Sprint Fire")
+        XCTAssertEqual(filterMusicLibraryTracks(tracks, query: "不存在的曲名").count, 0)
+    }
+
+    // Layer 2 第 3、4 項：從音樂庫多選既有曲目 -> 直接建立 N 個段落，沿用已存在的檔名與快取
+    // 的 duration/BPM，不需要（也不應該）再產生任何檔案複製或重新分析。
+    func testBuildSegmentsFromLibrarySelectionReusesExistingFilesWithoutCopying() {
+        let classId = UUID()
+        let selected = [
+            MusicLibraryTrack(fileName: "climb_anthem.mp3", title: "climb_anthem", durationMs: 420_000, bpm: 130.0),
+            MusicLibraryTrack(fileName: "sprint_fire.mp3", title: "sprint_fire", durationMs: 240_000, bpm: 140.0)
+        ]
+
+        let segments = buildSegmentsFromLibrarySelection(tracks: selected, classId: classId, startOrderIndex: 3)
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(segments[0].orderIndex, 3)
+        XCTAssertEqual(segments[1].orderIndex, 4)
+        // 檔名原封不動沿用（沒有經過 resolveUniqueMusicFileName 加後綴，因為根本沒有複製動作）
+        XCTAssertEqual(segments[0].musicFileName, "climb_anthem.mp3")
+        XCTAssertEqual(segments[1].musicFileName, "sprint_fire.mp3")
+        XCTAssertEqual(segments[0].title, "climb_anthem")
+        XCTAssertEqual(segments[0].durationMs, 420_000)
+        XCTAssertEqual(segments[0].baseBpm, 130.0, accuracy: 0.001)
+        XCTAssertEqual(segments[1].durationMs, 240_000)
+        XCTAssertEqual(segments[1].baseBpm, 140.0, accuracy: 0.001)
+    }
+
     func testVersionLifecycleExpiration() {
         let baseDate = Date(timeIntervalSince1970: 1774000000) // Fixed point in time
         let manager = VersionLifecycleManager(buildDate: baseDate)

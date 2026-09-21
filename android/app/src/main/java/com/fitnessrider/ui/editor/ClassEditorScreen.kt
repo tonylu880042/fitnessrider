@@ -1,8 +1,6 @@
 package com.fitnessrider.ui.editor
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,11 +36,11 @@ import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.ui.components.WaveformCanvas
+import com.fitnessrider.ui.musiclibrary.MusicLibraryScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -149,67 +147,15 @@ fun ClassEditorScreen(
         workoutClass.segments[selectedSegmentIndex]
     } else null
 
-    // 多選音樂檔 -> 逐一複製、分析曲長/BPM -> 一次建立 N 個段落（Layer 1 第 3、4、7 項）。
-    // 不再寫入「目前選取中的段落」：無論有沒有選取段落，匯入永遠是「新增段落」的動作，
-    // 這樣才會跟舊版 ActivityClassEditor.java:1188 的行為一致，也才不會出現選完檔案畫面沒反應的狀況。
-    val musicPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
-        coroutineScope.launch {
-            val analyzer = WaveformAnalyzer.getInstance(context)
-            val musicDir = File(context.filesDir, "Music").apply { if (!exists()) mkdirs() }
-            val existingNames = musicDir.list()?.toMutableSet() ?: mutableSetOf()
-            val importedTracks = mutableListOf<ImportedTrackInfo>()
-            val failedLabels = mutableListOf<String>()
+    // Layer 2：段落指定音樂一律先開 app 內音樂庫，不再直接開系統檔案選擇器；
+    // SAF／OpenMultipleDocuments 只留在 MusicLibraryScreen 內「＋匯入新檔」一個入口。
+    var isMusicLibraryVisible by remember { mutableStateOf(false) }
 
-            for (uri in uris) {
-                var displayName = "imported_${System.currentTimeMillis()}_${importedTracks.size + failedLabels.size}.mp3"
-                try {
-                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (nameIndex != -1 && cursor.moveToFirst()) {
-                            displayName = cursor.getString(nameIndex)
-                        }
-                    }
-                    val fileName = resolveUniqueMusicFileName(displayName, existingNames)
-                    existingNames.add(fileName)
-                    val destFile = File(musicDir, fileName)
-                    val input = context.contentResolver.openInputStream(uri)
-                        ?: throw java.io.IOException("無法讀取檔案：$displayName")
-                    input.use { stream ->
-                        FileOutputStream(destFile).use { output -> stream.copyTo(output) }
-                    }
-
-                    val waveform = analyzer.analyzeWaveform(fileName)
-                    importedTracks.add(
-                        ImportedTrackInfo(
-                            fileName = fileName,
-                            durationMs = waveform.durationMs,
-                            bpm = waveform.bpm
-                        )
-                    )
-                } catch (e: Exception) {
-                    android.util.Log.e("ClassEditor", "Error importing music: $displayName", e)
-                    failedLabels.add(displayName)
-                }
-            }
-
-            if (importedTracks.isNotEmpty()) {
-                val newSegments = buildSegmentsForImportedTracks(
-                    tracks = importedTracks,
-                    classId = workoutClass.id,
-                    startOrderIndex = workoutClass.segments.size
-                )
-                // 匯入後立刻重算總時長/預估消耗，不然編輯畫面頂端的「⏱ 總時長」在存檔前都還是舊值（Layer 1 第 1 項）。
-                workoutClass = workoutClass.copy(segments = workoutClass.segments + newSegments).withRecalculatedTotals()
-                selectedSegmentIndex = workoutClass.segments.size - 1
-            }
-
-            if (failedLabels.isNotEmpty()) {
-                snackbarHostState.showSnackbar("匯入失敗：${failedLabels.joinToString("、")}")
-            }
-        }
+    fun appendSegmentsFromLibrary(newSegments: List<WorkoutSegment>) {
+        if (newSegments.isEmpty()) return
+        // 匯入/選曲後立刻重算總時長/預估消耗，不然編輯畫面頂端的「⏱ 總時長」在存檔前都還是舊值（Layer 1 第 1 項）。
+        workoutClass = workoutClass.copy(segments = workoutClass.segments + newSegments).withRecalculatedTotals()
+        selectedSegmentIndex = workoutClass.segments.size - 1
     }
 
     LaunchedEffect(activeSegment?.id, activeSegment?.musicFileName) {
@@ -330,7 +276,7 @@ fun ClassEditorScreen(
             Text(text = "🔥 預估消耗: ${workoutClass.estimatedCalories.toInt()} kcal", fontSize = 13.sp, color = TextSecondary)
             Spacer(modifier = Modifier.weight(1f))
             Button(
-                onClick = { musicPickerLauncher.launch(arrayOf("audio/*")) },
+                onClick = { isMusicLibraryVisible = true },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TopBarGreen.copy(alpha = 0.15f),
                     contentColor = TopBarGreenDark
@@ -408,8 +354,8 @@ fun ClassEditorScreen(
                         .clip(RoundedCornerShape(10.dp))
                         .border(1.dp, TopBarGreen, RoundedCornerShape(10.dp))
                         .clickable {
-                            // 空段落對教練沒有意義，直接開音樂選擇器，選好曲目才建立段落（Layer 1 第 4 項）。
-                            musicPickerLauncher.launch(arrayOf("audio/*"))
+                            // 空段落對教練沒有意義，直接開音樂庫，選好曲目才建立段落（Layer 1 第 4 項、Layer 2 音樂庫）。
+                            isMusicLibraryVisible = true
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -749,6 +695,20 @@ fun ClassEditorScreen(
                 val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
                 workoutClass = workoutClass.copy(segments = updatedSegs)
                 isBpmDialogVisible = false
+            }
+        )
+    }
+
+    if (isMusicLibraryVisible) {
+        MusicLibraryScreen(
+            classId = workoutClass.id,
+            startOrderIndex = workoutClass.segments.size,
+            onDismiss = { isMusicLibraryVisible = false },
+            onSegmentsCreated = { newSegments -> appendSegmentsFromLibrary(newSegments) },
+            onImportFailed = { failedLabels ->
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("匯入失敗：${failedLabels.joinToString("、")}")
+                }
             }
         )
     }

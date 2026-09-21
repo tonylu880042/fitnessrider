@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// 匯入單一音樂檔後、建立段落前所需的資料（檔名、實際曲長、偵測 BPM）。
 /// 拆成獨立型別與純函式是為了讓「檔名碰撞後綴」與「N 個檔案 -> N 個段落」
@@ -67,7 +66,9 @@ public struct ClassEditorView: View {
     @State private var isShowingCueSheet: Bool = false
     @State private var isShowingBpmSheet: Bool = false
     @State private var editingCue: WorkoutCue?
-    @State private var isShowingMusicPicker: Bool = false
+    // Layer 2：段落指定音樂一律先開 app 內音樂庫，不再直接開系統檔案選擇器；
+    // .fileImporter 只留在 MusicLibraryView 內「＋匯入新檔」一個入口。
+    @State private var isShowingMusicLibrary: Bool = false
     @State private var previewPlayheadMs: Int = 0
     @State private var isPreviewPlaying: Bool = false
     @State private var previewTimer: Timer?
@@ -121,7 +122,7 @@ public struct ClassEditorView: View {
                 Spacer()
 
                 Button {
-                    isShowingMusicPicker = true
+                    isShowingMusicLibrary = true
                 } label: {
                     Label("匯入音樂檔", systemImage: "music.note.list")
                         .font(.system(size: 13, weight: .semibold))
@@ -148,9 +149,9 @@ public struct ClassEditorView: View {
                     }
 
                     // Add Segment Button
-                    // 空段落對教練沒有意義，直接開音樂選擇器，選好曲目才建立段落（Layer 1 第 4 項）。
+                    // 空段落對教練沒有意義，直接開音樂庫，選好曲目才建立段落（Layer 1 第 4 項、Layer 2 音樂庫）。
                     Button {
-                        isShowingMusicPicker = true
+                        isShowingMusicLibrary = true
                     } label: {
                         VStack(spacing: 8) {
                             Image(systemName: "plus")
@@ -215,12 +216,16 @@ public struct ClassEditorView: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $isShowingMusicPicker,
-            allowedContentTypes: [UTType.audio, UTType.mp3, UTType.mpeg4Audio],
-            allowsMultipleSelection: true
-        ) { result in
-            handleImportedMusic(result)
+        .sheet(isPresented: $isShowingMusicLibrary) {
+            MusicLibraryView(
+                classId: workoutClass.id,
+                startOrderIndex: workoutClass.segments.count,
+                onDismiss: { isShowingMusicLibrary = false },
+                onSegmentsCreated: { newSegments in appendSegments(newSegments) },
+                onImportFailed: { failedLabels in
+                    importErrorMessage = "匯入失敗：\(failedLabels.joined(separator: "、"))"
+                }
+            )
         }
         // 匯入失敗要看得見：改用 Alert 取代原本只有 print 的無聲失敗（Layer 1 第 5 項）。
         .alert(
@@ -579,62 +584,13 @@ public struct ClassEditorView: View {
         previewTimer = nil
     }
 
-    // 多選音樂檔 -> 逐一複製、分析曲長/BPM -> 一次建立 N 個段落（Layer 1 第 3、4、7 項）。
-    // 不再寫入「目前選取中的段落」：無論有沒有選取段落，匯入永遠是「新增段落」的動作，
-    // 這樣才會跟舊版 ActivityClassEditor.java:1188 的行為一致，也才不會出現選完檔案畫面沒反應的狀況。
-    private func handleImportedMusic(_ result: Result<[URL], Error>) {
-        let urls: [URL]
-        do {
-            urls = try result.get()
-        } catch {
-            importErrorMessage = "匯入失敗：\(error.localizedDescription)"
-            return
-        }
-        guard !urls.isEmpty else { return }
-
-        Task { @MainActor in
-            let musicDir = SQLiteDatabase.shared.musicDirectoryURL
-            var existingNames = Set(
-                (try? FileManager.default.contentsOfDirectory(atPath: musicDir.path)) ?? []
-            )
-            var importedTracks: [ImportedTrackInfo] = []
-            var failedLabels: [String] = []
-
-            for url in urls {
-                let displayName = url.lastPathComponent
-                let didAccess = url.startAccessingSecurityScopedResource()
-                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-
-                let fileName = resolveUniqueMusicFileName(displayName, existingNames: existingNames)
-                existingNames.insert(fileName)
-                let destURL = musicDir.appendingPathComponent(fileName)
-
-                do {
-                    try? FileManager.default.removeItem(at: destURL)
-                    try FileManager.default.copyItem(at: url, to: destURL)
-                } catch {
-                    failedLabels.append(displayName)
-                    continue
-                }
-
-                let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
-                importedTracks.append(ImportedTrackInfo(fileName: fileName, durationMs: durationMs, bpm: bpm))
-            }
-
-            if !importedTracks.isEmpty {
-                let newSegments = buildSegmentsForImportedTracks(
-                    tracks: importedTracks,
-                    classId: workoutClass.id,
-                    startOrderIndex: workoutClass.segments.count
-                )
-                workoutClass.segments.append(contentsOf: newSegments)
-                selectedSegmentIndex = workoutClass.segments.count - 1
-                workoutClass.recalculateTotals()
-            }
-            if !failedLabels.isEmpty {
-                importErrorMessage = "匯入失敗：\(failedLabels.joined(separator: "、"))"
-            }
-        }
+    // Layer 2：音樂庫（新建立或既有曲目多選）回傳的段落一律經這裡併入課表並重算總時長，
+    // 對應 Android ClassEditorScreen.appendSegmentsFromLibrary()。
+    private func appendSegments(_ newSegments: [WorkoutSegment]) {
+        guard !newSegments.isEmpty else { return }
+        workoutClass.segments.append(contentsOf: newSegments)
+        selectedSegmentIndex = workoutClass.segments.count - 1
+        workoutClass.recalculateTotals()
     }
 }
 

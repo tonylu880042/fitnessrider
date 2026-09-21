@@ -6,6 +6,10 @@ import com.fitnessrider.ui.editor.ImportedTrackInfo
 import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
 import com.fitnessrider.ui.editor.musicTitleFromFileName
 import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
+import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
+import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
+import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
+import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -388,6 +392,75 @@ class FitnessRiderAndroidTest {
 
         // 每個新段落都要有預設 cue，維持既有行為
         segments.forEach { assertTrue(it.cues.isNotEmpty()) }
+    }
+
+    // Layer 2：音樂庫列表要從檔名 + 波形快取建立，快取命中時直接讀值、不重新分析；
+    // 查無快取（理論上不該發生，但保底）才 fallback 回段落預設值，且一律依曲名排序。
+    @Test
+    fun testBuildMusicLibraryTracksReadsCacheAndSortsByTitle() {
+        val cache = mapOf(
+            "b_track.mp3" to (210_000 to 118.0),
+            "a_track.mp3" to (190_000 to 126.0)
+            // "c_no_cache.mp3" 故意沒有快取
+        )
+        val tracks = buildMusicLibraryTracks(
+            fileNames = listOf("b_track.mp3", "c_no_cache.mp3", "a_track.mp3")
+        ) { cache[it] }
+
+        // 依曲名排序：a_track -> b_track -> c_no_cache
+        assertEquals(listOf("a_track", "b_track", "c_no_cache"), tracks.map { it.title })
+
+        val aTrack = tracks.first { it.fileName == "a_track.mp3" }
+        assertEquals(190_000, aTrack.durationMs)
+        assertEquals(126.0, aTrack.bpm, 0.001)
+
+        // 沒有快取 -> fallback 回段落預設值，不是 0
+        val noCacheTrack = tracks.first { it.fileName == "c_no_cache.mp3" }
+        assertEquals(300_000, noCacheTrack.durationMs)
+        assertEquals(128.0, noCacheTrack.bpm, 0.001)
+    }
+
+    // Layer 2：即時搜尋要比照舊版 FragDialogSelectMusic，不分大小寫比對曲名子字串。
+    @Test
+    fun testFilterMusicLibraryTracksMatchesTitleCaseInsensitive() {
+        val tracks = listOf(
+            MusicLibraryTrack("Sprint Fire.mp3", "Sprint Fire", 240_000, 140.0),
+            MusicLibraryTrack("warmup_groove.mp3", "warmup_groove", 300_000, 120.0),
+            MusicLibraryTrack("climb_anthem.mp3", "climb_anthem", 420_000, 130.0)
+        )
+
+        assertEquals(3, filterMusicLibraryTracks(tracks, "").size)
+        assertEquals(1, filterMusicLibraryTracks(tracks, "sprint").size)
+        assertEquals("Sprint Fire", filterMusicLibraryTracks(tracks, "SPRINT").first().title)
+        assertEquals(0, filterMusicLibraryTracks(tracks, "不存在的曲名").size)
+    }
+
+    // Layer 2 第 3、4 項：從音樂庫多選既有曲目 -> 直接建立 N 個段落，沿用已存在的檔名與快取
+    // 的 duration/BPM，不需要（也不應該）再產生任何檔案複製或重新分析。
+    @Test
+    fun testBuildSegmentsFromLibrarySelectionReusesExistingFilesWithoutCopying() {
+        val selected = listOf(
+            MusicLibraryTrack("climb_anthem.mp3", "climb_anthem", 420_000, 130.0),
+            MusicLibraryTrack("sprint_fire.mp3", "sprint_fire", 240_000, 140.0)
+        )
+
+        val segments = buildSegmentsFromLibrarySelection(
+            tracks = selected,
+            classId = "class-42",
+            startOrderIndex = 3
+        )
+
+        assertEquals(2, segments.size)
+        assertEquals(3, segments[0].orderIndex)
+        assertEquals(4, segments[1].orderIndex)
+        // 檔名原封不動沿用（沒有 resolveUniqueMusicFileName 加後綴，因為根本沒有複製動作）
+        assertEquals("climb_anthem.mp3", segments[0].musicFileName)
+        assertEquals("sprint_fire.mp3", segments[1].musicFileName)
+        assertEquals("climb_anthem", segments[0].title)
+        assertEquals(420_000, segments[0].durationMs)
+        assertEquals(130.0, segments[0].baseBpm, 0.001)
+        assertEquals(240_000, segments[1].durationMs)
+        assertEquals(140.0, segments[1].baseBpm, 0.001)
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {
