@@ -114,11 +114,16 @@ graph TD
 
 ---
 
-### 模組 M5：課表檔案交換中心 (JSON Schema Import/Export)
-* **M5.1 共通 JSON 課表規範 (`workout_class.json`)**：
-  * 格式跨雙原生平台 100% 相容。
-* **M5.2 一鍵分享與匯入**：
-  * 支援 iOS AirDrop、檔案 App、LINE 分享課表檔案。
+### 模組 M5：本地 SQLite 資料庫與備份交換中心 (Database & Backup Center)
+* **M5.1 本地統一資料庫架構 (Unified Local SQLite Database)**：
+  * 採用 **SQLite** 作為雙原生平台的本地資料庫基石（iOS 採用原生 SQLite / SwiftData，Android 採用官方 Room/SQLite）。
+  * 儲存實體：課表資料表 (`classes`)、歌曲段落表 (`segments`)、動作提示點表 (`cues`)、波形分析快取表 (`waveform_cache`)、歷史記錄表 (`workout_history`)。
+* **M5.2 本地資料庫一鍵整庫備份與還原 (Full SQLite Database Backup & Restore)**：
+  * **一鍵備份匯出**：在設定或管理介面提供「**備份整個資料庫**」按鈕，調用 SQLite 安全快照，匯出具時間戳記的單一檔案（如 `FitnessRider_Backup_20260921.sqlite`）。
+  * **系統分享整合**：整合 iOS / Android 系統分享面板（Share Sheet），支援一鍵 AirDrop 至 Mac/新 iPad、存入「檔案 (Files App)」、iCloud Drive、Google Drive、隨身碟 (USB OTG) 或 Email 附件備份。
+  * **一鍵整庫還原**：更換平板或重新安裝時，點選「**還原資料庫**」，選擇備份之 `.sqlite` 檔案，自動校驗結構並完整還原所有課表、Cue 點、自訂歌曲段落與波形快取。
+* **M5.3 單一課表 JSON 交換 (Single Class JSON Import/Export)**：
+  * 支援教練將單一課表匯出為 `workout_class.json` 分享給其他教練或學員。
   * 匯入時自動比對本機是否存在對應音訊檔；若缺音訊檔，提示教練綁定本機同名歌曲。
 
 ---

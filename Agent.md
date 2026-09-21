@@ -150,7 +150,7 @@ fitnessrider/
 | **架構模式** | **MVVM / MVI** + Swift Concurrency | **MVVM / MVI** + Kotlin Coroutines / Flow | 一致的業務狀態機與資料流 |
 | **音訊播放與變速** | **`AVAudioEngine`** + `AVAudioUnitTimePitch` | **`AndroidX Media3`** + `PlaybackParameters` | 原生支援「變速不變調」與雙軌 Crossfade |
 | **波形與 BPM 分析** | **`AVAssetReader`** + Swift 峰值運算 | **`MediaExtractor`** + Kotlin 峰值運算 | 非同步讀取音訊 PCM 緩衝區繪製振幅波形 |
-| **本機資料儲存** | **`SwiftData`** | **`Room Database`** | 本機 SQLite ORM 關聯資料庫 |
+| **本機資料儲存與備份** | **SQLite (`SwiftData` 或 `GRDB.swift`)** | **SQLite (`Room Database`)** | 採用標準 SQLite 單一檔案儲存，提供一鍵整庫備份與還原 (`.sqlite`) |
 | **設備識別碼** | `UIDevice.identifierForVendor` + Keychain | `Settings.Secure.ANDROID_ID` + KeyStore | 防刪除重裝、保證單機唯一綁定 |
 | **授權驗證通訊** | `URLSession` + `Codable` | `Ktor` 或 `Retrofit` + `Kotlinx.serialization` | HTTPS TLS 1.3 串接 Vercel Serverless API |
 
