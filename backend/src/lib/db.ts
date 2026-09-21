@@ -21,47 +21,49 @@ if (process.env.DATABASE_URL) {
 }
 
 // Local file storage fallback
-const DATA_DIR = path.join(process.cwd(), '.data');
+let memoryFallback: InMemoryData = {
+  users: [],
+  devices: [],
+  licenses: [],
+  device_transfers: [],
+  promo_redemptions: [],
+};
+
+const DATA_DIR = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+  ? path.join('/tmp', '.fitnessrider-data')
+  : path.join(process.cwd(), '.data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
 function ensureLocalDb(): InMemoryData {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    const initial: InMemoryData = {
-      users: [],
-      devices: [],
-      licenses: [],
-      device_transfers: [],
-      promo_redemptions: [],
-    };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-    return initial;
-  }
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(DATA_FILE)) {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(memoryFallback, null, 2), 'utf-8');
+      return memoryFallback;
+    }
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as InMemoryData;
     if (!parsed.promo_redemptions) parsed.promo_redemptions = [];
+    memoryFallback = parsed;
     return parsed;
-  } catch {
-    const initial: InMemoryData = {
-      users: [],
-      devices: [],
-      licenses: [],
-      device_transfers: [],
-      promo_redemptions: [],
-    };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-    return initial;
+  } catch (err) {
+    console.warn('Local DB disk access warning, using memory fallback:', err);
+    return memoryFallback;
   }
 }
 
 function saveLocalDb(data: InMemoryData) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  memoryFallback = data;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Local DB write warning, saved in memory fallback:', err);
   }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // Initialize tables if PostgreSQL is connected
