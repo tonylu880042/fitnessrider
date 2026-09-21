@@ -230,4 +230,47 @@ graph TD
 
 ---
 
-*文件產出完畢。後續實作需嚴格遵照本功能規格書。*
+## 6. Google Stitch 現代化視覺設計系統與原型 (UI Design System & Screen Mockups)
+
+以舊版業務邏輯為骨幹，透過 **Google Stitch** 建立現代化飛輪座艙設計系統 **Dark Cockpit Pro**：
+
+* **Stitch Project ID**：`16053146227512897618`
+* **Design System**：`assets/15808650460434998133` (Dark Cockpit Pro)
+* **核心設計規格**：
+  * **底色 (Canvas)**：深黑曜石深淵黑 (`#070B11`)，適應昏暗教室燈光，杜絕反光干擾。
+  * **主強調色 (Primary)**：電光霓虹青 (`#00F0FF`)，用於當前目標、時間倒數環、當前作用中段落。
+  * **踏頻與進度 (Cadence)**：霓虹薄荷綠 (`#10B981`)，用於踏頻 (RPM/BPM) 與正常進度。
+  * **爬坡與阻力 (Climb/Resistance)**：琥珀暖橙 (`#F59E0B`)，用於重爬坡與高阻力警告。
+  * **衝刺與極限 (Sprint/Peak)**：猩紅脈衝 (`#EF4444`)，用於全力衝刺與極限心率區間。
+  * **字型階層**：
+    * 數據與倒數：`Space Grotesk` (等寬數字 Tabular digits，數值跳動時零抖動)。
+    * 標籤與內文：`Inter` (高辨識度、抗汗眩光)。
+    * 時間碼與技術參數：`JetBrains Mono`。
+  * **觸控人體工學**：主控制按鈕全面擴大為 **72pt+**，避免課堂劇烈踩踏時誤觸。
+
+### 核心畫面原型 (Screen Mockups)
+
+#### 1. 課堂即時執行 HUD (Workout Cockpit HUD)
+* **Screen ID**：`1be38012490448a985626b4356fe053b`
+* **設計亮點**：
+  * 頂部多階段彩色課堂進度條（暖身/爬坡/衝刺/緩和）與剩餘總時間。
+  * 左半部高對比音訊頻譜波形，標記動作 Cue 點，上方特大醒目提醒：「NEXT IN 00:15: STANDING CLIMB (65-75 RPM, RESISTANCE 6)」。
+  * 右半部超大字體即時目標踏頻（110 RPM）搭配環形動態儀表、坐姿衝刺姿態徽章、45 秒倒數計時與阻力段位。
+  * 底部防誤觸 Play/Pause 巨型按鈕與無損 TimePitch 變速滑桿。
+
+#### 2. 課表編排與波形節奏標記器 (Class & Waveform Editor Studio)
+* **Screen ID**：`5c89e4e8d6ae4ddcab89d0cca8d28617`
+* **設計亮點**：
+  * 雙欄分割佈局：左欄 35% 課堂歌曲序列（可拖曳重排、顯示原始與目標 BPM）。
+  * 右欄 65% 音訊波形工作區：高精準波形時間軸 (1x, 2x, 4x 縮放)、Cue 點旗標錨定、專屬 Cue Point Inspector 編輯表單（含 ±0.5s 節拍鎖定微調、姿勢切換、目標踏頻區間、阻力段位、區間色彩標記與即時變速試聽播放器）。
+
+#### 3. 課表總覽與庫存清單 (Class Library & Workout Manager)
+* **Screen ID**：`e8d9f8bfb5584c948270efb34b862824`
+* **設計亮點**：
+  * 3x2 卡片網格：每張課表展示時長、曲數、強度評級條、動作分佈預覽、一鍵「開始課堂 (Start Ride)」與「編輯課表 (Edit)」。
+  * 頂部搜尋與分類過濾（全部、HIIT/衝刺、重爬坡、耐力、緩和、收藏）、建立與匯入 JSON 課表。
+  * 底部狀態列：課表統計、音訊引擎連線狀態、VIP 授權剩餘天數與當前綁定設備狀態 (`iPad Air 5 • This Device`)。
+
+---
+
+*文件產出完畢。後續 Native 開發需嚴格遵照本功能規格書與 Stitch 設計系統規範。*
