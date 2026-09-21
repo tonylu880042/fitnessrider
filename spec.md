@@ -82,9 +82,13 @@ graph TD
   * **音調鎖定**：嚴格鎖定原曲音調（人聲不變尖、低音不失真）。
   * **iOS**：基於 `AVAudioEngine` + `AVAudioUnitTimePitch`。
   * **Android**：基於 `AndroidX Media3 (ExoPlayer)` + `PlaybackParameters`。
-* **M2.2 雙軌平滑淡入淡出 (Crossfade)**：
-  * 歌曲換首時自動無縫交錯淡入淡出（可設定 1~5 秒），避免課堂中出現尷尬靜音。
-* **M2.3 系統級背景播放**：
+* **M2.2 雙軌平滑淡入淡出與段落接續 (Playback Flow & Crossfade)**：
+  * **預設全自動連續播放**：曲目結束時自動無縫銜接下一段落，支援 1~3 秒交錯淡入淡出（Crossfade），無尷尬靜音。
+  * **段落自動暫停開關 (Auto-Pause Toggle)**：教練可於設定開啟此選項，每段結束後自動暫停，適用於間歇解說或特殊技巧課堂。
+* **M2.3 動作切換倒數提示音 (Cue Countdown Beeps)**：
+  * 當下一個動作提示點即將到達前（倒數 3 秒「3、2、1」），系統自動於音樂背景混音播放短促提示嗶聲（Beep）。
+  * 於設定中提供「提示音效開關」，教練可依授課習慣自由開啟或靜音。
+* **M2.4 系統級背景播放**：
   * 宣告 Audio Background Mode，App 進入背景或螢幕鎖定時音樂不中斷。
   * 整合系統控制中心與鎖定畫面（iOS `MPRemoteCommandCenter` / Android `MediaSession`）。
 
