@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1039441032082",
+    "project_id": "fitnessrider",
+    "storage_bucket": "fitnessrider.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1039441032082:android:06a2f064f7dc6005dcc74b",
+        "android_client_info": {
+          "package_name": "com.fitnessrider.coach"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYclKvp196OoIA6R9uMGEsgIHJfvmQLuc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
