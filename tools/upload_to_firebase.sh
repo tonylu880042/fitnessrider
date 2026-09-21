@@ -47,6 +47,9 @@ echo "分發對象 ($DIST_FLAG): ${TARGET}"
 echo "發布說明: ${RELEASE_NOTES}"
 echo "=========================================="
 
+# 檢查年度推廣代碼有效性與過期提醒
+"${PROJECT_DIR}/tools/check_promo_code.sh"
+
 echo ">> 正在編譯 Android Debug APK (Version ${VERSION_NAME}, Code ${VERSION_CODE})..."
 (cd "${PROJECT_DIR}/android" && ./gradlew assembleDebug)
 

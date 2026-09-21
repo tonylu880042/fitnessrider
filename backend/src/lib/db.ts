@@ -124,23 +124,33 @@ async function initPgTables() {
 
 /**
  * Check if a code matches the yearly promotion format (e.g. 26FR-NR for 2026)
- * or explicit promotional code list.
+ * or explicit promotional code list, and check for expiration if older than 1 year.
  */
-export function isPromoCode(rawCode: string): boolean {
+export function checkPromoCodeStatus(rawCode: string): { valid: boolean; expired: boolean; codeYear?: number } {
   const code = rawCode.trim().toUpperCase();
-  if (code === '26FR-NR') return true;
+  const currentYearShort = new Date().getFullYear() % 100;
 
-  // Format: YYFR-NR (e.g., 26FR-NR, 27FR-NR)
   const match = code.match(/^(\d{2})FR-NR$/);
   if (match) {
-    const currentYearShort = new Date().getFullYear() % 100;
     const codeYear = parseInt(match[1], 10);
-    // Valid for current year or immediate future year
-    if (codeYear >= currentYearShort && codeYear <= currentYearShort + 2) {
-      return true;
+    if (codeYear < currentYearShort) {
+      return { valid: false, expired: true, codeYear };
     }
+    return { valid: true, expired: false, codeYear };
   }
-  return false;
+
+  if (code === '26FR-NR') {
+    if (currentYearShort > 26) {
+      return { valid: false, expired: true, codeYear: 26 };
+    }
+    return { valid: true, expired: false, codeYear: 26 };
+  }
+
+  return { valid: false, expired: false };
+}
+
+export function isPromoCode(rawCode: string): boolean {
+  return checkPromoCodeStatus(rawCode).valid;
 }
 
 export const db = {
@@ -250,9 +260,24 @@ export const db = {
     }
   },
 
-  async activateLicenseWithCode(deviceFingerprint: string, rawCode: string): Promise<{ success: boolean; error?: string; license?: License; is_promo?: boolean; trial_days?: number }> {
+  async activateLicenseWithCode(
+    deviceFingerprint: string,
+    rawCode: string,
+    platform: 'ios' | 'android' = 'ios',
+    deviceModel: string = 'Coach Device'
+  ): Promise<{ success: boolean; error?: string; license?: License; is_promo?: boolean; trial_days?: number }> {
     const code = rawCode.trim().toUpperCase();
-    const isPromo = isPromoCode(code);
+    const promoStatus = checkPromoCodeStatus(code);
+
+    if (promoStatus.expired) {
+      const currentYearShort = String(new Date().getFullYear() % 100).padStart(2, '0');
+      return {
+        success: false,
+        error: `推廣代碼（${code}）已超過一年有效期限。請向講師或官方索取當前年度（${currentYearShort}FR-NR）最新代碼。`,
+      };
+    }
+
+    const isPromo = promoStatus.valid;
     const validVipCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
     const isValidVIP = validVipCodes.includes(code) || (code.startsWith('RIDER-VIP-') && code.length >= 14);
 
@@ -286,8 +311,8 @@ export const db = {
         id: crypto.randomUUID(),
         user_id: userId,
         device_fingerprint: deviceFingerprint,
-        platform: 'ios',
-        device_model: 'Coach Device',
+        platform: platform,
+        device_model: deviceModel,
       });
     }
 

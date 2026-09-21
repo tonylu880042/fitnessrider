@@ -16,13 +16,16 @@
 
 ```text
 fitnessrider/
-├── spec.md               # 系統功能規格規劃書 (權威業務規格、模組 M1~M7、JSON Schema)
+├── spec.md               # 系統功能規格規劃書 (權威業務規格、模組 M1~M8、JSON Schema)
 ├── Agent.md              # 系統技術架構、開發路徑與環境指南 (本文件)
+├── docs/                 # 核心政策手冊 (PROMO_CODES.md 推廣代碼政策與年度維護手冊)
+├── promo.properties      # 年度推廣代碼集中設定檔 (當前: 2026 年 26FR-NR)
+├── version.properties    # 發布版號設定檔 (由 tools/ 自動維護)
 ├── original/             # 歷史 Android 舊版 Java 專案（保留供演算法、UI 資源參考，已加入 .gitignore）
 ├── ios/                  # 全新 iOS / iPadOS 原生專案 (Swift 6 + SwiftUI + AVFoundation + SwiftData)
 ├── android/              # 全新 Android 原生專案 (Kotlin + Jetpack Compose + Media3 + Room)
 ├── backend/              # Vercel 雲端授權檢查與設備綁定服務 (Next.js / Node.js Serverless)
-└── specs/                # 共通規格檔存放區 (workout_class.json 等 Schema)
+└── tools/                # 自動化進版、發布與代碼效期審計腳本 (check_promo_code.sh 等)
 ```
 
 ---

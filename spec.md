@@ -155,6 +155,14 @@ graph TD
   * 登入時送出 `{ email, password, device_fingerprint, device_model }`。
   * 首次登入自動綁定；若在第二台設備登入，回傳 `403 DEVICE_MISMATCH` 阻擋使用。
   * 提供「換機轉移設備」流程（限制每 30 天最多 1 次，防止共用）。
+* **M6.3 單機 30 天換機冷卻機制**：
+  * 當用戶更換教學設備時，系統限制 30 天內最多轉移 1 次。未達 30 天時顯示剩餘冷卻天數，保障授權公正性。
+* **M6.4 培訓推廣課程專屬代碼與年度更迭政策 (Promo Code Policy)**：
+  * **基準試用**：全平台設備安裝後享有 **7 天無限制全功能免費試用**。
+  * **年度專屬推廣代碼**：格式為 `YYFR-NR`。**2026 年度指定代碼為 `26FR-NR`**。
+  * **VIP 權益開通**：輸入有效代碼立即延長/解鎖為 **30 天全功能免費 VIP 試用**。
+  * **單機唯一兌換 (Anti-Abuse)**：每台設備針對該年度推廣代碼限領一次，防止洗試用期。
+  * **年度更換與過期提醒**：詳見 [`docs/PROMO_CODES.md`](file:///Users/tunghunglu/projects/fitnessrider/docs/PROMO_CODES.md) 與自動審計工具 [`tools/check_promo_code.sh`](file:///Users/tunghunglu/projects/fitnessrider/tools/check_promo_code.sh)。
 
 ---
 

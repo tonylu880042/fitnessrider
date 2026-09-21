@@ -90,7 +90,11 @@ public final class LicenseVerificationService: ObservableObject {
 
         let body: [String: Any] = [
             "device_fingerprint": DeviceIdentifierService.shared.deviceFingerprint,
-            "license_code": code
+            "license_code": code,
+            // 讓伺服器端 bindDevice() 能記錄真實 platform/device_model，
+            // 而不是寫死成 iOS/"Coach Device"（見 backend/src/lib/db.ts）。
+            "platform": "ios",
+            "device_model": DeviceIdentifierService.shared.deviceModel
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: request)
@@ -107,7 +111,9 @@ public final class LicenseVerificationService: ObservableObject {
 
         let body: [String: Any] = [
             "device_fingerprint": DeviceIdentifierService.shared.deviceFingerprint,
-            "license_code": code
+            "license_code": code,
+            "platform": "ios",
+            "device_model": DeviceIdentifierService.shared.deviceModel
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 

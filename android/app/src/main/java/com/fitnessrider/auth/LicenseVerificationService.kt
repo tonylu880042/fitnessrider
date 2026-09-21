@@ -59,6 +59,10 @@ class LicenseVerificationService(private val context: Context) {
             val jsonBody = JSONObject().apply {
                 put("device_fingerprint", deviceService.deviceFingerprint)
                 put("license_code", code)
+                // 讓伺服器端 bindDevice() 能記錄真實 platform/device_model，
+                // 而不是寫死成 iOS/"Coach Device"（見 backend/src/lib/db.ts）。
+                put("platform", "android")
+                put("device_model", deviceService.deviceModel)
             }
 
             OutputStreamWriter(conn.outputStream).use { writer ->

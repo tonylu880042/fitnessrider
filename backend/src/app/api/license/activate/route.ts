@@ -14,7 +14,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await db.activateLicenseWithCode(deviceFingerprint, licenseCode);
+    const platform = body.platform === 'android' ? 'android' : 'ios';
+    const deviceModel = body.device_model || body.deviceModel || (platform === 'android' ? 'Android Device' : 'iPad / iPhone');
+
+    const result = await db.activateLicenseWithCode(deviceFingerprint, licenseCode, platform, deviceModel);
     if (!result.success) {
       return NextResponse.json(
         { success: false, error: result.error || '開通失敗' },

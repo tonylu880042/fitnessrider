@@ -6,6 +6,7 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 
 - 業務規格權威來源：`spec.md`
 - 技術架構與環境：`Agent.md`
+- 推廣培訓代碼政策與年度維護：`docs/PROMO_CODES.md`（當前 2026: `26FR-NR`，過期提醒工具 `tools/check_promo_code.sh`）
 - `original/` 是 2021 年的 Java 舊版，**唯讀參考**，不要修改、不要編譯。
 
 ## 通則
