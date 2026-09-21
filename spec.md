@@ -23,18 +23,19 @@
 
 ## 2. 產品模組架構展開 (Module Architecture Breakdown)
 
-FitnessRider 系統拆解為 **7 大核心功能模組**：
+FitnessRider 系統拆解為 **8 大核心功能模組**：
 
 ```mermaid
 graph TD
     subgraph Core_Product_Modules [FitnessRider 產品功能模組全景]
-        M1[M1: 課表編排器<br>Class & Segment Editor]
-        M2[M2: 原生音訊變速引擎<br>Native Audio Engine]
-        M3[M3: 波形與 BPM 分析器<br>Waveform & Tempo Analyzer]
-        M4[M4: 課堂即時執行 HUD<br>Workout Player HUD]
-        M5[M5: 課表檔案交換中心<br>JSON Schema Import/Export]
-        M6[M6: 設備綁定與授權檢核<br>Device Binding & Auth]
-        M7[M7: RevenueCat IAP 訂閱管家<br>Subscription & Paywall]
+        M1["M1: 課表編排器<br>Class & Segment Editor"]
+        M2["M2: 原生音訊變速引擎<br>Native Audio Engine"]
+        M3["M3: 波形與 BPM 分析器<br>Waveform & Tempo Analyzer"]
+        M4["M4: 課堂即時執行 HUD<br>Workout Player HUD"]
+        M5["M5: 課表檔案交換中心<br>JSON Schema Import/Export"]
+        M6["M6: 設備綁定與授權檢核<br>Device Binding & Auth"]
+        M7["M7: RevenueCat IAP 訂閱管家<br>Subscription & Paywall"]
+        M8["M8: 產品官方介紹與入口網頁<br>Official Landing & Web Portal"]
     end
 
     M1 --> M2
@@ -44,6 +45,8 @@ graph TD
     M4 --> M1
     M6 --> M7
     M4 -.授權檢驗.-> M6
+    M8 -->|提供產品下載/定價展示| M7
+    M8 -->|提供隱私權與條款公開網址| M6
 ```
 
 ---
@@ -141,6 +144,30 @@ graph TD
 * **M7.2 整合流程**：
   * App 端引入 RevenueCat SDK，以極簡 API 呼叫 Apple StoreKit 2 與 Google Play Billing。
   * 透過 RevenueCat Webhook 即時將付款/續訂事件推播至 Vercel 後端，更新資料庫 `licenses` 到期日。
+
+---
+
+### 模組 M8：產品官方介紹與服務入口網頁 (Official Landing Page & Web Portal)
+架設於 Vercel 的現代化官方品牌響應式入口網站（同時作為 App Store 審查必備之支援與法律文件公開站點）。
+
+* **M8.1 視覺首頁 (Hero & Product Showcase)**：
+  * 產品標題與核心價值主張（「專為室內飛輪教練打造的音樂節奏與課表編排引擎」）。
+  * 核心功能亮點卡片：
+    * 🎵 **無損變速不變調**：自訂節奏契合踩踏踏頻。
+    * ⏱️ **橫向大字課堂 HUD**：動態倒數環、當前姿勢與下一動作預告。
+    * 📊 **視覺化波形與 BPM**：自動偵測歌曲節拍與音訊振幅。
+    * 📱 **雙平台共通課表**：iPad 與 Android 平板隨意切換、課表一鍵分享。
+  * App 下載引導（App Store / Google Play 徽章按鈕）。
+* **M8.2 訂閱價格試算卡片 (Interactive Pricing Tiers)**：
+  * 視覺化月繳 (NT$ 390)、季繳 (NT$ 890)、年繳 (NT$ 2,390) 三卡片。
+  * 年繳方案標記「🔥 飛輪教練首選・現省 NT$ 2,290」。
+  * 明確列出訂閱包含權益：無限課表建立、無損變速播放、全功能 HUD、課表備份匯出。
+* **M8.3 教練常見問題 (FAQ)**：
+  * 涵蓋：單一設備綁定如何運作？換新 iPad 如何轉移？音樂需要連上網才能播嗎（100% 離線可用）？
+* **M8.4 App Store 審查強制必備之公開法律頁面**：
+  * **隱私權政策 (Privacy Policy)**：載明不搜集多餘個資、僅使用設備識別碼做授權綁定。
+  * **使用者服務條款 (Terms of Service / EULA)**：載明訂閱週期、自動續約條款與退訂方式。
+  * **支援與客服聯繫 (Support Contact)**：提供教練反饋管道（Email / LINE 官方諮詢）。
 
 ---
 

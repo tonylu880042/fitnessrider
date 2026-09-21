@@ -158,15 +158,22 @@ fitnessrider/
 
 ## 5. 後續開發分工與推進里程碑
 
-### Phase 0：雲端授權檢查服務 (Vercel Backend)
-- [ ] 建立 `backend/` 專案 (Next.js / Node.js + TypeScript)。
-- [ ] 建立 Supabase / Neon 資料庫資料表 (`users`, `devices`, `licenses`)。
-- [ ] 實作核心 API：
-  - `POST /api/auth/register` (註冊)
-  - `POST /api/auth/login` (登入與單一設備綁定檢查)
-  - `POST /api/license/verify` (授權有效期檢查)
-  - `POST /api/device/transfer` (受限換機申請)
-- [ ] 部署至 Vercel 並驗證 API 通訊。
+### Phase 0：Vercel 後端授權服務與官方介紹網頁 (Backend API & Landing Page)
+- [x] 建立 `backend/` 全端專案 (Next.js 15 App Router + Tailwind CSS + TypeScript)。
+- [x] **官方介紹網頁 (Landing Page)**：
+  - 首頁視覺：產品價值、4 大核心功能展示（無損變速、波形 BPM、橫向 HUD、跨平台課表）。
+  * 互動定價卡片：月繳 (NT$ 390)、季繳 (NT$ 890)、年繳 (NT$ 2,390)。
+  * 常見問題 (FAQ) 與 App 下載引導。
+  * 公開法律頁面：隱私權政策 (Privacy Policy) 與服務條款 (Terms of Service / EULA)。
+- [x] 建立資料庫抽象層與結構 (`users`, `devices`, `licenses`, `device_transfers`)，支援 Neon/Supabase PostgreSQL 與本地零配置 JSON 雙模。
+- [x] 實作核心 API：
+  - `POST /api/auth/register` (教練註冊，初始綁定設備，贈送 7 天 VIP)
+  - `POST /api/auth/login` (登入與單一設備綁定檢查，非原設備拒絕 403)
+  - `POST /api/license/verify` (授權有效期檢查與最後活躍時間更新)
+  - `POST /api/device/transfer` (受限換機申請，具備 30 天冷卻限制與舊設備解除綁定)
+  - `POST /api/webhooks/revenuecat` (RevenueCat 訂閱購買與續訂事件同步)
+- [x] 本地全套端點自動化整合測試通過 (Registration -> Verification -> Mismatch Block -> Transfer -> Migration)。
+- [ ] 部署至 Vercel (將 GitHub 倉儲匯入 Vercel 即可完成全自動部署)。
 
 ### Phase 1：iOS & Android 雙原生骨架與音訊引擎
 - [ ] 建立 `ios/` 與 `android/` 全新原生專案目錄。
