@@ -29,6 +29,7 @@ import com.fitnessrider.model.AppSettings
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.util.VersionLifecycleManager
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -265,7 +266,7 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().height(40.dp)
                     ) {
-                        Text(text = "🔑 輸入授權碼開通 / 啟用 VIP", fontSize = 13.sp, color = Color.White)
+                        Text(text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天試用)", fontSize = 13.sp, color = Color.White)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -293,25 +294,26 @@ fun SettingsScreen(
                             onClick = { copyDeviceIdToClipboard() },
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(text = "點擊複製", fontSize = 11.sp, color = TopBarGreenDark, fontWeight = FontWeight.Bold)
+                            Text(text = "複製", fontSize = 12.sp, color = TopBarGreenDark, fontWeight = FontWeight.Bold)
                         }
                     }
                     Text(
                         text = deviceService.deviceFingerprint,
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         color = TextPrimary
                     )
-                }
-            }
 
-            if (notificationMessage != null) {
-                Text(
-                    text = notificationMessage!!,
-                    fontSize = 13.sp,
-                    color = TopBarGreenDark,
-                    fontWeight = FontWeight.Bold
-                )
+                    if (notificationMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = notificationMessage!!,
+                            fontSize = 13.sp,
+                            color = TopBarGreenDark,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
@@ -321,15 +323,15 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showActivationDialog = false },
             title = {
-                Text(text = "輸入授權碼開通", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text(text = "輸入授權序號或推廣代碼", fontWeight = FontWeight.Bold, color = TextPrimary)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(text = "請輸入專業版授權序號：", fontSize = 13.sp, color = TextSecondary)
+                    Text(text = "輸入推廣培訓專屬代碼（如 26FR-NR）享 30 天免費體驗，或輸入 VIP 授權序號：", fontSize = 13.sp, color = TextSecondary)
                     OutlinedTextField(
                         value = enteredLicenseCode,
                         onValueChange = { enteredLicenseCode = it.uppercase() },
-                        placeholder = { Text("例如: RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        placeholder = { Text("例如: 26FR-NR 或 RIDER-VIP-2026-PASS", fontSize = 12.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -346,18 +348,20 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val res = VersionLifecycleManager.activateLicenseCode(context, enteredLicenseCode)
-                        if (res.first) {
-                            licenseService.refreshLicenseState()
-                            notificationMessage = res.second
-                            showActivationDialog = false
-                        } else {
-                            activationError = res.second
+                        coroutineScope.launch {
+                            val res = licenseService.activateCode(enteredLicenseCode)
+                            if (res.first) {
+                                licenseService.refreshLicenseState()
+                                notificationMessage = res.second
+                                showActivationDialog = false
+                            } else {
+                                activationError = res.second
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
                 ) {
-                    Text("開通", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("開通 / 兌換", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

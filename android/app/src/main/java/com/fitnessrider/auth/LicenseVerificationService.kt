@@ -45,14 +45,8 @@ class LicenseVerificationService(private val context: Context) {
         }
     }
 
-    suspend fun activateLicense(code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val localRes = com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
-        if (localRes.first) {
-            refreshLicenseState()
-            return@withContext localRes
-        }
-
-        // Online attempt
+    suspend fun activateCode(code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        // 1. Try online first to respect single-device limit & database audit
         try {
             val url = URL("$serverUrl/api/license/activate")
             val conn = url.openConnection() as HttpURLConnection
@@ -72,19 +66,31 @@ class LicenseVerificationService(private val context: Context) {
                 writer.flush()
             }
 
-            if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val respJson = JSONObject(responseText)
-                if (respJson.optBoolean("success", false)) {
-                    com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
-                    refreshLicenseState()
-                    return@withContext Pair(true, "線上開通成功！已升級為專業版。")
+            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+            val responseText = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            val respJson = if (responseText.isNotEmpty()) JSONObject(responseText) else JSONObject()
+
+            if (conn.responseCode == 200 && respJson.optBoolean("success", false)) {
+                com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
+                refreshLicenseState()
+                val msg = respJson.optString("message", "開通成功！")
+                return@withContext Pair(true, msg)
+            } else if (respJson.has("error")) {
+                val errorMsg = respJson.getString("error")
+                if (errorMsg.contains("已兌換") || errorMsg.contains("限領一次")) {
+                    return@withContext Pair(false, errorMsg)
                 }
             }
-            Pair(false, "授權碼無效或驗證失敗")
         } catch (e: Exception) {
-            Pair(false, "網路連線失敗，請確認網路或使用離線授權碼")
+            // Fall back to offline
         }
+
+        // 2. Offline algorithmic check fallback
+        val localRes = com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
+        if (localRes.first) {
+            refreshLicenseState()
+        }
+        return@withContext localRes
     }
 
     suspend fun verifyLicenseOnline() = withContext(Dispatchers.IO) {

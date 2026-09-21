@@ -43,12 +43,102 @@ object CrossfadeCalculator {
     }
 }
 
+// MARK: - Crossfade Finish Coordinator
+
+/**
+ * Pure (Android/ExoPlayer-free) bookkeeping for the "finish crossfade" transition
+ * and the STATE_ENDED dispatch guard, extracted out of AudioEngineManager so the
+ * reentrancy behaviour is unit-testable without a real ExoPlayer/Context.
+ *
+ * Background: Media3's clearMediaItems() can re-deliver a STATE_ENDED event for
+ * the player being torn down while finishCrossfade() is still running. The old
+ * code cleared `isCrossfading` and only flipped `activePlayerIndex` *after*
+ * tearing down the old player, so that stale/re-entrant STATE_ENDED still
+ * matched the listener's `playerIndex == activePlayerIndex` guard and fell into
+ * the normal "advance one segment" branch — on top of finishCrossfade's own
+ * advance, silently skipping a whole segment mid-class.
+ *
+ * This coordinator fixes it by committing the index flip + segment advance
+ * *before* the caller is allowed to touch the old player (so a stale event's
+ * playerIndex no longer matches), and by keeping an explicit
+ * `isFinishingCrossfade` reentrancy latch that is independent of `isCrossfading`
+ * — `isCrossfading` still means only "a crossfade is currently in progress"
+ * (used elsewhere to route play()/pause() to the incoming player too), while
+ * `isFinishingCrossfade` is purely "do not re-enter the finish transition".
+ */
+class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
+    var activePlayerIndex: Int = 0
+        private set
+    var currentSegmentIndex: Int = startSegmentIndex
+        private set
+    var isCrossfading: Boolean = false
+        private set
+    private var isFinishingCrossfade = false
+
+    /** Prepares for a newly loaded class. Deliberately does NOT touch activePlayerIndex. */
+    fun beginNewClass(segmentIndex: Int) {
+        currentSegmentIndex = segmentIndex
+        isCrossfading = false
+        isFinishingCrossfade = false
+    }
+
+    fun setSegmentIndex(index: Int) {
+        currentSegmentIndex = index
+    }
+
+    fun startCrossfade() {
+        isCrossfading = true
+    }
+
+    fun cancelCrossfade() {
+        isCrossfading = false
+    }
+
+    /**
+     * Commits the crossfade-finish transition (index flip + isCrossfading=false +
+     * segment advance) BEFORE invoking [tearDownOldPlayer] — mirroring
+     * AudioEngineManager pausing/clearing the outgoing ExoPlayer, which is
+     * exactly the call that can re-enter via a stale STATE_ENDED. Returns false
+     * (no-op) if not currently crossfading, or if already mid-finish (reentrant
+     * call — the second line of defense, in case the stale event manages to
+     * arrive synchronously rather than via a posted Handler message).
+     */
+    fun finishCrossfade(tearDownOldPlayer: () -> Unit): Boolean {
+        if (!isCrossfading || isFinishingCrossfade) return false
+        isFinishingCrossfade = true
+        try {
+            activePlayerIndex = 1 - activePlayerIndex
+            isCrossfading = false
+            currentSegmentIndex += 1
+            tearDownOldPlayer()
+        } finally {
+            isFinishingCrossfade = false
+        }
+        return true
+    }
+
+    /**
+     * Mirrors the Player.Listener guard (`playerIndex == activePlayerIndex`) plus
+     * the reentrancy latch. Must be checked before doing ANY work in response to
+     * a STATE_ENDED event (both the crossfade-finish branch and the normal
+     * advance-one-segment branch) — a false result means the event is stale
+     * (belongs to a player that is no longer active) or arrived while a finish
+     * transition is already committing.
+     */
+    fun shouldHandleTrackEnded(endedPlayerIndex: Int): Boolean {
+        return endedPlayerIndex == activePlayerIndex && !isFinishingCrossfade
+    }
+}
+
 // MARK: - AudioEngineManager
 
 class AudioEngineManager(private val context: Context) {
     private val playerA: ExoPlayer = ExoPlayer.Builder(context).build()
     private val playerB: ExoPlayer = ExoPlayer.Builder(context).build()
-    private var activePlayerIndex = 0 // 0 = playerA, 1 = playerB
+    private val crossfadeCoordinator = CrossfadeFinishCoordinator()
+
+    private val activePlayerIndex: Int
+        get() = crossfadeCoordinator.activePlayerIndex
 
     private val activePlayer: ExoPlayer
         get() = if (activePlayerIndex == 0) playerA else playerB
@@ -111,8 +201,8 @@ class AudioEngineManager(private val context: Context) {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playerIndex == activePlayerIndex && playbackState == Player.STATE_ENDED) {
-                    handleTrackEnded()
+                if (playbackState == Player.STATE_ENDED) {
+                    handleTrackEnded(playerIndex)
                 }
             }
         })
@@ -120,7 +210,9 @@ class AudioEngineManager(private val context: Context) {
 
     fun loadClass(workoutClass: WorkoutClass, startIndex: Int = 0) {
         currentClass = workoutClass
-        _currentSegmentIndex.value = startIndex.coerceIn(0, (workoutClass.segments.size - 1).coerceAtLeast(0))
+        val clampedIndex = startIndex.coerceIn(0, (workoutClass.segments.size - 1).coerceAtLeast(0))
+        crossfadeCoordinator.beginNewClass(clampedIndex)
+        _currentSegmentIndex.value = clampedIndex
         cancelCrossfade()
         incomingPlayer.clearMediaItems()
         loadCurrentSegment()
@@ -209,9 +301,10 @@ class AudioEngineManager(private val context: Context) {
 
     fun nextSegment() {
         val c = currentClass ?: return
-        if (_currentSegmentIndex.value < c.segments.size - 1) {
+        if (crossfadeCoordinator.currentSegmentIndex < c.segments.size - 1) {
             cancelCrossfade()
-            _currentSegmentIndex.value += 1
+            crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex + 1)
+            _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
             loadCurrentSegment()
             if (_isPlaying.value) play()
         }
@@ -221,8 +314,9 @@ class AudioEngineManager(private val context: Context) {
         cancelCrossfade()
         if (_currentOffsetSeconds.value > 3.0) {
             seekTo(0.0)
-        } else if (_currentSegmentIndex.value > 0) {
-            _currentSegmentIndex.value -= 1
+        } else if (crossfadeCoordinator.currentSegmentIndex > 0) {
+            crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex - 1)
+            _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
             loadCurrentSegment()
             if (_isPlaying.value) play()
         } else {
@@ -234,9 +328,10 @@ class AudioEngineManager(private val context: Context) {
 
     private fun startCrossfade(effectiveDuration: Double) {
         val c = currentClass ?: return
-        val nextIndex = _currentSegmentIndex.value + 1
+        val nextIndex = crossfadeCoordinator.currentSegmentIndex + 1
         if (nextIndex >= c.segments.size) return
 
+        crossfadeCoordinator.startCrossfade()
         _isCrossfading.value = true
         val nextSegment = c.segments[nextIndex]
 
@@ -270,24 +365,34 @@ class AudioEngineManager(private val context: Context) {
     }
 
     private fun finishCrossfade(effectiveDuration: Double) {
-        if (!_isCrossfading.value) return
-        _isCrossfading.value = false
-
+        // oldPlayer/newPlayer must be captured BEFORE crossfadeCoordinator.finishCrossfade()
+        // flips the active index, otherwise `incomingPlayer`/`activePlayer` below would
+        // resolve to the wrong ExoPlayer instances once the flip has already happened.
         val oldPlayer = activePlayer
-        oldPlayer.pause()
-        oldPlayer.clearMediaItems()
-        oldPlayer.volume = 1.0f
+        val newPlayer = incomingPlayer
 
-        incomingPlayer.volume = 1.0f
-        activePlayerIndex = 1 - activePlayerIndex
+        val didFinish = crossfadeCoordinator.finishCrossfade {
+            // This teardown is exactly what can re-deliver a stale STATE_ENDED for
+            // oldPlayer. By the time that (possibly reentrant) event reaches
+            // handleTrackEnded(), crossfadeCoordinator has already flipped
+            // activePlayerIndex and set isFinishingCrossfade=true above, so
+            // shouldHandleTrackEnded() rejects it — no double segment advance.
+            oldPlayer.pause()
+            oldPlayer.clearMediaItems()
+            oldPlayer.volume = 1.0f
+            newPlayer.volume = 1.0f
+        }
+        if (!didFinish) return
 
-        _currentSegmentIndex.value += 1
+        _isCrossfading.value = false
+        _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
+
         val newSegment = currentSegment
         if (newSegment != null) {
             _currentRate.value = newSegment.playbackRate
-            if (activePlayer.mediaItemCount > 0 && activePlayer.duration > 0) {
-                _currentDurationSeconds.value = activePlayer.duration / 1000.0
-                _currentOffsetSeconds.value = activePlayer.currentPosition / 1000.0
+            if (newPlayer.mediaItemCount > 0 && newPlayer.duration > 0) {
+                _currentDurationSeconds.value = newPlayer.duration / 1000.0
+                _currentOffsetSeconds.value = newPlayer.currentPosition / 1000.0
             } else {
                 _currentDurationSeconds.value = newSegment.durationMs / 1000.0
                 _currentOffsetSeconds.value = effectiveDuration
@@ -296,7 +401,8 @@ class AudioEngineManager(private val context: Context) {
     }
 
     fun cancelCrossfade() {
-        if (!_isCrossfading.value) return
+        if (!crossfadeCoordinator.isCrossfading) return
+        crossfadeCoordinator.cancelCrossfade()
         _isCrossfading.value = false
         incomingPlayer.pause()
         incomingPlayer.clearMediaItems()
@@ -304,8 +410,14 @@ class AudioEngineManager(private val context: Context) {
         activePlayer.volume = 1.0f
     }
 
-    private fun handleTrackEnded() {
-        if (_isCrossfading.value) {
+    private fun handleTrackEnded(endedPlayerIndex: Int) {
+        // Guards against both a stale event from a player that is no longer active
+        // AND a reentrant call arriving while finishCrossfade() is still committing
+        // its state (see CrossfadeFinishCoordinator's doc comment for why this is
+        // needed on top of the plain index check).
+        if (!crossfadeCoordinator.shouldHandleTrackEnded(endedPlayerIndex)) return
+
+        if (crossfadeCoordinator.isCrossfading) {
             val effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
                 requestedDuration = settings.crossfadeDurationSeconds,
                 segmentDuration = _currentDurationSeconds.value,
@@ -318,13 +430,15 @@ class AudioEngineManager(private val context: Context) {
         val c = currentClass ?: return
         if (settings.isAutoPauseBetweenSegmentsEnabled) {
             pause()
-            if (_currentSegmentIndex.value < c.segments.size - 1) {
-                _currentSegmentIndex.value += 1
+            if (crossfadeCoordinator.currentSegmentIndex < c.segments.size - 1) {
+                crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex + 1)
+                _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
                 loadCurrentSegment()
             }
         } else {
-            if (_currentSegmentIndex.value < c.segments.size - 1) {
-                _currentSegmentIndex.value += 1
+            if (crossfadeCoordinator.currentSegmentIndex < c.segments.size - 1) {
+                crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex + 1)
+                _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
                 loadCurrentSegment()
                 play()
             } else {
@@ -367,7 +481,7 @@ class AudioEngineManager(private val context: Context) {
                     if (effectiveCrossfade > 0.0 && hasNext && remaining <= effectiveCrossfade) {
                         startCrossfade(effectiveCrossfade)
                     } else if (remaining <= 0.0) {
-                        handleTrackEnded()
+                        handleTrackEnded(activePlayerIndex)
                         break
                     }
                 } else {

@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
-import { User, Device, License, DeviceTransferLog } from './types';
+import { User, Device, License, DeviceTransferLog, PromoRedemption } from './types';
 
 interface InMemoryData {
   users: User[];
   devices: Device[];
   licenses: License[];
   device_transfers: DeviceTransferLog[];
+  promo_redemptions: PromoRedemption[];
 }
 
 let pgPool: Pool | null = null;
@@ -33,19 +34,23 @@ function ensureLocalDb(): InMemoryData {
       devices: [],
       licenses: [],
       device_transfers: [],
+      promo_redemptions: [],
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf-8');
     return initial;
   }
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw) as InMemoryData;
+    const parsed = JSON.parse(raw) as InMemoryData;
+    if (!parsed.promo_redemptions) parsed.promo_redemptions = [];
+    return parsed;
   } catch {
     const initial: InMemoryData = {
       users: [],
       devices: [],
       licenses: [],
       device_transfers: [],
+      promo_redemptions: [],
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf-8');
     return initial;
@@ -98,11 +103,41 @@ async function initPgTables() {
         new_device_fingerprint VARCHAR(255) NOT NULL,
         transferred_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS promo_redemptions (
+        id VARCHAR(64) PRIMARY KEY,
+        device_fingerprint VARCHAR(255) NOT NULL,
+        promo_code VARCHAR(50) NOT NULL,
+        redeemed_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        trial_days INT DEFAULT 30,
+        UNIQUE(device_fingerprint, promo_code)
+      );
     `);
     pgInitialized = true;
   } finally {
     client.release();
   }
+}
+
+/**
+ * Check if a code matches the yearly promotion format (e.g. 26FR-NR for 2026)
+ * or explicit promotional code list.
+ */
+export function isPromoCode(rawCode: string): boolean {
+  const code = rawCode.trim().toUpperCase();
+  if (code === '26FR-NR') return true;
+
+  // Format: YYFR-NR (e.g., 26FR-NR, 27FR-NR)
+  const match = code.match(/^(\d{2})FR-NR$/);
+  if (match) {
+    const currentYearShort = new Date().getFullYear() % 100;
+    const codeYear = parseInt(match[1], 10);
+    // Valid for current year or immediate future year
+    if (codeYear >= currentYearShort && codeYear <= currentYearShort + 2) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const db = {
@@ -171,18 +206,73 @@ export const db = {
     }
   },
 
-  async activateLicenseWithCode(deviceFingerprint: string, code: string): Promise<{ success: boolean; error?: string; license?: License }> {
-    const validCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
-    const isValid = validCodes.includes(code) || (code.startsWith('RIDER-VIP-') && code.length >= 14);
-    if (!isValid) {
-      return { success: false, error: '無效的授權碼' };
+  async hasDeviceRedeemedPromo(deviceFingerprint: string, promoCode: string): Promise<boolean> {
+    const normalizedCode = promoCode.trim().toUpperCase();
+    if (pgPool) {
+      await initPgTables();
+      const res = await pgPool.query(
+        'SELECT id FROM promo_redemptions WHERE device_fingerprint = $1 AND promo_code = $2 LIMIT 1',
+        [deviceFingerprint, normalizedCode]
+      );
+      return res.rows.length > 0;
+    } else {
+      const data = ensureLocalDb();
+      return (data.promo_redemptions || []).some(
+        r => r.device_fingerprint === deviceFingerprint && r.promo_code === normalizedCode
+      );
+    }
+  },
+
+  async recordPromoRedemption(redemption: PromoRedemption): Promise<void> {
+    if (pgPool) {
+      await initPgTables();
+      await pgPool.query(
+        `INSERT INTO promo_redemptions (id, device_fingerprint, promo_code, redeemed_at, expires_at, trial_days)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (device_fingerprint, promo_code) DO NOTHING`,
+        [
+          redemption.id,
+          redemption.device_fingerprint,
+          redemption.promo_code,
+          redemption.redeemed_at,
+          redemption.expires_at,
+          redemption.trial_days,
+        ]
+      );
+    } else {
+      const data = ensureLocalDb();
+      if (!data.promo_redemptions) data.promo_redemptions = [];
+      data.promo_redemptions.push(redemption);
+      saveLocalDb(data);
+    }
+  },
+
+  async activateLicenseWithCode(deviceFingerprint: string, rawCode: string): Promise<{ success: boolean; error?: string; license?: License; is_promo?: boolean; trial_days?: number }> {
+    const code = rawCode.trim().toUpperCase();
+    const isPromo = isPromoCode(code);
+    const validVipCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
+    const isValidVIP = validVipCodes.includes(code) || (code.startsWith('RIDER-VIP-') && code.length >= 14);
+
+    if (!isPromo && !isValidVIP) {
+      return { success: false, error: '無效的授權序號或推廣代碼' };
+    }
+
+    // Single-device anti-abuse for promotional codes: each device can only redeem once per year
+    if (isPromo) {
+      const alreadyRedeemed = await this.hasDeviceRedeemedPromo(deviceFingerprint, code);
+      if (alreadyRedeemed) {
+        return {
+          success: false,
+          error: `本設備已兌換過此年度推廣代碼（${code}），每台設備限領一次。`,
+        };
+      }
     }
 
     let dev = await this.getDeviceByFingerprint(deviceFingerprint);
     let userId = dev?.user_id;
 
+    const crypto = await import('crypto');
     if (!userId) {
-      const crypto = await import('crypto');
       userId = crypto.randomUUID();
       await this.createUser({
         id: userId,
@@ -199,19 +289,36 @@ export const db = {
       });
     }
 
-    const oneYear = 365 * 24 * 60 * 60 * 1000;
-    const expiresAt = new Date(Date.now() + oneYear).toISOString();
-    const crypto = await import('crypto');
+    const durationDays = isPromo ? 30 : 365;
+    const durationMs = durationDays * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + durationMs).toISOString();
+
+    if (isPromo) {
+      await this.recordPromoRedemption({
+        id: crypto.randomUUID(),
+        device_fingerprint: deviceFingerprint,
+        promo_code: code,
+        redeemed_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        trial_days: 30,
+      });
+    }
+
     const license = await this.setLicense({
       id: crypto.randomUUID(),
       user_id: userId,
-      plan_type: 'yearly',
+      plan_type: isPromo ? 'promo_trial_30d' : 'yearly',
       expires_at: expiresAt,
       status: 'active',
       revenuecat_entitlement_id: code,
     });
 
-    return { success: true, license };
+    return {
+      success: true,
+      license,
+      is_promo: isPromo,
+      trial_days: durationDays,
+    };
   },
 
   async bindDevice(device: {
@@ -299,7 +406,7 @@ export const db = {
   async setLicense(license: {
     id: string;
     user_id: string;
-    plan_type: 'trial' | 'monthly' | 'quarterly' | 'yearly';
+    plan_type: License['plan_type'];
     expires_at: string;
     status: 'active' | 'expired' | 'canceled';
     revenuecat_entitlement_id?: string;

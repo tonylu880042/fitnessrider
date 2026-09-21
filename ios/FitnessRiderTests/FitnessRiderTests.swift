@@ -628,56 +628,55 @@ final class FitnessRiderTests: XCTestCase {
 
         let oneDay: TimeInterval = 86400.0
 
-        // 1. Same day as build -> not expired, 30 days remaining
+        // 1. Same day as build -> not expired, 7 days remaining
         let day0 = baseDate
         XCTAssertFalse(manager.isExpired(currentTime: day0, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day0, defaults: testDefaults), 30)
+        XCTAssertEqual(manager.remainingDays(currentTime: day0, defaults: testDefaults), 7)
 
-        // 2. Day 15 -> not expired, 15 days remaining
-        let day15 = baseDate.addingTimeInterval(15 * oneDay)
-        XCTAssertFalse(manager.isExpired(currentTime: day15, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day15, defaults: testDefaults), 15)
+        // 2. Day 3 -> not expired, 4 days remaining
+        let day3 = baseDate.addingTimeInterval(3 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day3, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day3, defaults: testDefaults), 4)
 
-        // 3. Advance warning range on Day 25 (5 days remaining, falls in 1...7 range)
-        let day25 = baseDate.addingTimeInterval(25 * oneDay)
-        let rem25 = manager.remainingDays(currentTime: day25, defaults: testDefaults)
-        XCTAssertEqual(rem25, 5)
-        XCTAssertTrue((1...7).contains(rem25))
+        // 3. Advance warning range on Day 5 (2 days remaining, falls in 1...7 range)
+        let day5 = baseDate.addingTimeInterval(5 * oneDay)
+        let rem5 = manager.remainingDays(currentTime: day5, defaults: testDefaults)
+        XCTAssertEqual(rem5, 2)
+        XCTAssertTrue((1...7).contains(rem5))
 
-        // 4. Day 29 -> not expired, 1 day remaining
-        let day29 = baseDate.addingTimeInterval(29 * oneDay)
-        XCTAssertFalse(manager.isExpired(currentTime: day29, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day29, defaults: testDefaults), 1)
+        // 4. Day 6 -> not expired, 1 day remaining
+        let day6 = baseDate.addingTimeInterval(6 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day6, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day6, defaults: testDefaults), 1)
 
-        // 5. Day 30 -> expired, 0 days remaining
-        let day30 = baseDate.addingTimeInterval(30 * oneDay)
-        XCTAssertTrue(manager.isExpired(currentTime: day30, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day30, defaults: testDefaults), 0)
+        // 5. Day 7 -> expired, 0 days remaining
+        let day7 = baseDate.addingTimeInterval(7 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day7, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day7, defaults: testDefaults), 0)
 
-        // 6. Day 35 -> expired
-        let day35 = baseDate.addingTimeInterval(35 * oneDay)
-        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day35, defaults: testDefaults), 0)
+        // 6. Day 10 -> expired
+        let day10 = baseDate.addingTimeInterval(10 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day10, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day10, defaults: testDefaults), 0)
 
         // 7. Anti-clock rollback and post-expiration persistence test
         let rollbackDefaults = UserDefaults(suiteName: "FitnessRiderRollback_\(UUID().uuidString)")!
-        let day10 = baseDate.addingTimeInterval(10 * oneDay)
-        XCTAssertFalse(manager.isExpired(currentTime: day10, defaults: rollbackDefaults))
+        let day4 = baseDate.addingTimeInterval(4 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day4, defaults: rollbackDefaults))
         // Rollback clock by 2 days (< last recorded launch - 1 hour)
-        let day8 = baseDate.addingTimeInterval(8 * oneDay)
-        XCTAssertTrue(manager.isExpired(currentTime: day8, defaults: rollbackDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day8, defaults: rollbackDefaults), 0)
+        let day2 = baseDate.addingTimeInterval(2 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day2, defaults: rollbackDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day2, defaults: rollbackDefaults), 0)
 
-        // Expired on Day 35 in a fresh store
+        // Expired on Day 10 in a fresh store
         let persistenceDefaults = UserDefaults(suiteName: "FitnessRiderPersistence_\(UUID().uuidString)")!
-        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: persistenceDefaults))
-        // Clock rolled back to Day 5 after having expired -> must remain expired!
-        let day5 = baseDate.addingTimeInterval(5 * oneDay)
-        XCTAssertTrue(manager.isExpired(currentTime: day5, defaults: persistenceDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day5, defaults: persistenceDefaults), 0)
+        XCTAssertTrue(manager.isExpired(currentTime: day10, defaults: persistenceDefaults))
+        // Clock rolled back to Day 2 after having expired -> must remain expired!
+        XCTAssertTrue(manager.isExpired(currentTime: day2, defaults: persistenceDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day2, defaults: persistenceDefaults), 0)
 
         // 8. Fixed duration (immune to DST / Calendar shifts)
-        XCTAssertEqual(manager.expirationDate.timeIntervalSince(baseDate), 30.0 * 86400.0, accuracy: 0.001)
+        XCTAssertEqual(manager.expirationDate.timeIntervalSince(baseDate), 7.0 * 86400.0, accuracy: 0.001)
 
         // 9. Formatted strings and URL
         XCTAssertFalse(manager.buildDateFormatted.isEmpty)
@@ -685,36 +684,55 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(VersionLifecycleManager.updateURL.absoluteString.hasPrefix("https://"))
     }
 
-    // 30 天全功能免費試用（設備首次啟動日基準）測試
-    func testThirtyDayTrialCalculationFromFirstLaunch() {
+    // 7 天基準免費試用（設備首次啟動日基準）測試
+    func testSevenDayTrialCalculationFromFirstLaunch() {
         let launchDate = Date(timeIntervalSince1970: 1775000000)
         let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
         let testDefaults = UserDefaults(suiteName: "TrialTestDefaults_\(UUID().uuidString)")!
         let oneDay: TimeInterval = 86400.0
 
-        // Day 0: 首次啟動當天 -> 剩餘 30 天，未過期
+        // Day 0: 首次啟動當天 -> 剩餘 7 天，未過期
         XCTAssertFalse(manager.isExpired(currentTime: launchDate, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: launchDate, defaults: testDefaults), 30)
+        XCTAssertEqual(manager.remainingDays(currentTime: launchDate, defaults: testDefaults), 7)
 
-        // Day 15: 試用第 15 天 -> 剩餘 15 天
-        let day15 = launchDate.addingTimeInterval(15 * oneDay)
-        XCTAssertFalse(manager.isExpired(currentTime: day15, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day15, defaults: testDefaults), 15)
+        // Day 3: 試用第 3 天 -> 剩餘 4 天
+        let day3 = launchDate.addingTimeInterval(3 * oneDay)
+        XCTAssertFalse(manager.isExpired(currentTime: day3, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day3, defaults: testDefaults), 4)
 
-        // Day 25: 試用第 25 天 -> 剩餘 5 天（落於 1..7 天到期警告區間）
-        let day25 = launchDate.addingTimeInterval(25 * oneDay)
-        let rem25 = manager.remainingDays(currentTime: day25, defaults: testDefaults)
-        XCTAssertEqual(rem25, 5)
-        XCTAssertTrue((1...7).contains(rem25))
-
-        // Day 30: 滿 30 天 -> 過期，剩餘 0 天
-        let day30 = launchDate.addingTimeInterval(30 * oneDay)
-        XCTAssertTrue(manager.isExpired(currentTime: day30, defaults: testDefaults))
-        XCTAssertEqual(manager.remainingDays(currentTime: day30, defaults: testDefaults), 0)
+        // Day 7: 滿 7 天 -> 過期，剩餘 0 天
+        let day7 = launchDate.addingTimeInterval(7 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day7, defaults: testDefaults))
+        XCTAssertEqual(manager.remainingDays(currentTime: day7, defaults: testDefaults), 0)
 
         // 格式驗證
         XCTAssertFalse(manager.trialStartDateFormatted.isEmpty)
-        XCTAssertEqual(manager.expirationDate.timeIntervalSince(launchDate), 30.0 * 86400.0, accuracy: 0.001)
+        XCTAssertEqual(manager.expirationDate.timeIntervalSince(launchDate), 7.0 * 86400.0, accuracy: 0.001)
+    }
+
+    // 推廣課程專屬代碼 26FR-NR 兌換與單機限領防刷測試
+    func testPromoCodeActivationAndAntiAbuse() {
+        let launchDate = Date(timeIntervalSince1970: 1775000000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "PromoTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        // 1. 滿 10 天，基準 7 天試用已過期
+        let day10 = launchDate.addingTimeInterval(10 * oneDay)
+        XCTAssertTrue(manager.isExpired(currentTime: day10, defaults: testDefaults))
+
+        // 2. 首次輸入 2026 年度推廣代碼 26FR-NR -> 成功兌換 30 天 VIP 試用
+        let promoRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults)
+        XCTAssertTrue(promoRes.success)
+        XCTAssertTrue(promoRes.message.contains("30 天"))
+        XCTAssertTrue(manager.isVIP)
+        XCTAssertEqual(manager.vipPlanName, "推廣課程專屬版 (30天免費)")
+        XCTAssertFalse(manager.isExpired(currentTime: day10, defaults: testDefaults))
+
+        // 3. 同一台設備再次輸入 26FR-NR -> 失敗，防止重複領取（單機防刷）
+        let duplicateRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults)
+        XCTAssertFalse(duplicateRes.success)
+        XCTAssertTrue(duplicateRes.message.contains("無法重複領取") || duplicateRes.message.contains("已兌換過"))
     }
 
     // VIP 授權碼開通與過期狀態解鎖測試

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fitnessrider.theme.*
 import com.fitnessrider.util.VersionLifecycleManager
+import kotlinx.coroutines.launch
 
 @Composable
 fun VersionExpiredScreen(
@@ -197,7 +198,7 @@ fun VersionExpiredScreen(
                         .height(48.dp)
                 ) {
                     Text(
-                        text = "🔑 輸入授權碼開通 VIP",
+                        text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天)",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -248,7 +249,8 @@ fun VersionExpiredScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "前往更新最新版本",
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
                         color = TextSecondary
                     )
                 }
@@ -285,18 +287,19 @@ fun VersionExpiredScreen(
     }
 
     if (showActivationDialog) {
+        val coroutineScope = rememberCoroutineScope()
         AlertDialog(
             onDismissRequest = { showActivationDialog = false },
             title = {
-                Text(text = "輸入授權碼開通", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text(text = "輸入授權序號或推廣代碼", fontWeight = FontWeight.Bold, color = TextPrimary)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(text = "請輸入教練授權序號以開通專業版：", fontSize = 13.sp, color = TextSecondary)
+                    Text(text = "輸入推廣培訓專屬代碼（如 26FR-NR）享 30 天免費體驗，或輸入 VIP 授權序號：", fontSize = 13.sp, color = TextSecondary)
                     OutlinedTextField(
                         value = enteredLicenseCode,
                         onValueChange = { enteredLicenseCode = it.uppercase() },
-                        placeholder = { Text("例如: RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        placeholder = { Text("例如: 26FR-NR 或 RIDER-VIP-2026-PASS", fontSize = 12.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -313,18 +316,20 @@ fun VersionExpiredScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val res = VersionLifecycleManager.activateLicenseCode(context, enteredLicenseCode)
-                        if (res.first) {
-                            Toast.makeText(context, res.second, Toast.LENGTH_LONG).show()
-                            showActivationDialog = false
-                            onUnlocked?.invoke()
-                        } else {
-                            activationStatusMessage = res.second
+                        coroutineScope.launch {
+                            val res = licenseService.activateCode(enteredLicenseCode)
+                            if (res.first) {
+                                Toast.makeText(context, res.second, Toast.LENGTH_LONG).show()
+                                showActivationDialog = false
+                                onUnlocked?.invoke()
+                            } else {
+                                activationStatusMessage = res.second
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
                 ) {
-                    Text("開通", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("開通 / 兌換", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

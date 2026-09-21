@@ -56,24 +56,30 @@ public final class LicenseVerificationService: ObservableObject {
     }
 
     public func activateCode(code: String) async -> (Bool, String) {
+        // 1. Try online activation first to respect single-device limit & database audit
+        let (onlineSuccess, onlineMsg) = await activateLicenseOnline(code: code)
+        if onlineSuccess {
+            refreshLicenseState()
+            return (true, onlineMsg)
+        }
+
+        // If the server explicitly rejected the activation (e.g. 400 "本設備已兌換過..."),
+        // return the rejection immediately to prevent duplicate abuse.
+        if onlineMsg.contains("已兌換") || onlineMsg.contains("限領一次") {
+            return (false, onlineMsg)
+        }
+
+        // 2. Offline algorithmic check fallback (e.g., in basement gym without network)
         let localResult = VersionLifecycleManager.shared.activateLicenseCode(code)
         if localResult.success {
             refreshLicenseState()
-
-            // Best-effort async online registration
             Task {
                 await reportActivationOnline(code: code)
             }
-
             return localResult
         }
 
-        // Try online activation if local check was not recognized
-        let onlineResult = await activateLicenseOnline(code: code)
-        if onlineResult.0 {
-            refreshLicenseState()
-        }
-        return onlineResult
+        return (false, onlineMsg.isEmpty ? localResult.message : onlineMsg)
     }
 
     private func reportActivationOnline(code: String) async {
@@ -107,12 +113,16 @@ public final class LicenseVerificationService: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let success = json["success"] as? Bool, success {
-                    _ = VersionLifecycleManager.shared.activateLicenseCode(code)
-                    refreshLicenseState()
-                    return (true, "線上開通成功！已升級為專業版。")
+            if let httpRes = response as? HTTPURLResponse {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if httpRes.statusCode == 200, let success = json["success"] as? Bool, success {
+                        _ = VersionLifecycleManager.shared.activateLicenseCode(code)
+                        refreshLicenseState()
+                        let msg = json["message"] as? String ?? "開通成功！"
+                        return (true, msg)
+                    } else if let errorMsg = json["error"] as? String {
+                        return (false, errorMsg)
+                    }
                 }
             }
             return (false, "授權碼無效或驗證失敗")

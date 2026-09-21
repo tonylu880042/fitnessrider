@@ -42,7 +42,7 @@ android {
             .get()
 
         buildConfigField("long", "BUILD_TIME_MS", "${resolvedBuildTime}L")
-        buildConfigField("int", "LIFECYCLE_DAYS", "30")
+        buildConfigField("int", "LIFECYCLE_DAYS", "7")
         buildConfigField("String", "UPDATE_URL", "\"https://appdistribution.firebase.dev/i/d740076f27b77ab0\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

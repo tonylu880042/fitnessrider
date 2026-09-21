@@ -185,20 +185,22 @@ public struct VersionExpiredView: View {
         .sheet(isPresented: $isShowingDeviceTransferSheet) {
             DeviceTransferSheet()
         }
-        .alert("輸入授權碼開通", isPresented: $isShowingActivationAlert) {
-            TextField("例如: RIDER-VIP-2026-PASS", text: $enteredLicenseCode)
+        .alert("輸入授權序號或推廣代碼", isPresented: $isShowingActivationAlert) {
+            TextField("如: 26FR-NR 或 RIDER-VIP-2026-PASS", text: $enteredLicenseCode)
                 .textInputAutocapitalization(.characters)
-            Button("開通") {
-                let res = manager.activateLicenseCode(enteredLicenseCode)
-                LicenseVerificationService.shared.refreshLicenseState()
-                statusAlertMessage = res.message
-                isShowingStatusAlert = true
+            Button("開通 / 兌換") {
+                let code = enteredLicenseCode
+                Task {
+                    let res = await LicenseVerificationService.shared.activateCode(code: code)
+                    statusAlertMessage = res.1
+                    isShowingStatusAlert = true
+                }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("請輸入教練授權序號以開通專業版：")
+            Text("輸入推廣培訓專屬代碼（如 26FR-NR）享 30 天免費體驗，或輸入 VIP 授權序號：")
         }
-        .alert("授權結果", isPresented: $isShowingStatusAlert) {
+        .alert("系統通知", isPresented: $isShowingStatusAlert) {
             Button("確定", role: .cancel) {}
         } message: {
             Text(statusAlertMessage)

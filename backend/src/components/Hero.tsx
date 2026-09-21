@@ -32,7 +32,7 @@ export default function Hero() {
         {/* Subtitle */}
         <p className="mx-auto mt-6 max-w-2xl text-base sm:text-lg text-zinc-400 leading-relaxed">
           告別手忙腳亂的紙本小抄與切歌靜音。
-          <strong className="text-zinc-200 font-semibold"> FitnessRider</strong> 整合高音質無損變速、波形 BPM 精準對拍與大字動態倒數 HUD，更享有 <strong className="text-emerald-400">30 天全功能免費試用</strong>，讓教練專注於帶動全場踩踏激情。
+          <strong className="text-zinc-200 font-semibold"> FitnessRider</strong> 整合高音質無損變速、波形 BPM 精準對拍與大字動態倒數 HUD，新用戶享 <strong className="text-emerald-400">7 天全功能免費試用</strong>，讓教練專注於帶動全場踩踏激情。
         </p>
 
         {/* CTA Buttons */}
@@ -42,7 +42,7 @@ export default function Hero() {
             className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 px-8 py-3.5 text-base font-bold text-zinc-950 shadow-lg shadow-emerald-500/25 hover:from-emerald-400 hover:to-teal-300 hover:shadow-emerald-500/40 hover:-translate-y-0.5 transition-all"
           >
             <Play className="h-5 w-5 fill-current" />
-            免費下載體驗 (30 天全功能試用)
+            免費下載體驗 (7 天 VIP 試用)
           </Link>
           <Link
             href="#pricing"
@@ -51,6 +51,13 @@ export default function Hero() {
             查看教練訂閱方案
             <ArrowDown className="h-4 w-4 text-zinc-400" />
           </Link>
+        </div>
+
+        {/* Promo code badge for courses */}
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-400">
+          <span>🎓 搭配培訓推廣課程？App 內輸入 2026 年度專屬代碼</span>
+          <span className="font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">26FR-NR</span>
+          <span>即享 30 天全功能免費體驗！</span>
         </div>
 
         {/* Key Points */}

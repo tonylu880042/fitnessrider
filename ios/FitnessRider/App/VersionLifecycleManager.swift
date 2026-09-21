@@ -3,7 +3,7 @@ import Foundation
 public final class VersionLifecycleManager: ObservableObject, @unchecked Sendable {
     public static let shared = VersionLifecycleManager()
 
-    public static let lifecycleDays: Int = 30
+    public static let lifecycleDays: Int = 7
     public static let secondsPerDay: TimeInterval = 86_400.0
     public static let lifecycleDuration: TimeInterval = Double(lifecycleDays) * secondsPerDay
 
@@ -12,11 +12,12 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     private let userDefaultsLastLaunchKey = "fitness_rider_last_launch_timestamp"
     private let userDefaultsExpiredKey = "fitness_rider_is_expired"
     private let userDefaultsFirstLaunchKey = "fitness_rider_first_launch_timestamp"
+    private let userDefaultsRedeemedPromosKey = "fitness_rider_redeemed_promos"
 
     /// The build / compile date of the application bundle (kept for diagnostic/backward compatibility).
     public let buildDate: Date
 
-    /// The anchor date for the 30-day full-featured free trial (device first launch date).
+    /// The anchor date for the free trial (device first launch date).
     public let firstLaunchDate: Date
 
     /// The calculated expiration date (firstLaunchDate + fixed 30 * 86400s, immune to DST shifts).
@@ -158,7 +159,26 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         return Int(ceil(remaining / Self.secondsPerDay))
     }
 
-    /// Activate app via license code (Offline algorithmic check + persistence).
+    /// Check if a code is a valid promotional code (e.g. 26FR-NR or YYFR-NR).
+    public static func isPromoCode(_ rawCode: String) -> Bool {
+        let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if code == "26FR-NR" { return true }
+
+        let pattern = "^(\\d{2})FR-NR$"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(location: 0, length: code.utf16.count)
+            if let match = regex.firstMatch(in: code, options: [], range: range) {
+                if let yearRange = Range(match.range(at: 1), in: code),
+                   let codeYear = Int(code[yearRange]) {
+                    let currentYear = Calendar.current.component(.year, from: Date()) % 100
+                    return codeYear >= currentYear && codeYear <= currentYear + 2
+                }
+            }
+        }
+        return false
+    }
+
+    /// Activate app via license code or promotional code (Offline algorithmic check + persistence).
     @discardableResult
     public func activateLicenseCode(_ rawCode: String, defaults: UserDefaults = .standard) -> (success: Bool, message: String) {
         let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -166,10 +186,43 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
             return (false, "授權碼不能為空")
         }
 
-        // Algorithmic & Pre-shared keys verification
+        let isPromo = Self.isPromoCode(code)
         let isValidVIP = code == "RIDER-VIP-2026-PASS" ||
                          code == "FITNESS-PRO-ANNUAL-KEY" ||
                          (code.hasPrefix("RIDER-VIP-") && code.count >= 14)
+
+        if !isPromo && !isValidVIP {
+            return (false, "無效的授權序號或推廣代碼")
+        }
+
+        // Single device check for promo code (anti-abuse)
+        if isPromo {
+            var redeemedList = defaults.stringArray(forKey: userDefaultsRedeemedPromosKey) ?? []
+            if redeemedList.contains(code) {
+                return (false, "本設備已兌換過此年度推廣代碼（\(code)），無法重複領取。")
+            }
+
+            let thirtyDaysSec: TimeInterval = 30.0 * 86_400.0
+            let expiresTs = Date().addingTimeInterval(thirtyDaysSec).timeIntervalSince1970
+
+            redeemedList.append(code)
+            defaults.set(redeemedList, forKey: userDefaultsRedeemedPromosKey)
+            defaults.set(true, forKey: "fitness_rider_vip_active")
+            defaults.set(expiresTs, forKey: "fitness_rider_vip_expires")
+            defaults.set(code, forKey: "fitness_rider_vip_code")
+            defaults.set(false, forKey: userDefaultsExpiredKey)
+
+            if defaults == UserDefaults.standard {
+                DeviceIdentifierService.shared.vipLicenseKey = code
+                DeviceIdentifierService.shared.vipExpiresTimestamp = expiresTs
+                DeviceIdentifierService.shared.isTrialPermanentlyLocked = false
+            }
+
+            self.isVIP = true
+            self.isExpiredOnLaunch = false
+            self.vipPlanName = "推廣課程專屬版 (30天免費)"
+            return (true, "推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。")
+        }
 
         if isValidVIP {
             let oneYearSec: TimeInterval = 365.0 * 86_400.0
@@ -190,10 +243,11 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             self.isVIP = true
             self.isExpiredOnLaunch = false
+            self.vipPlanName = "專業年繳版 (VIP)"
             return (true, "授權開通成功！已升級為「專業年繳版 (VIP)」")
-        } else {
-            return (false, "無效的授權序號，請檢查格式或聯絡客服")
         }
+
+        return (false, "無效的授權序號或推廣代碼")
     }
 
     public var trialStartDateFormatted: String {

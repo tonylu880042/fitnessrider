@@ -13,12 +13,27 @@ object VersionLifecycleManager {
     const val KEY_VIP_ACTIVE = "fitness_rider_vip_active"
     const val KEY_VIP_EXPIRES = "fitness_rider_vip_expires"
     const val KEY_VIP_CODE = "fitness_rider_vip_code"
+    const val KEY_REDEEMED_PROMOS = "fitness_rider_redeemed_promos"
     private const val MS_PER_DAY = 86_400_000L
 
     val buildTimeMs: Long get() = BuildConfig.BUILD_TIME_MS
     val lifecycleDays: Int get() = BuildConfig.LIFECYCLE_DAYS
     val updateUrl: String get() = BuildConfig.UPDATE_URL
     val versionName: String get() = BuildConfig.VERSION_NAME
+
+    fun isPromoCode(rawCode: String): Boolean {
+        val code = rawCode.trim().uppercase()
+        if (code == "26FR-NR") return true
+
+        val regex = Regex("^(\\d{2})FR-NR$")
+        val match = regex.find(code)
+        if (match != null) {
+            val codeYear = match.groupValues[1].toIntOrNull() ?: 0
+            val currentYear = (Calendar.getInstance().get(Calendar.YEAR)) % 100
+            return codeYear in currentYear..(currentYear + 2)
+        }
+        return false
+    }
 
     fun getFirstLaunchTimeMs(context: Context? = null, overrideCurrentTimeMs: Long? = null): Long {
         if (context != null) {
@@ -55,7 +70,7 @@ object VersionLifecycleManager {
     }
 
     /**
-     * Check if current version / 30-day trial has exceeded its duration or clock has been rolled back.
+     * Check if current version / trial has exceeded its duration or clock has been rolled back.
      * When expired, persists KEY_IS_EXPIRED = true so subsequent clock rollbacks cannot unlock.
      */
     fun isExpired(context: Context? = null, overrideCurrentTimeMs: Long? = null): Boolean {
@@ -84,7 +99,7 @@ object VersionLifecycleManager {
                 return true
             }
 
-            // 3. Expiration date check (30-day trial from first launch)
+            // 3. Expiration date check (trial duration from first launch)
             val expiration = getExpirationTimeMs(context, overrideCurrentTimeMs)
             if (now >= expiration) {
                 prefs.edit()
@@ -123,7 +138,7 @@ object VersionLifecycleManager {
     }
 
     /**
-     * Activate app via license code (Offline algorithmic check + persistence).
+     * Activate app via license code or promotional code (Offline algorithmic check + persistence).
      */
     fun activateLicenseCode(context: Context, rawCode: String): Pair<Boolean, String> {
         val code = rawCode.trim().uppercase()
@@ -131,14 +146,41 @@ object VersionLifecycleManager {
             return Pair(false, "授權碼不能為空")
         }
 
+        val isPromo = isPromoCode(code)
         val isValidVIP = code == "RIDER-VIP-2026-PASS" ||
                          code == "FITNESS-PRO-ANNUAL-KEY" ||
                          (code.startsWith("RIDER-VIP-") && code.length >= 14)
 
+        if (!isPromo && !isValidVIP) {
+            return Pair(false, "無效的授權序號或推廣代碼")
+        }
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        if (isPromo) {
+            val redeemedSet = prefs.getStringSet(KEY_REDEEMED_PROMOS, emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (redeemedSet.contains(code)) {
+                return Pair(false, "本設備已兌換過此年度推廣代碼（$code），無法重複領取。")
+            }
+
+            val thirtyDaysMs = 30L * MS_PER_DAY
+            val expiresMs = System.currentTimeMillis() + thirtyDaysMs
+
+            redeemedSet.add(code)
+            prefs.edit()
+                .putStringSet(KEY_REDEEMED_PROMOS, redeemedSet)
+                .putBoolean(KEY_VIP_ACTIVE, true)
+                .putLong(KEY_VIP_EXPIRES, expiresMs)
+                .putString(KEY_VIP_CODE, code)
+                .putBoolean(KEY_IS_EXPIRED, false)
+                .apply()
+
+            return Pair(true, "推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。")
+        }
+
         if (isValidVIP) {
             val oneYearMs = 365L * MS_PER_DAY
             val expiresMs = System.currentTimeMillis() + oneYearMs
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
             prefs.edit()
                 .putBoolean(KEY_VIP_ACTIVE, true)
@@ -148,9 +190,9 @@ object VersionLifecycleManager {
                 .apply()
 
             return Pair(true, "授權開通成功！已升級為「專業年繳版 (VIP)」")
-        } else {
-            return Pair(false, "無效的授權序號，請檢查格式或聯絡客服")
         }
+
+        return Pair(false, "無效的授權序號或推廣代碼")
     }
 
     fun getFormattedBuildDate(): String {

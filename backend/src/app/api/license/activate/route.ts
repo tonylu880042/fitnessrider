@@ -22,12 +22,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isPromo = result.is_promo;
     return NextResponse.json({
       success: true,
-      message: '授權開通成功！已升級為專業版。',
-      plan_type: result.license?.plan_type || 'yearly',
+      message: isPromo
+        ? '推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。'
+        : '授權開通成功！已升級為專業年繳版。',
+      plan_type: result.license?.plan_type || (isPromo ? 'promo_trial_30d' : 'yearly'),
       expires_at: result.license?.expires_at,
-      days_remaining: 365,
+      days_remaining: result.trial_days || (isPromo ? 30 : 365),
+      is_promo: isPromo,
     });
   } catch (error) {
     console.error('License Activate Error:', error);

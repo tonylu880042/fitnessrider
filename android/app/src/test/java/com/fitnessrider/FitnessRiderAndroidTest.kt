@@ -1,6 +1,9 @@
 package com.fitnessrider
 
 import com.fitnessrider.audio.CrossfadeCalculator
+import com.fitnessrider.audio.CrossfadeFinishCoordinator
+import com.fitnessrider.audio.HapticFeedbackManager
+import com.fitnessrider.audio.SynchronizedOnceCache
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.MusicSource
 import com.fitnessrider.data.RiderClassArchiveService
@@ -20,7 +23,10 @@ import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
 import com.fitnessrider.util.VersionLifecycleManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -280,30 +286,30 @@ class FitnessRiderAndroidTest {
         val buildTime = manager.buildTimeMs
         val oneDayMs = 86_400_000L
 
-        // 1. Same day as build -> not expired, ~30 days remaining
+        // 1. Same day as build -> not expired, ~7 days remaining
         val day0 = buildTime
         org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day0))
-        assertEquals(30, manager.getRemainingDays(overrideCurrentTimeMs = day0))
+        assertEquals(7, manager.getRemainingDays(overrideCurrentTimeMs = day0))
 
-        // 2. Day 15 -> not expired, 15 days remaining
-        val day15 = buildTime + (15 * oneDayMs)
-        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day15))
-        assertEquals(15, manager.getRemainingDays(overrideCurrentTimeMs = day15))
+        // 2. Day 3 -> not expired, 4 days remaining
+        val day3 = buildTime + (3 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day3))
+        assertEquals(4, manager.getRemainingDays(overrideCurrentTimeMs = day3))
 
-        // 3. Day 29 -> not expired, 1 day remaining
-        val day29 = buildTime + (29 * oneDayMs)
-        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day29))
-        assertEquals(1, manager.getRemainingDays(overrideCurrentTimeMs = day29))
+        // 3. Day 6 -> not expired, 1 day remaining
+        val day6 = buildTime + (6 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day6))
+        assertEquals(1, manager.getRemainingDays(overrideCurrentTimeMs = day6))
 
-        // 4. Day 30 -> exactly reached/exceeded 30-day lifecycle -> expired!
-        val day30 = buildTime + (30 * oneDayMs)
-        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day30))
-        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day30))
+        // 4. Day 7 -> reached/exceeded 7-day lifecycle -> expired!
+        val day7 = buildTime + (7 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day7))
+        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day7))
 
-        // 5. Day 35 -> expired
-        val day35 = buildTime + (35 * oneDayMs)
-        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day35))
-        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day35))
+        // 5. Day 10 -> expired
+        val day10 = buildTime + (10 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day10))
+        assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day10))
 
         // 6. Formatting tests
         org.junit.Assert.assertTrue(manager.getFormattedBuildDate().isNotEmpty())
@@ -315,32 +321,31 @@ class FitnessRiderAndroidTest {
         fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, buildTime).apply()
         val fakeContext = MockContext(fakePrefs)
 
-        // Normal launch on Day 10
-        val day10 = buildTime + (10 * oneDayMs)
-        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
+        // Normal launch on Day 3
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day3))
         org.junit.Assert.assertFalse(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
-        assertEquals(day10, fakePrefs.getLong(manager.KEY_LAST_LAUNCH_TIME, 0L))
-        assertEquals(20, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day10))
+        assertEquals(day3, fakePrefs.getLong(manager.KEY_LAST_LAUNCH_TIME, 0L))
+        assertEquals(4, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day3))
 
-        // Advance warning range on Day 25 (5 days remaining, in 1..7 range)
-        val day25 = buildTime + (25 * oneDayMs)
-        val remainingDay25 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day25)
-        assertEquals(5, remainingDay25)
-        org.junit.Assert.assertTrue(remainingDay25 in 1..7)
-
-        // Expired launch on Day 35 -> must persist KEY_IS_EXPIRED = true
-        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
-        org.junit.Assert.assertTrue(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
-        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
-
-        // Time Rollback Attempt: Clock rolled back to Day 5 after expiration
+        // Advance warning range on Day 5 (2 days remaining, in 1..7 range)
         val day5 = buildTime + (5 * oneDayMs)
-        org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day5))
-        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5))
+        val remainingDay5 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5)
+        assertEquals(2, remainingDay5)
+        org.junit.Assert.assertTrue(remainingDay5 in 1..7)
+
+        // Expired launch on Day 10 -> must persist KEY_IS_EXPIRED = true
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
+        org.junit.Assert.assertTrue(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day10))
+
+        // Time Rollback Attempt: Clock rolled back to Day 2 after expiration
+        val day2 = buildTime + (2 * oneDayMs)
+        org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day2))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day2))
     }
 
     @Test
-    fun testThirtyDayTrialCalculationFromFirstLaunch() {
+    fun testSevenDayTrialCalculationFromFirstLaunch() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
         val oneDayMs = 86_400_000L
         val fakePrefs = FakeSharedPreferences()
@@ -348,28 +353,49 @@ class FitnessRiderAndroidTest {
 
         val firstLaunchTime = 1775000000_000L
 
-        // Day 0: 首次啟動當天 -> 剩餘 30 天，未過期
+        // Day 0: 首次啟動當天 -> 剩餘 7 天，未過期
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
-        assertEquals(30, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
+        assertEquals(7, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
 
-        // Day 15: 試用第 15 天 -> 剩餘 15 天
-        val day15 = firstLaunchTime + (15 * oneDayMs)
-        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day15))
-        assertEquals(15, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day15))
+        // Day 3: 試用第 3 天 -> 剩餘 4 天
+        val day3 = firstLaunchTime + (3 * oneDayMs)
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day3))
+        assertEquals(4, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day3))
 
-        // Day 25: 試用第 25 天 -> 剩餘 5 天（落於 1..7 天提醒區間）
-        val day25 = firstLaunchTime + (25 * oneDayMs)
-        val rem25 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day25)
-        assertEquals(5, rem25)
-        org.junit.Assert.assertTrue(rem25 in 1..7)
-
-        // Day 30: 滿 30 天 -> 過期，剩餘 0 天
-        val day30 = firstLaunchTime + (30 * oneDayMs)
-        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day30))
-        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day30))
+        // Day 7: 滿 7 天 -> 過期，剩餘 0 天
+        val day7 = firstLaunchTime + (7 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day7))
+        assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day7))
 
         // 格式驗證
         org.junit.Assert.assertTrue(manager.getFormattedTrialStartDate(fakeContext).isNotEmpty())
+    }
+
+    @Test
+    fun testPromoCodeActivationAndAntiAbuse() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val oneDayMs = 86_400_000L
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val firstLaunchTime = 1775000000_000L
+        fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunchTime).apply()
+
+        // 1. 滿 10 天，基準 7 天試用已過期
+        val day10 = firstLaunchTime + (10 * oneDayMs)
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
+
+        // 2. 首次輸入 2026 年度推廣代碼 26FR-NR -> 成功兌換 30 天 VIP 試用
+        val promoRes = manager.activateLicenseCode(fakeContext, "26FR-NR")
+        org.junit.Assert.assertTrue(promoRes.first)
+        org.junit.Assert.assertTrue(promoRes.second.contains("30 天"))
+        org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day10))
+        org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
+
+        // 3. 同一台設備再次輸入 26FR-NR -> 失敗，防止重複領取（單機防刷）
+        val duplicateRes = manager.activateLicenseCode(fakeContext, "26FR-NR")
+        org.junit.Assert.assertFalse(duplicateRes.first)
+        org.junit.Assert.assertTrue(duplicateRes.second.contains("無法重複領取") || duplicateRes.second.contains("已兌換過"))
     }
 
     @Test
@@ -770,6 +796,179 @@ class FitnessRiderAndroidTest {
         assertFalse(settings.isHapticFeedbackEnabled)
 
         settings.isHapticFeedbackEnabled = originalValue
+    }
+
+    // MARK: - Crossfade Finish Reentrancy Guard Tests (code review fix)
+    //
+    // AudioEngineManager.finishCrossfade() used to clear `isCrossfading` and only
+    // flip `activePlayerIndex` AFTER pausing/clearing the outgoing ExoPlayer.
+    // Media3's clearMediaItems() can re-deliver a STATE_ENDED event for that same
+    // (now stale) player index while finishCrossfade() is still running, which
+    // used to satisfy the listener's `playerIndex == activePlayerIndex` guard and
+    // re-enter handleTrackEnded()'s "normal advance" branch — advancing
+    // currentSegmentIndex a second time and silently skipping a whole segment
+    // mid-class. CrossfadeFinishCoordinator is the extracted, ExoPlayer-free
+    // state machine that AudioEngineManager now delegates to; these tests drive
+    // it directly (no Context/ExoPlayer needed) to pin the fix.
+
+    @Test
+    fun testCrossfadeFinishRejectsReentrantStaleTrackEndedForOldPlayer() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 4)
+        coordinator.startCrossfade()
+        assertTrue(coordinator.isCrossfading)
+
+        var reentrantGuardPassed = false
+        val finished = coordinator.finishCrossfade {
+            // Simulates Media3 re-delivering STATE_ENDED for the OLD player
+            // (index 0) from inside pause()/clearMediaItems() on it, exactly
+            // like AudioEngineManager's real teardown lambda does. At this point
+            // the coordinator has ALREADY flipped activePlayerIndex to 1, so a
+            // stale event still reporting playerIndex=0 must be rejected.
+            if (coordinator.shouldHandleTrackEnded(endedPlayerIndex = 0)) {
+                // This is the regression this test exists to catch: if the guard
+                // ever passes here, the real handleTrackEnded() would advance
+                // currentSegmentIndex a SECOND time on top of finishCrossfade's
+                // own advance below, skipping a segment mid-class.
+                reentrantGuardPassed = true
+                coordinator.setSegmentIndex(coordinator.currentSegmentIndex + 1)
+            }
+        }
+
+        assertTrue(finished)
+        assertFalse("stale STATE_ENDED for the outgoing player must be rejected", reentrantGuardPassed)
+        assertEquals("segment index must advance exactly once, not twice", 5, coordinator.currentSegmentIndex)
+        assertEquals(1, coordinator.activePlayerIndex)
+        assertFalse(coordinator.isCrossfading)
+
+        // The NEW active player (index 1) reporting STATE_ENDED afterwards is a
+        // legitimate future event and must be accepted.
+        assertTrue(coordinator.shouldHandleTrackEnded(endedPlayerIndex = 1))
+    }
+
+    @Test
+    fun testCrossfadeFinishLatchRejectsDirectReentrantFinishCall() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 2)
+        coordinator.startCrossfade()
+
+        var innerTearDownRan = false
+        val outerFinished = coordinator.finishCrossfade {
+            // A second, directly reentrant finishCrossfade() call arriving while
+            // the first one is still committing (e.g. two STATE_ENDED events in
+            // the same event-loop turn) must be a complete no-op.
+            val innerFinished = coordinator.finishCrossfade { innerTearDownRan = true }
+            assertFalse(innerFinished)
+        }
+
+        assertTrue(outerFinished)
+        assertFalse(innerTearDownRan)
+        assertEquals("segment index must advance exactly once", 3, coordinator.currentSegmentIndex)
+        assertEquals(1, coordinator.activePlayerIndex)
+    }
+
+    @Test
+    fun testCrossfadeFinishNoOpWhenNotCrossfading() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 0)
+        var tearDownRan = false
+
+        val finished = coordinator.finishCrossfade { tearDownRan = true }
+
+        assertFalse(finished)
+        assertFalse(tearDownRan)
+        assertEquals(0, coordinator.currentSegmentIndex)
+        assertEquals(0, coordinator.activePlayerIndex)
+    }
+
+    // MARK: - HapticFeedbackManager Context Leak / Thread-Safety Tests (code review fix)
+    //
+    // HapticFeedbackManager is a process-wide `object` that used to cache the
+    // Vibrator obtained from whatever Context the caller passed in. In practice
+    // that caller is AudioEngineManager, constructed with the *Activity*
+    // (MainActivity.kt: `AudioEngineManager(this)`), so caching a Vibrator
+    // resolved from it would pin that Activity for the app process's lifetime.
+    // `resolveVibratorHostContext` now always resolves via applicationContext.
+    //
+    // android.os.Vibrator's constructor is package-private (can't be subclassed
+    // from this module) and there's no Robolectric/Mockito here to mock one, so
+    // the caching itself is verified via SynchronizedOnceCache<T> directly (the
+    // exact class HapticFeedbackManager uses for its Vibrator cache) with a
+    // plain String payload — no Vibrator/Context needed for that part. The
+    // "don't leak the Activity" part is verified separately by checking
+    // resolveVibratorHostContext's actual behaviour with real
+    // android.content.ContextWrapper subclasses (the same technique the
+    // existing MockContext below already relies on).
+
+    @Test
+    fun testHapticFeedbackManagerResolvesHostFromApplicationContextNotActivityContext() {
+        val appContext = object : android.content.ContextWrapper(null) {}
+        val activityLikeContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationContext(): android.content.Context = appContext
+        }
+
+        val resolved = HapticFeedbackManager.resolveVibratorHostContext(activityLikeContext)
+
+        assertSame(
+            "must resolve the system-service host via context.applicationContext",
+            appContext,
+            resolved
+        )
+        assertNotSame(
+            "must NOT resolve the system-service host as the raw (possibly Activity) context",
+            activityLikeContext,
+            resolved
+        )
+    }
+
+    @Test
+    fun testSynchronizedOnceCacheComputesExactlyOnceUnderConcurrency() {
+        // This is the same cache class HapticFeedbackManager.vibratorCache uses
+        // to memoize the resolved Vibrator; driving it directly with a plain
+        // String payload lets this test exercise real concurrent contention
+        // without needing a real android.os.Vibrator instance.
+        val cache = SynchronizedOnceCache<String>()
+        val computeCallCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val readyCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val startLatch = java.util.concurrent.CountDownLatch(1)
+        val results = java.util.concurrent.ConcurrentLinkedQueue<String?>()
+        val threadCount = 16
+
+        val threads = (1..threadCount).map {
+            Thread {
+                readyCount.incrementAndGet()
+                startLatch.await()
+                val value = cache.getOrCompute {
+                    computeCallCount.incrementAndGet()
+                    Thread.sleep(5) // widen the race window between the null-check and the write
+                    "resolved"
+                }
+                results.add(value)
+            }
+        }
+        threads.forEach { it.start() }
+        while (readyCount.get() < threadCount) Thread.sleep(1)
+        startLatch.countDown()
+        threads.forEach { it.join(5_000) }
+
+        assertEquals("compute() must only run once despite concurrent first access", 1, computeCallCount.get())
+        assertEquals(threadCount, results.size)
+        val distinctResults = results.filterNotNull().toSet()
+        assertEquals("every thread must observe the same cached value", 1, distinctResults.size)
+        assertEquals("resolved", distinctResults.first())
+    }
+
+    @Test
+    fun testSynchronizedOnceCacheResetAllowsRecomputation() {
+        val cache = SynchronizedOnceCache<String>()
+        val computeCallCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+        val first = cache.getOrCompute { computeCallCount.incrementAndGet(); "a" }
+        val second = cache.getOrCompute { computeCallCount.incrementAndGet(); "b" }
+        cache.reset()
+        val third = cache.getOrCompute { computeCallCount.incrementAndGet(); "c" }
+
+        assertEquals("a", first)
+        assertEquals("a", second) // cached, compute() not called again
+        assertEquals("c", third) // recomputed after reset()
+        assertEquals(2, computeCallCount.get())
     }
 
     // MARK: - M6.3 Device Transfer Tests

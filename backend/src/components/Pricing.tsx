@@ -25,7 +25,7 @@ export default function Pricing() {
       description: '彈性靈活，適合剛取得證照、兼職代課或短期體驗的教練。',
       popular: false,
       features: [
-        '30 天全功能免費試用（不扣款）',
+        '7 天全功能免費試用（培訓學員持代碼享 30 天）',
         '無限建立與編排飛輪課程',
         '高音質無損變速 (0.7x ~ 1.3x)',
         '音訊波形圖與 BPM 自動峰值偵測',
@@ -33,7 +33,7 @@ export default function Pricing() {
         '1~3 秒等能量雙軌平滑 Crossfade',
         '單一設備授權綁定保障',
       ],
-      ctaText: '開始 30 天免費試用',
+      ctaText: '開始 7 天免費試用',
     },
     {
       name: '季繳方案',
@@ -52,7 +52,7 @@ export default function Pricing() {
         '新功能優先體驗更新',
         '專屬教練社群與功能優先建議權',
       ],
-      ctaText: '開始 30 天免費試用',
+      ctaText: '開始 7 天免費試用',
     },
     {
       name: '年繳方案',
@@ -85,7 +85,7 @@ export default function Pricing() {
             透明超值的訂閱方案，投資你的專業課堂
           </p>
           <p className="mt-4 text-zinc-400 text-sm sm:text-base">
-            新用戶登入即享 <strong className="text-emerald-400">30 天全功能免費 VIP 試用</strong>，不需預先綁定信用卡。試用期滿自由選擇月繳、季繳或最划算的年度方案，App Store / Google Play 一鍵安全訂閱。
+            新用戶登入即享 <strong className="text-emerald-400">7 天全功能免費 VIP 試用</strong>，不需預先綁定信用卡。搭配合作推廣培訓課程者，輸入年度專屬代碼（如 <span className="font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">26FR-NR</span>）每台設備享 <strong className="text-emerald-400">30 天免費體驗</strong>！試用期滿自由選擇月繳、季繳或最划算的年度方案，App Store / Google Play 一鍵安全訂閱。
           </p>
         </div>
 

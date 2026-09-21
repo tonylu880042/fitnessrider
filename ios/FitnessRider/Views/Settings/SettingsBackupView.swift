@@ -186,10 +186,10 @@ public struct SettingsBackupView: View {
             } message: {
                 Text(alertMessage)
             }
-            .alert("輸入授權碼開通", isPresented: $isShowingActivationAlert) {
-                TextField("例如: RIDER-VIP-2026-PASS", text: $licenseCodeInput)
+            .alert("輸入授權序號或推廣代碼", isPresented: $isShowingActivationAlert) {
+                TextField("如: 26FR-NR 或 RIDER-VIP-2026-PASS", text: $licenseCodeInput)
                     .textInputAutocapitalization(.characters)
-                Button("開通") {
+                Button("開通 / 兌換") {
                     let code = licenseCodeInput
                     Task {
                         let res = await licenseService.activateCode(code: code)
@@ -199,7 +199,7 @@ public struct SettingsBackupView: View {
                 }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("請輸入專業版授權序號：")
+                Text("輸入推廣培訓專屬代碼（如 26FR-NR）享 30 天免費體驗，或輸入 VIP 授權序號：")
             }
         }
     }

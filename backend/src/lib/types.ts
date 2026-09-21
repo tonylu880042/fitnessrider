@@ -19,11 +19,20 @@ export interface Device {
 export interface License {
   id: string;
   user_id: string;
-  plan_type: 'trial' | 'monthly' | 'quarterly' | 'yearly';
+  plan_type: 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'promo_trial_30d';
   expires_at: string;
   status: 'active' | 'expired' | 'canceled';
   revenuecat_entitlement_id?: string;
   updated_at: string;
+}
+
+export interface PromoRedemption {
+  id: string;
+  device_fingerprint: string;
+  promo_code: string;
+  redeemed_at: string;
+  expires_at: string;
+  trial_days: number;
 }
 
 export interface DeviceTransferLog {
