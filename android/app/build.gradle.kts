@@ -19,7 +19,7 @@ android {
 
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
         buildConfigField("int", "LIFECYCLE_DAYS", "30")
-        buildConfigField("String", "UPDATE_URL", "\"https://github.com/tonylu880042/fitnessrider/releases\"")
+        buildConfigField("String", "UPDATE_URL", "\"https://appdistribution.firebase.google.com/testerapps/1:1039441032082:android:06a2f064f7dc6005dcc74b\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
