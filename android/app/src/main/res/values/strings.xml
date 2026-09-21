@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FitnessRider</string>
+    <string name="class_list_title">課表清單</string>
+    <string name="start_workout">上課開騎</string>
+    <string name="edit_class">編輯</string>
+    <string name="settings">系統設定與備份</string>
+</resources>

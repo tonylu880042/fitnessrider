@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="topbar_green">#84BF09</color>
+    <color name="topbar_green_dark">#6EA306</color>
+    <color name="canvas_white">#FFFFFF</color>
+    <color name="card_background">#F7F9FB</color>
+    <color name="card_border">#E2E8F0</color>
+</resources>
