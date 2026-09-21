@@ -14,9 +14,10 @@
 
 ### 1.2 目標受眾與硬體場景
 * **主要受眾**：商業健身房飛輪教練、精品飛輪工作室教練、私人單車訓練師。
-* **主力硬體**：
-  * **iPad (iPadOS 17+) 橫向模式 (Landscape)**：安裝於飛輪車把支架或教練台大螢幕。
-  * **Android 平板 (Android 14+) 橫向模式**：作為跨平台備用與支援設備。
+* **主力硬體與適配性**：
+  * **雙設備適配（平板優先，兼顧手機）**：
+    * **iPad (iPadOS 17+) / Android 平板 (Android 14+) 橫向模式**：教練台大螢幕或車把大支架主力中控座艙。
+    * **iPhone (iOS 17+) / Android 手機**：輕量教練車把手機夾自適應響應版面。
 * **市場規模**：台灣約 200 位活躍專業教練，具備高單價、高黏著度之 Prosumer 特性。
 
 ---
@@ -76,8 +77,9 @@ graph TD
 飛輪教學中，教練經常需要微調音樂速度以精準契合學員踩踏節奏。
 
 * **M2.1 變速不變調 (Pitch-Preserving TimePitch)**：
-  * 支援 0.7x ~ 1.3x 連續無損速度調整（步進 0.01x 或以 BPM 為單位同步增減）。
-  * 保持原曲音調（人聲不變尖、低音不失真）。
+  * **變速範圍**：**±15%（0.85x ~ 1.15x）** 連續無損速度調整。
+  * **快捷步進**：以「**百分比 (±2%)**」為步進單位增減，支援直接點擊快捷鍵（-2%, Reset 100%, +2%）或滑桿連續微調。
+  * **音調鎖定**：嚴格鎖定原曲音調（人聲不變尖、低音不失真）。
   * **iOS**：基於 `AVAudioEngine` + `AVAudioUnitTimePitch`。
   * **Android**：基於 `AndroidX Media3 (ExoPlayer)` + `PlaybackParameters`。
 * **M2.2 雙軌平滑淡入淡出 (Crossfade)**：
@@ -117,15 +119,19 @@ graph TD
 ### 模組 M5：本地 SQLite 資料庫與備份交換中心 (Database & Backup Center)
 * **M5.1 本地統一資料庫架構 (Unified Local SQLite Database)**：
   * 採用 **SQLite** 作為雙原生平台的本地資料庫基石（iOS 採用原生 SQLite / SwiftData，Android 採用官方 Room/SQLite）。
-  * 儲存實體：課表資料表 (`classes`)、歌曲段落表 (`segments`)、動作提示點表 (`cues`)、波形分析快取表 (`waveform_cache`)、歷史記錄表 (`workout_history`)。
-* **M5.2 本地資料庫一鍵整庫備份與還原 (Full SQLite Database Backup & Restore)**：
+  * **純教練工具導向**：不收集學員狀態、不設 `workout_history` 歷史記錄表，聚焦極致精簡與高可靠度。
+  * 儲存實體：課表資料表 (`classes`)、歌曲段落表 (`segments`)、動作提示點表 (`cues`)、波形分析快取表 (`waveform_cache`)。
+* **M5.2 雙模式音樂載入與管理 (Dual-Mode Music Import)**：
+  * **模式 1（系統檔案選擇器）**：透過 iOS `UIDocumentPickerViewController` 或 Android SAF (Storage Access Framework)，教練可單曲或批次挑選本地/雲端之 MP3/M4A/MP4 檔案匯入。
+  * **模式 2（專屬音樂資料夾掃描）**：App 於沙盒建立 `Documents/Music/`（支援 iTunes/Finder 檔案共享、檔案 App 拖曳、Android 儲存空間直接貼上）。App 啟動或教練下拉時自動比對檔案名與時間長度進行自動關聯。
+* **M5.3 本地資料庫一鍵整庫備份與還原 (Full SQLite Database Backup & Restore)**：
   * **一鍵備份匯出**：在設定或管理介面提供「**備份整個資料庫**」按鈕，調用 SQLite 安全快照，匯出具時間戳記的單一檔案（如 `FitnessRider_Backup_20260921.sqlite`）。
   * **系統分享整合**：整合 iOS / Android 系統分享面板（Share Sheet），支援一鍵 AirDrop 至 Mac/新 iPad、存入「檔案 (Files App)」、iCloud Drive、Google Drive、隨身碟 (USB OTG) 或 Email 附件備份。
   * **一鍵整庫還原**：更換平板或重新安裝時，點選「**還原資料庫**」，選擇備份之 `.sqlite` 檔案，自動校驗結構並完整還原所有課表、Cue 點、自訂歌曲段落與波形快取。
-* **M5.3 單一課表輕量交換 (Lightweight JSON / SQLite Snippet)**：
+* **M5.4 單一課表輕量交換 (Lightweight JSON / SQLite Snippet)**：
   * 支援教練將單一課表匯出為純文字結構，僅分享動作與時間碼編排，不含音訊檔案，體積極小（約數十 KB）。
   * 匯入時自動比對本機音樂庫；若缺音訊檔，提示教練綁定本機歌曲。
-* **M5.4 資深教練完整課表包分享（含音樂一鍵打包：`.riderclass`）**：
+* **M5.5 資深教練完整課表包分享（含音樂一鍵打包：`.riderclass`）**：
   * **殺手級功能**：專為資深教練/主教練帶領新進教練、代課或分店分享設計。
   * **一鍵打包**：教練點擊「**📦 匯出完整課表包 (含音樂)**」，App 自動將：
     1. 該課表之完整編排（時間碼、Cue 動作、踏頻 RPM、目標阻力、BPM 變速設定）
@@ -234,11 +240,13 @@ graph TD
 
 | 指標類別 | 規格標準 | 驗證方式 |
 | :--- | :--- | :--- |
-| **音訊播放延遲** | 變速或 Seeking 響應時間 < 50ms | `AVAudioEngine` 緩衝區監控 |
-| **介面幀率 (FPS)** | 橫向 HUD 動畫與波形滾動恆定 60 FPS (ProMotion 120 FPS) | Instruments Core Animation 檢測 |
-| **離線授權寬限** | 支援最長 7 天離線無網路使用（離線快取 JWT 憑證） | 斷網模式驗證課堂執行功能 |
-| **記憶體佔用** | 60 分鐘課堂音訊播放記憶體穩定 < 120 MB | Instruments Allocations / Leaks 檢測 |
-| **設備相容性** | iPadOS 17+ (全螢幕橫向) / Android 14+ (平板橫向) | 實機測試 |
+| **音訊播放延遲** | 變速（TimePitch ±15%）或 Seeking 響應時間 < 50ms | `AVAudioEngine` / `Media3` 緩衝區監控 |
+| **播放與螢幕防休眠** | 執行課堂時強制螢幕常亮（`isIdleTimerDisabled` / `FLAG_KEEP_SCREEN_ON`）；退出 HUD 時還原；完整支援系統背景音訊播放（`UIBackgroundModes: ["audio"]` / `MediaSessionService`） | 鎖定畫面控制與長時放音實測 |
+| **介面幀率 (FPS)** | 橫向 HUD 動畫與波形滾動恆定 60 FPS (ProMotion 120 FPS) | Instruments Core Animation / Systrace |
+| **離線授權寬限** | 支援最長 7~30 天離線無網路使用（離線快取 JWT 憑證，連網時背景無感刷新） | 飛航模式驗證授權與課堂執行 |
+| **記憶體佔用** | 60 分鐘課堂音訊播放記憶體穩定 < 120 MB（波形串流降採樣快取，避免 raw PCM 暴衝） | Instruments Allocations / Android Profiler |
+| **多語系支援** | **繁體中文 (`zh-Hant`) 優先**，全域使用 String Catalog (`Localizable.xcstrings`) 與 `strings.xml` 保留英/日多語系架構 | 系統語系切換測試 |
+| **設備相容性** | **平板與手機雙支援**：iPadOS 17+ (全螢幕橫向座艙)、iOS 17+ (iPhone 車把夾)、Android 14+ (平板與手機自適應) | 實機與多解析度模擬器測試 |
 
 ---
 

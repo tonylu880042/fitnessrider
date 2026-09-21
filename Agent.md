@@ -145,14 +145,17 @@ fitnessrider/
 
 | 模組功能 | iOS / iPadOS 原生技術棧 | Android 原生技術棧 | 共通設計原則 |
 | :--- | :--- | :--- | :--- |
-| **開發語言** | **Swift 6** | **Kotlin 2.0+** | 現代強型別、空指針安全 |
-| **UI 框架** | **SwiftUI** (優先支援 iPad 橫向) | **Jetpack Compose** (橫向平板佈局) | 宣告式 UI、狀態驅動渲染 |
-| **架構模式** | **MVVM / MVI** + Swift Concurrency | **MVVM / MVI** + Kotlin Coroutines / Flow | 一致的業務狀態機與資料流 |
-| **音訊播放與變速** | **`AVAudioEngine`** + `AVAudioUnitTimePitch` | **`AndroidX Media3`** + `PlaybackParameters` | 原生支援「變速不變調」與雙軌 Crossfade |
-| **波形與 BPM 分析** | **`AVAssetReader`** + Swift 峰值運算 | **`MediaExtractor`** + Kotlin 峰值運算 | 非同步讀取音訊 PCM 緩衝區繪製振幅波形 |
-| **本機資料儲存與備份** | **SQLite (`SwiftData` 或 `GRDB.swift`)** | **SQLite (`Room Database`)** | 採用標準 SQLite 單一檔案儲存，提供一鍵整庫備份與還原 (`.sqlite`) |
+| **開發語言** | **Swift 6** | **Kotlin 2.0+** | 現代強型別、空指針安全、協程/並發原生支援 |
+| **UI 框架** | **SwiftUI** (iPad 橫向座艙優先，兼顧 iPhone 車把夾) | **Jetpack Compose** (平板橫向優先，兼顧手機自適應) | 純白草綠 Classic Clean 設計、宣告式 UI、狀態驅動渲染 |
+| **架構模式** | **MVVM / MVI** + Swift Concurrency | **MVVM / MVI** + Kotlin Coroutines / Flow | 一致的單向資料流 (UDF) 與狀態機 |
+| **音訊播放與變速** | **`AVAudioEngine`** + `AVAudioUnitTimePitch` | **`AndroidX Media3`** + `PlaybackParameters` | 原生支援 **±15% (0.85x ~ 1.15x)** 變速不變調、**±2%** 步進與 Crossfade |
+| **波形與 BPM 分析** | **`AVAssetReader`** + Swift 串流振幅運算 | **`MediaExtractor`** + Kotlin 串流振幅運算 | 串流降採樣快取繪製振幅波形，免全解碼防 OOM |
+| **本機資料儲存與備份** | **SQLite (`GRDB.swift` / 原生 SQLite)** | **SQLite (`Room Database`)** | 標準 SQLite 單一檔案（純教練課表、段落與 Cue 點），支援一鍵 `.sqlite` 整庫備份與 `.riderclass` 完整課表包 |
+| **音樂載入與管理** | `UIDocumentPicker` + `Documents/Music` 掃描 | Android SAF + `Music` 資料夾掃描 | 支援單曲挑選與 iTunes/檔案拖曳自動關聯雙模式 |
+| **螢幕與背景播放** | `isIdleTimerDisabled` + Background Audio | `FLAG_KEEP_SCREEN_ON` + `MediaSessionService` | 課堂強制常亮、支援背景背景音訊放音 |
 | **設備識別碼** | `UIDevice.identifierForVendor` + Keychain | `Settings.Secure.ANDROID_ID` + KeyStore | 防刪除重裝、保證單機唯一綁定 |
-| **授權驗證通訊** | `URLSession` + `Codable` | `Ktor` 或 `Retrofit` + `Kotlinx.serialization` | HTTPS TLS 1.3 串接 Vercel Serverless API |
+| **多語系支援** | String Catalog (`Localizable.xcstrings`) | `values-zh-rTW/strings.xml` | **繁體中文優先**，保留英/日擴充能力 |
+| **授權驗證通訊** | `URLSession` + `Codable` | `Ktor` 或 `Retrofit` + `Kotlinx.serialization` | HTTPS TLS 1.3 串接 Vercel Serverless API，支援離線快取 |
 
 ---
 
