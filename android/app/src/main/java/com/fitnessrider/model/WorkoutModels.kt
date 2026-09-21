@@ -1,6 +1,7 @@
 package com.fitnessrider.model
 
 import java.util.UUID
+import kotlin.math.roundToInt
 
 data class WorkoutCue(
     val id: String = UUID.randomUUID().toString(),
@@ -52,4 +53,32 @@ data class WorkoutClass(
             val sec = totalSec % 60
             return String.format("%02d:%02d", min, sec)
         }
+}
+
+/**
+ * 從 segments 推算 totalDurationMs / estimatedCalories，公式對應 iOS
+ * `WorkoutClass.recalculateTotals()`（Models/WorkoutClass.swift:41-59），兩平台務必算出同一個數字。
+ *
+ * `totalDurationMs`/`estimatedCalories` 是 Room 欄位也是 .riderclass 匯出格式欄位，
+ * 沒有改成 computed property 是為了不動 DB schema 與既有存檔的相容性；
+ * 改用這個純函式 + `ClassRepository.saveClass()` 在寫入前一律呼叫它，
+ * 讓「忘記在某個修改點呼叫 recalculate」不會再讓兩個欄位跟 segments 兜不起來。
+ */
+fun WorkoutClass.withRecalculatedTotals(): WorkoutClass {
+    val totalMs = segments.sumOf { it.durationMs }
+    var calories = 0.0
+    for (seg in segments) {
+        val minutes = seg.durationMs / 60_000.0
+        val ratePerMin = when (seg.intensityZone) {
+            1 -> 7.0
+            2 -> 9.0
+            3 -> 11.0
+            4 -> 13.5
+            5 -> 16.0
+            else -> 10.0
+        }
+        calories += minutes * ratePerMin
+    }
+    val roundedCalories = (calories * 10.0).roundToInt() / 10.0
+    return copy(totalDurationMs = totalMs, estimatedCalories = roundedCalories)
 }

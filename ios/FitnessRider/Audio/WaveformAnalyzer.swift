@@ -6,11 +6,11 @@ public final class WaveformAnalyzer: Sendable {
 
     private init() {}
 
-    public func analyzeWaveform(for fileName: String, completion: @escaping @Sendable ([Float], Double) -> Void) {
+    public func analyzeWaveform(for fileName: String, completion: @escaping @Sendable ([Float], Int, Double) -> Void) {
         // 1. Check SQLite Cache
         if let cached = ClassRepository.shared.fetchWaveform(for: fileName) {
             DispatchQueue.main.async {
-                completion(cached.samples, cached.bpm)
+                completion(cached.samples, cached.durationMs, cached.bpm)
             }
             return
         }
@@ -21,7 +21,7 @@ public final class WaveformAnalyzer: Sendable {
             // Generate synthetic rhythmic waveform for placeholder
             let synthetic = generateSyntheticWaveform(sampleCount: 800)
             DispatchQueue.main.async {
-                completion(synthetic, 128.0)
+                completion(synthetic, 300_000, 128.0)
             }
             return
         }
@@ -31,7 +31,7 @@ public final class WaveformAnalyzer: Sendable {
             let asset = AVURLAsset(url: fileURL)
             guard let track = asset.tracks(withMediaType: .audio).first else {
                 let fallback = self.generateSyntheticWaveform(sampleCount: 800)
-                DispatchQueue.main.async { completion(fallback, 128.0) }
+                DispatchQueue.main.async { completion(fallback, 300_000, 128.0) }
                 return
             }
 
@@ -107,19 +107,19 @@ public final class WaveformAnalyzer: Sendable {
                 ClassRepository.shared.saveWaveform(for: fileName, samples: finalPoints, durationMs: durationMs, bpm: calculatedBpm)
 
                 DispatchQueue.main.async {
-                    completion(finalPoints, calculatedBpm)
+                    completion(finalPoints, durationMs, calculatedBpm)
                 }
             } catch {
                 let fallback = self.generateSyntheticWaveform(sampleCount: 800)
-                DispatchQueue.main.async { completion(fallback, 128.0) }
+                DispatchQueue.main.async { completion(fallback, 300_000, 128.0) }
             }
         }
     }
 
-    public func analyzeWaveform(for fileName: String) async -> ([Float], Double) {
+    public func analyzeWaveform(for fileName: String) async -> ([Float], Int, Double) {
         await withCheckedContinuation { continuation in
-            analyzeWaveform(for: fileName) { samples, bpm in
-                continuation.resume(returning: (samples, bpm))
+            analyzeWaveform(for: fileName) { samples, durationMs, bpm in
+                continuation.resume(returning: (samples, durationMs, bpm))
             }
         }
     }

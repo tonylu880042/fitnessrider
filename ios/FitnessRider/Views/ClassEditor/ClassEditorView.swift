@@ -1,6 +1,60 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// 匯入單一音樂檔後、建立段落前所需的資料（檔名、實際曲長、偵測 BPM）。
+/// 拆成獨立型別與純函式是為了讓「檔名碰撞後綴」與「N 個檔案 -> N 個段落」
+/// 這兩段非顯而易見的邏輯可以脫離 View/FileManager 被單元測試覆蓋。
+struct ImportedTrackInfo {
+    let fileName: String
+    let durationMs: Int
+    let bpm: Double
+}
+
+/// 檔名碰撞處理：若 `desiredName` 已存在於 `existingNames`，在副檔名前加上 `_1`、`_2`... 直到唯一。
+/// 對應 CLAUDE.md Layer 1 第 6 項：避免不同曲目的同名檔案互相覆寫。
+func resolveUniqueMusicFileName(_ desiredName: String, existingNames: Set<String>) -> String {
+    guard existingNames.contains(desiredName) else { return desiredName }
+    let ext = (desiredName as NSString).pathExtension
+    let base = (desiredName as NSString).deletingPathExtension
+    var suffix = 1
+    var candidate: String
+    repeat {
+        candidate = ext.isEmpty ? "\(base)_\(suffix)" : "\(base)_\(suffix).\(ext)"
+        suffix += 1
+    } while existingNames.contains(candidate)
+    return candidate
+}
+
+/// 段落標題帶入曲名：去除副檔名。對應 Layer 1 第 2 項。
+func musicTitleFromFileName(_ fileName: String) -> String {
+    (fileName as NSString).deletingPathExtension
+}
+
+/// 多選匯入 -> 逐一建立段落。對應 Layer 1 第 3 項（沿用舊版 ActivityClassEditor.java:1188 的行為）：
+/// 選 N 首歌就建立 N 個段落，段落標題＝曲名、長度＝曲長。
+func buildSegmentsForImportedTracks(
+    tracks: [ImportedTrackInfo],
+    classId: UUID,
+    startOrderIndex: Int
+) -> [WorkoutSegment] {
+    tracks.enumerated().map { index, track in
+        WorkoutSegment(
+            id: UUID(),
+            classId: classId,
+            orderIndex: startOrderIndex + index,
+            title: musicTitleFromFileName(track.fileName),
+            musicFileName: track.fileName,
+            durationMs: track.durationMs > 0 ? track.durationMs : 300_000,
+            baseBpm: track.bpm > 0 ? track.bpm : 128.0,
+            playbackRate: 1.0,
+            intensityZone: 3,
+            cues: [
+                WorkoutCue(offsetMs: 0, posture: .seatedFlat, targetRpm: 85, resistanceLevel: "LEVEL 4", message: "坐姿平路巡航")
+            ]
+        )
+    }
+}
+
 public struct ClassEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -17,6 +71,7 @@ public struct ClassEditorView: View {
     @State private var previewPlayheadMs: Int = 0
     @State private var isPreviewPlaying: Bool = false
     @State private var previewTimer: Timer?
+    @State private var importErrorMessage: String?
 
     public init(workoutClass: WorkoutClass, onSave: @escaping (WorkoutClass) -> Void) {
         self._workoutClass = State(initialValue: workoutClass)
@@ -93,8 +148,9 @@ public struct ClassEditorView: View {
                     }
 
                     // Add Segment Button
+                    // 空段落對教練沒有意義，直接開音樂選擇器，選好曲目才建立段落（Layer 1 第 4 項）。
                     Button {
-                        addNewSegment()
+                        isShowingMusicPicker = true
                     } label: {
                         VStack(spacing: 8) {
                             Image(systemName: "plus")
@@ -165,6 +221,18 @@ public struct ClassEditorView: View {
             allowsMultipleSelection: true
         ) { result in
             handleImportedMusic(result)
+        }
+        // 匯入失敗要看得見：改用 Alert 取代原本只有 print 的無聲失敗（Layer 1 第 5 項）。
+        .alert(
+            "匯入失敗",
+            isPresented: Binding(
+                get: { importErrorMessage != nil },
+                set: { isPresented in if !isPresented { importErrorMessage = nil } }
+            )
+        ) {
+            Button("確定", role: .cancel) {}
+        } message: {
+            Text(importErrorMessage ?? "")
         }
     }
 
@@ -436,27 +504,6 @@ public struct ClassEditorView: View {
 
     // MARK: - Actions
 
-    private func addNewSegment() {
-        let order = workoutClass.segments.count
-        let seg = WorkoutSegment(
-            id: UUID(),
-            classId: workoutClass.id,
-            orderIndex: order,
-            title: "段落 \(order + 1)",
-            musicFileName: "",
-            durationMs: 300_000,
-            baseBpm: 128.0,
-            playbackRate: 1.0,
-            intensityZone: 3,
-            cues: [
-                WorkoutCue(offsetMs: 0, posture: .seatedFlat, targetRpm: 85, resistanceLevel: "LEVEL 4", message: "坐姿平路巡航")
-            ]
-        )
-        workoutClass.segments.append(seg)
-        selectedSegmentIndex = order
-        workoutClass.recalculateTotals()
-    }
-
     private func saveCue(_ cue: WorkoutCue) {
         guard selectedSegmentIndex < workoutClass.segments.count else { return }
         if let idx = workoutClass.segments[selectedSegmentIndex].cues.firstIndex(where: { $0.id == cue.id }) {
@@ -486,13 +533,22 @@ public struct ClassEditorView: View {
     private func loadWaveformForActiveSegment() {
         guard let segment = activeSegment else { return }
         isAnalyzingWaveform = true
-        WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName) { samples, bpm in
+        WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName) { samples, durationMs, bpm in
             self.waveformSamples = samples
             self.isAnalyzingWaveform = false
+            guard self.selectedSegmentIndex < self.workoutClass.segments.count else { return }
+            var didChange = false
             if segment.baseBpm == 128.0 && bpm != 128.0 {
-                if self.selectedSegmentIndex < self.workoutClass.segments.count {
-                    self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
-                }
+                self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
+                didChange = true
+            }
+            // 寫回時長：WaveformAnalyzer 算出的 durationMs 之前完全沒有回傳，段落永遠停在預設 300_000（Layer 1 第 1 項）。
+            if durationMs > 0 && durationMs != segment.durationMs {
+                self.workoutClass.segments[self.selectedSegmentIndex].durationMs = durationMs
+                didChange = true
+            }
+            if didChange {
+                self.workoutClass.recalculateTotals()
             }
         }
     }
@@ -523,26 +579,61 @@ public struct ClassEditorView: View {
         previewTimer = nil
     }
 
+    // 多選音樂檔 -> 逐一複製、分析曲長/BPM -> 一次建立 N 個段落（Layer 1 第 3、4、7 項）。
+    // 不再寫入「目前選取中的段落」：無論有沒有選取段落，匯入永遠是「新增段落」的動作，
+    // 這樣才會跟舊版 ActivityClassEditor.java:1188 的行為一致，也才不會出現選完檔案畫面沒反應的狀況。
     private func handleImportedMusic(_ result: Result<[URL], Error>) {
+        let urls: [URL]
         do {
-            let urls = try result.get()
-            guard let firstUrl = urls.first else { return }
-            _ = firstUrl.startAccessingSecurityScopedResource()
-            defer { firstUrl.stopAccessingSecurityScopedResource() }
-
-            let musicDir = SQLiteDatabase.shared.musicDirectoryURL
-            let destURL = musicDir.appendingPathComponent(firstUrl.lastPathComponent)
-
-            try? FileManager.default.removeItem(at: destURL)
-            try FileManager.default.copyItem(at: firstUrl, to: destURL)
-
-            // Update active segment or add new segment
-            if selectedSegmentIndex < workoutClass.segments.count {
-                workoutClass.segments[selectedSegmentIndex].musicFileName = firstUrl.lastPathComponent
-                loadWaveformForActiveSegment()
-            }
+            urls = try result.get()
         } catch {
-            print("Import audio error: \(error)")
+            importErrorMessage = "匯入失敗：\(error.localizedDescription)"
+            return
+        }
+        guard !urls.isEmpty else { return }
+
+        Task { @MainActor in
+            let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+            var existingNames = Set(
+                (try? FileManager.default.contentsOfDirectory(atPath: musicDir.path)) ?? []
+            )
+            var importedTracks: [ImportedTrackInfo] = []
+            var failedLabels: [String] = []
+
+            for url in urls {
+                let displayName = url.lastPathComponent
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+                let fileName = resolveUniqueMusicFileName(displayName, existingNames: existingNames)
+                existingNames.insert(fileName)
+                let destURL = musicDir.appendingPathComponent(fileName)
+
+                do {
+                    try? FileManager.default.removeItem(at: destURL)
+                    try FileManager.default.copyItem(at: url, to: destURL)
+                } catch {
+                    failedLabels.append(displayName)
+                    continue
+                }
+
+                let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
+                importedTracks.append(ImportedTrackInfo(fileName: fileName, durationMs: durationMs, bpm: bpm))
+            }
+
+            if !importedTracks.isEmpty {
+                let newSegments = buildSegmentsForImportedTracks(
+                    tracks: importedTracks,
+                    classId: workoutClass.id,
+                    startOrderIndex: workoutClass.segments.count
+                )
+                workoutClass.segments.append(contentsOf: newSegments)
+                selectedSegmentIndex = workoutClass.segments.count - 1
+                workoutClass.recalculateTotals()
+            }
+            if !failedLabels.isEmpty {
+                importErrorMessage = "匯入失敗：\(failedLabels.joined(separator: "、"))"
+            }
         }
     }
 }

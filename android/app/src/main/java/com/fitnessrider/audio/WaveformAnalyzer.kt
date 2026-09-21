@@ -40,8 +40,8 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         if (cached != null) {
             return@withContext WaveformResult(
                 samples = cached.first,
-                durationMs = 0,
-                bpm = cached.second
+                durationMs = cached.second,
+                bpm = cached.third
             )
         }
 

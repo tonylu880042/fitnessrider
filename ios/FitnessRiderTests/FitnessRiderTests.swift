@@ -206,6 +206,42 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(bpm120!, 120.0, accuracy: 0.1)
     }
 
+    // Layer 1 第 1 項延伸：匯入音樂後 WorkoutClass.totalDurationMs / estimatedCalories 要能從
+    // segments 正確重算，不能停在匯入前的舊值（或 0）。公式必須與 Android
+    // WorkoutClass.withRecalculatedTotals()（WorkoutModels.kt）算出同一個數字：
+    // 用同一組輸入（118000/93000/206000ms、zone 1/3/5）在 FitnessRiderAndroidTest.kt 也驗證了
+    // 417000ms 總時長、85.8 kcal，兩邊算出來要一致。
+    func testRecalculateTotalsMatchesSegmentsAndAndroidFormula() {
+        var workoutClass = WorkoutClass(
+            title: "測試課表",
+            // 故意帶入跟 segments 對不上的舊值，模擬匯入前的 stale 狀態
+            totalDurationMs: 999,
+            estimatedCalories: 999.0,
+            segments: [
+                WorkoutSegment(title: "暖身", durationMs: 118_000, intensityZone: 1),
+                WorkoutSegment(title: "提速", durationMs: 93_000, intensityZone: 3),
+                WorkoutSegment(title: "全力衝刺", durationMs: 206_000, intensityZone: 5)
+            ]
+        )
+
+        workoutClass.recalculateTotals()
+
+        XCTAssertEqual(workoutClass.totalDurationMs, 417_000)
+        XCTAssertEqual(workoutClass.estimatedCalories, 85.8, accuracy: 0.001)
+
+        // 沒有段落時要歸零，不能維持舊值
+        var empty = WorkoutClass(totalDurationMs: 999, estimatedCalories: 999.0, segments: [])
+        empty.recalculateTotals()
+        XCTAssertEqual(empty.totalDurationMs, 0)
+        XCTAssertEqual(empty.estimatedCalories, 0.0, accuracy: 0.001)
+
+        // 未知 intensityZone（例如 0 或超出 1...5）要 fallback 到預設 10 kcal/min，跟 Android 的 else 分支一致
+        var unknownZone = WorkoutClass(segments: [WorkoutSegment(durationMs: 60_000, intensityZone: 0)])
+        unknownZone.recalculateTotals()
+        XCTAssertEqual(unknownZone.totalDurationMs, 60_000)
+        XCTAssertEqual(unknownZone.estimatedCalories, 10.0, accuracy: 0.001)
+    }
+
     func testSyntheticWaveformAndDatabaseCache() {
         let analyzer = WaveformAnalyzer.shared
         let samples = analyzer.generateSyntheticWaveform(sampleCount: 800)
@@ -306,6 +342,68 @@ final class FitnessRiderTests: XCTestCase {
         currentOffset = 175.0
         targetOffset = min(duration, max(0.0, currentOffset + 10.0))
         XCTAssertEqual(targetOffset, 180.0, accuracy: 0.001)
+    }
+
+    // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
+    func testResolveUniqueMusicFileNameAppendsSuffixOnCollision() {
+        // 沒有碰撞，原樣傳回
+        XCTAssertEqual(resolveUniqueMusicFileName("track.mp3", existingNames: []), "track.mp3")
+
+        // 撞名一次 -> _1
+        XCTAssertEqual(
+            resolveUniqueMusicFileName("track.mp3", existingNames: ["track.mp3"]),
+            "track_1.mp3"
+        )
+
+        // 撞名兩次（_1 也已存在）-> _2
+        XCTAssertEqual(
+            resolveUniqueMusicFileName("track.mp3", existingNames: ["track.mp3", "track_1.mp3"]),
+            "track_2.mp3"
+        )
+
+        // 沒有副檔名的檔案也要能正確加後綴
+        XCTAssertEqual(resolveUniqueMusicFileName("track", existingNames: ["track"]), "track_1")
+    }
+
+    func testMusicTitleFromFileNameStripsExtension() {
+        XCTAssertEqual(musicTitleFromFileName("我的歌曲.mp3"), "我的歌曲")
+        XCTAssertEqual(musicTitleFromFileName("no_extension"), "no_extension")
+    }
+
+    // Layer 1 第 3 項：選 N 首歌就要建立 N 個段落，標題＝曲名、長度＝曲長，依序對應不覆蓋。
+    func testBuildSegmentsForImportedTracksMapsEachUriToOneSegment() {
+        let classId = UUID()
+        let tracks = [
+            ImportedTrackInfo(fileName: "track_1.mp3", durationMs: 0, bpm: 0.0),
+            ImportedTrackInfo(fileName: "曲目二.mp3", durationMs: 245_000, bpm: 132.5),
+            ImportedTrackInfo(fileName: "track_1_1.mp3", durationMs: 180_000, bpm: 0.0)
+        ]
+
+        let segments = buildSegmentsForImportedTracks(tracks: tracks, classId: classId, startOrderIndex: 2)
+
+        // N 個檔案 -> N 個段落
+        XCTAssertEqual(segments.count, 3)
+
+        // 依序對應、orderIndex 接續現有段落數量往後排
+        XCTAssertEqual(segments[0].orderIndex, 2)
+        XCTAssertEqual(segments[1].orderIndex, 3)
+        XCTAssertEqual(segments[2].orderIndex, 4)
+        segments.forEach { XCTAssertEqual($0.classId, classId) }
+
+        // 標題＝曲名（去副檔名），長度＝曲長
+        XCTAssertEqual(segments[0].title, "track_1")
+        XCTAssertEqual(segments[1].title, "曲目二")
+        XCTAssertEqual(segments[1].durationMs, 245_000)
+
+        // 分析失敗（durationMs/bpm 為 0）時 fallback 回預設值，而不是寫入 0
+        XCTAssertEqual(segments[0].durationMs, 300_000)
+        XCTAssertEqual(segments[0].baseBpm, 128.0, accuracy: 0.001)
+        XCTAssertEqual(segments[1].baseBpm, 132.5, accuracy: 0.001)
+        XCTAssertEqual(segments[2].durationMs, 180_000)
+        XCTAssertEqual(segments[2].baseBpm, 128.0, accuracy: 0.001)
+
+        // 每個新段落都要有預設 cue，維持既有行為
+        segments.forEach { XCTAssertFalse($0.cues.isEmpty) }
     }
 
     func testVersionLifecycleExpiration() {

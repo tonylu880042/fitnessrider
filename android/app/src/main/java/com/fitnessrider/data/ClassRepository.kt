@@ -114,7 +114,11 @@ class ClassRepository(private val context: Context) {
         )
     }
 
-    suspend fun saveClass(workoutClass: WorkoutClass) {
+    suspend fun saveClass(workoutClassInput: WorkoutClass) {
+        // 保險：不管呼叫端（編輯畫面、封存匯入 RiderClassArchiveService、seed 資料...）
+        // 是否記得在改動 segments 後呼叫 withRecalculatedTotals()，寫入 DB 前一律用目前的
+        // segments 重新推算，避免 totalDurationMs / estimatedCalories 跟 segments 兜不起來。
+        val workoutClass = workoutClassInput.withRecalculatedTotals()
         val classEntity = ClassEntity(
             id = workoutClass.id,
             title = workoutClass.title,
@@ -416,10 +420,13 @@ class ClassRepository(private val context: Context) {
 
     // MARK: - Waveform Cache
 
-    suspend fun getWaveform(fileName: String): Pair<FloatArray, Double>? {
+    // Triple(samples, durationMs, bpm). durationMs 也要一併帶回去，
+    // 否則命中快取時 WaveformAnalyzer 只能拿到 samples/bpm，時長會被丟棄變成 0（連帶讓 Layer 1
+    // 第 1 項「寫回時長」在快取命中時失效，甚至可能把段落已知的正確時長覆寫掉）。
+    suspend fun getWaveform(fileName: String): Triple<FloatArray, Int, Double>? {
         val entity = dao.getWaveform(fileName) ?: return null
         val floats = byteArrayToFloatArray(entity.samplesBlob)
-        return Pair(floats, entity.calculatedBpm)
+        return Triple(floats, entity.durationMs, entity.calculatedBpm)
     }
 
     suspend fun saveWaveform(fileName: String, samples: FloatArray, durationMs: Int, bpm: Double) {

@@ -85,8 +85,14 @@ public final class ClassRepository: @unchecked Sendable {
         return workoutClass
     }
 
-    public func saveClass(_ workoutClass: WorkoutClass) {
+    public func saveClass(_ workoutClassInput: WorkoutClass) {
         guard let dbPtr = db.getDbPointer() else { return }
+
+        // 保險：不管呼叫端（編輯畫面、封存匯入 RiderClassArchiveService、seed 資料...）是否記得在
+        // 改動 segments 後呼叫 recalculateTotals()，寫入 DB 前一律用目前的 segments 重新推算，
+        // 避免 totalDurationMs / estimatedCalories 跟 segments 兜不起來。
+        var workoutClass = workoutClassInput
+        workoutClass.recalculateTotals()
 
         try? db.executeWithTransaction {
             // Upsert class
@@ -273,11 +279,14 @@ public final class ClassRepository: @unchecked Sendable {
 
     // MARK: - Waveform Cache
 
-    public func fetchWaveform(for fileName: String) -> (samples: [Float], bpm: Double)? {
+    // durationMs 也要一併帶回去，否則命中快取時 WaveformAnalyzer 只能拿到 samples/bpm，
+    // 時長會被丟棄變成 0（連帶讓 Layer 1 第 1 項「寫回時長」在快取命中時失效，
+    // 甚至可能把段落已知的正確時長覆寫掉）。
+    public func fetchWaveform(for fileName: String) -> (samples: [Float], durationMs: Int, bpm: Double)? {
         guard let dbPtr = db.getDbPointer() else { return nil }
-        let sql = "SELECT samples_blob, sample_count, calculated_bpm FROM waveform_cache WHERE file_name = ? LIMIT 1;"
+        let sql = "SELECT samples_blob, sample_count, duration_ms, calculated_bpm FROM waveform_cache WHERE file_name = ? LIMIT 1;"
         var stmt: OpaquePointer?
-        var result: (samples: [Float], bpm: Double)?
+        var result: (samples: [Float], durationMs: Int, bpm: Double)?
 
         if sqlite3_prepare_v2(dbPtr, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, fileName, -1, SQLITE_TRANSIENT)
@@ -287,8 +296,9 @@ public final class ClassRepository: @unchecked Sendable {
                     let count = byteCount / MemoryLayout<Float>.size
                     let buffer = blobPtr.bindMemory(to: Float.self, capacity: count)
                     let samples = Array(UnsafeBufferPointer(start: buffer, count: count))
-                    let bpm = sqlite3_column_double(stmt, 2)
-                    result = (samples: samples, bpm: bpm > 0 ? bpm : 128.0)
+                    let durationMs = Int(sqlite3_column_int(stmt, 2))
+                    let bpm = sqlite3_column_double(stmt, 3)
+                    result = (samples: samples, durationMs: durationMs > 0 ? durationMs : 300_000, bpm: bpm > 0 ? bpm : 128.0)
                 }
             }
         }

@@ -2,6 +2,10 @@ package com.fitnessrider
 
 import com.fitnessrider.data.RiderClassArchiveService
 import com.fitnessrider.model.*
+import com.fitnessrider.ui.editor.ImportedTrackInfo
+import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
+import com.fitnessrider.ui.editor.musicTitleFromFileName
+import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,6 +67,43 @@ class FitnessRiderAndroidTest {
             durationMs = 185000 // 3m 5s
         )
         assertEquals("03:05", segment.formattedDuration)
+    }
+
+    // Layer 1 第 1 項延伸：匯入音樂後 WorkoutClass.totalDurationMs / estimatedCalories 要能從
+    // segments 正確重算，不能停在匯入前的舊值（或 0）。公式必須與 iOS
+    // WorkoutClass.recalculateTotals()（Models/WorkoutClass.swift:41-59）算出同一個數字：
+    // 用同一組輸入（118000/93000/206000ms、zone 1/3/5）在 FitnessRiderTests.swift 也驗證了
+    // 417000ms 總時長、85.8 kcal，兩邊算出來要一致。
+    @Test
+    fun testWithRecalculatedTotalsMatchesSegmentsAndIosFormula() {
+        val workoutClass = WorkoutClass(
+            title = "測試課表",
+            // 故意帶入跟 segments 對不上的舊值，模擬匯入前的 stale 狀態
+            totalDurationMs = 999,
+            estimatedCalories = 999.0,
+            segments = listOf(
+                WorkoutSegment(title = "暖身", durationMs = 118_000, intensityZone = 1),
+                WorkoutSegment(title = "提速", durationMs = 93_000, intensityZone = 3),
+                WorkoutSegment(title = "全力衝刺", durationMs = 206_000, intensityZone = 5)
+            )
+        )
+
+        val recalculated = workoutClass.withRecalculatedTotals()
+
+        assertEquals(417_000, recalculated.totalDurationMs)
+        assertEquals(85.8, recalculated.estimatedCalories, 0.001)
+
+        // 沒有段落時要歸零，不能維持舊值
+        val empty = workoutClass.copy(segments = emptyList()).withRecalculatedTotals()
+        assertEquals(0, empty.totalDurationMs)
+        assertEquals(0.0, empty.estimatedCalories, 0.001)
+
+        // 未知 intensityZone（例如 0 或超出 1..5）要 fallback 到預設 10 kcal/min，跟 iOS 的 default 分支一致
+        val unknownZone = WorkoutClass(
+            segments = listOf(WorkoutSegment(durationMs = 60_000, intensityZone = 0))
+        ).withRecalculatedTotals()
+        assertEquals(60_000, unknownZone.totalDurationMs)
+        assertEquals(10.0, unknownZone.estimatedCalories, 0.001)
     }
 
     @Test
@@ -279,6 +320,74 @@ class FitnessRiderAndroidTest {
         val day5 = buildTime + (5 * oneDayMs)
         org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day5))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5))
+    }
+
+    // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
+    @Test
+    fun testResolveUniqueMusicFileNameAppendsSuffixOnCollision() {
+        // 沒有碰撞，原樣傳回
+        assertEquals("track.mp3", resolveUniqueMusicFileName("track.mp3", emptySet()))
+
+        // 撞名一次 -> _1
+        assertEquals(
+            "track_1.mp3",
+            resolveUniqueMusicFileName("track.mp3", setOf("track.mp3"))
+        )
+
+        // 撞名兩次（_1 也已存在）-> _2
+        assertEquals(
+            "track_2.mp3",
+            resolveUniqueMusicFileName("track.mp3", setOf("track.mp3", "track_1.mp3"))
+        )
+
+        // 沒有副檔名的檔案也要能正確加後綴
+        assertEquals("track_1", resolveUniqueMusicFileName("track", setOf("track")))
+    }
+
+    @Test
+    fun testMusicTitleFromFileNameStripsExtension() {
+        assertEquals("我的歌曲", musicTitleFromFileName("我的歌曲.mp3"))
+        assertEquals("no_extension", musicTitleFromFileName("no_extension"))
+    }
+
+    // Layer 1 第 3 項：選 N 首歌就要建立 N 個段落，標題＝曲名、長度＝曲長，依序對應不覆蓋。
+    @Test
+    fun testBuildSegmentsForImportedTracksMapsEachUriToOneSegment() {
+        val tracks = listOf(
+            ImportedTrackInfo(fileName = "track_1.mp3", durationMs = 0, bpm = 0.0),
+            ImportedTrackInfo(fileName = "曲目二.mp3", durationMs = 245_000, bpm = 132.5),
+            ImportedTrackInfo(fileName = "track_1_1.mp3", durationMs = 180_000, bpm = 0.0)
+        )
+
+        val segments = buildSegmentsForImportedTracks(
+            tracks = tracks,
+            classId = "class-1",
+            startOrderIndex = 2
+        )
+
+        // N 個檔案 -> N 個段落
+        assertEquals(3, segments.size)
+
+        // 依序對應、orderIndex 接續現有段落數量往後排
+        assertEquals(2, segments[0].orderIndex)
+        assertEquals(3, segments[1].orderIndex)
+        assertEquals(4, segments[2].orderIndex)
+        segments.forEach { assertEquals("class-1", it.classId) }
+
+        // 標題＝曲名（去副檔名），長度＝曲長
+        assertEquals("track_1", segments[0].title)
+        assertEquals("曲目二", segments[1].title)
+        assertEquals(245_000, segments[1].durationMs)
+
+        // 分析失敗（durationMs/bpm 為 0）時 fallback 回預設值，而不是寫入 0
+        assertEquals(300_000, segments[0].durationMs)
+        assertEquals(128.0, segments[0].baseBpm, 0.001)
+        assertEquals(132.5, segments[1].baseBpm, 0.001)
+        assertEquals(180_000, segments[2].durationMs)
+        assertEquals(128.0, segments[2].baseBpm, 0.001)
+
+        // 每個新段落都要有預設 cue，維持既有行為
+        segments.forEach { assertTrue(it.cues.isNotEmpty()) }
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {
