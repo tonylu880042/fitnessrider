@@ -361,6 +361,19 @@ public final class AudioEngineManager: ObservableObject {
         incomingDeck.setVolume(fadeIn)
     }
 
+    // Code-review note (Android/iOS parity check): Android's finishCrossfade() had a
+    // reentrancy bug where clearing the ExoPlayer's media items could re-deliver a
+    // stale STATE_ENDED for the outgoing player *before* the active-player index was
+    // flipped, causing a double segment advance (see AudioEngineManager.kt's
+    // CrossfadeFinishCoordinator). This iOS equivalent does NOT have that bug:
+    // oldDeck.playerNode.stop() below can re-invoke the scheduled buffer's completion
+    // handler, but that handler always redispatches via `DispatchQueue.main.async`
+    // (see scheduleBuffer's completion closure), so handleTrackBufferFinished(...)
+    // can only run *after* this entire synchronous function — including the
+    // activeDeckIndex flip and currentSegmentIndex advance below — has returned.
+    // handleTrackBufferFinished also double-checks both `deckId == activeDeck.id`
+    // AND a segmentIndex snapshot against `currentSegmentIndex`, so even a stale
+    // event for the just-stopped deck is rejected. No fix needed here; kept as-is.
     private func finishCrossfade(effectiveDuration: Double) {
         guard isCrossfading else { return }
         isCrossfading = false
