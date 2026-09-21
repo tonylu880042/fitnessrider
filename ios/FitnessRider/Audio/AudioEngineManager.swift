@@ -92,11 +92,14 @@ public final class AudioEngineManager: ObservableObject {
         stopTimer()
         playerNode.stop()
 
-        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
-        let fileURL = musicDir.appendingPathComponent(segment.musicFileName)
+        // Layer 3：segment.musicFileName 可能是 Music/ 目錄下的檔名，也可能是外部資料夾的
+        // "extfolder://" 相對路徑，一律交給 MusicSource 判斷來源與存在性；AVAudioFile 的初始化
+        // 要在 security-scoped 存取視窗裡完成，之後系統的檔案描述子仍可繼續讀取。
+        let file: AVAudioFile? = MusicSource.withResolvedFileURL(for: segment.musicFileName) { url in
+            try? AVAudioFile(forReading: url)
+        }.flatMap { $0 }
 
-        if FileManager.default.fileExists(atPath: fileURL.path),
-           let file = try? AVAudioFile(forReading: fileURL) {
+        if let file = file {
             self.currentAudioFile = file
             self.audioLengthSamples = file.length
             self.sampleRate = file.processingFormat.sampleRate

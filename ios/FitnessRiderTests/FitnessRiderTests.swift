@@ -467,6 +467,160 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(segments[1].baseBpm, 140.0, accuracy: 0.001)
     }
 
+    // Layer 3 第 1、2 項：外部資料夾曲目一律以 "extfolder://" + 相對路徑表示，讓播放/波形分析/
+    // 匯出等消費端可以用同一個欄位（musicFileName）判斷來源，不必額外加欄位。
+    func testMusicSourceIsExternalDetectsPrefix() {
+        XCTAssertTrue(MusicSource.isExternal("extfolder://Coach/warmup.mp3"))
+        XCTAssertFalse(MusicSource.isExternal("track.mp3"))
+        XCTAssertFalse(MusicSource.isExternal(""))
+    }
+
+    // Layer 3：資料夾掃描要能用副檔名過濾出音樂檔，排除資料夾裡的其他檔案。
+    func testIsAudioFileNameMatchesKnownExtensions() {
+        XCTAssertTrue(isAudioFileName("track.mp3"))
+        XCTAssertTrue(isAudioFileName("TRACK.MP3")) // 不分大小寫
+        XCTAssertTrue(isAudioFileName("track.m4a"))
+        XCTAssertFalse(isAudioFileName("cover.jpg"))
+        XCTAssertFalse(isAudioFileName("readme.txt"))
+    }
+
+    // Layer 3：資料夾內容要以串流方式列出（用 FileManager enumerator/contentsOfDirectory 逐一讀取，
+    // 不複製任何音樂檔案本體），且「含子資料夾」開關要能正確切換遞迴與否，並排除非音樂檔案。
+    func testListExternalMusicEntriesRespectsIncludeSubdirectoriesAndFiltersNonAudio() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ext_music_test_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let subDir = tempDir.appendingPathComponent("Warmups")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+
+        try Data().write(to: tempDir.appendingPathComponent("top_level.mp3"))
+        try Data().write(to: tempDir.appendingPathComponent("cover.jpg")) // 非音樂檔，要被排除
+        try Data().write(to: subDir.appendingPathComponent("nested.m4a"))
+
+        // 不含子資料夾：只看到第一層的音樂檔
+        let shallow = listExternalMusicEntries(baseURL: tempDir, includeSubdirectories: false)
+        XCTAssertEqual(shallow.map { $0.displayName }, ["top_level.mp3"])
+
+        // 含子資料夾：連子資料夾裡的檔案都要列出，相對路徑要包含子資料夾名稱
+        let deep = listExternalMusicEntries(baseURL: tempDir, includeSubdirectories: true)
+        let names = Set(deep.map { $0.displayName })
+        XCTAssertEqual(names, ["top_level.mp3", "nested.m4a"])
+        let nested = deep.first { $0.displayName == "nested.m4a" }
+        XCTAssertEqual(nested?.relativePath, "Warmups/nested.m4a")
+    }
+
+    // Layer 3：從外部資料夾多選曲目 -> 建立段落時，musicFileName 要存 "extfolder://" + 相對路徑，
+    // 標題要用真正的顯示檔名（去副檔名），而不是整個 "extfolder://..." 字串去副檔名。
+    func testBuildSegmentsFromExternalSelectionUsesExtFolderPrefixAndDisplayTitle() {
+        let classId = UUID()
+        let entries = [
+            ExternalMusicEntry(relativePath: "Coach/warmup.mp3", displayName: "warmup.mp3"),
+            ExternalMusicEntry(relativePath: "sprint.mp3", displayName: "sprint.mp3")
+        ]
+
+        let segments = buildSegmentsFromExternalSelection(entries: entries, classId: classId, startOrderIndex: 2)
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(segments[0].orderIndex, 2)
+        XCTAssertEqual(segments[1].orderIndex, 3)
+        XCTAssertEqual(segments[0].musicFileName, "extfolder://Coach/warmup.mp3")
+        XCTAssertEqual(segments[1].musicFileName, "extfolder://sprint.mp3")
+        // 標題是"warmup"、"sprint"，不是把整個 extfolder Uri 字串去副檔名的結果
+        XCTAssertEqual(segments[0].title, "warmup")
+        XCTAssertEqual(segments[1].title, "sprint")
+        XCTAssertEqual(segments[0].durationMs, 300_000)
+        XCTAssertEqual(segments[0].baseBpm, 128.0, accuracy: 0.001)
+        XCTAssertTrue(MusicSource.isExternal(segments[0].musicFileName))
+    }
+
+    // Layer 3：資料夾列表的即時搜尋跟 Layer 2 音樂庫是同一套邏輯，比對顯示檔名子字串。
+    func testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {
+        let entries = [
+            ExternalMusicEntry(relativePath: "a", displayName: "Sprint Fire.mp3"),
+            ExternalMusicEntry(relativePath: "b", displayName: "warmup_groove.mp3")
+        ]
+
+        XCTAssertEqual(filterExternalMusicEntries(entries, query: "").count, 2)
+        XCTAssertEqual(filterExternalMusicEntries(entries, query: "sprint").count, 1)
+        XCTAssertEqual(filterExternalMusicEntries(entries, query: "SPRINT").first?.displayName, "Sprint Fire.mp3")
+        XCTAssertEqual(filterExternalMusicEntries(entries, query: "不存在").count, 0)
+    }
+
+    // 已知落差修復：匯入失敗時，任何殘留在目的檔名的半成品都要被清掉，不能在 Music 目錄
+    // 留下截斷檔佔用檔名。這裡用「目的地已經有一份殘留舊檔、來源不存在導致複製失敗」模擬
+    // 這個情境：修復前的程式碼完全不會清 destURL，修復後不論成功或失敗，destURL 都應該
+    // 準確反映這次複製的結果，不會留下不屬於這次操作的殘留內容。
+    func testCopyMusicFileOrCleanupRemovesLeftoverOnFailure() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("music_import_test_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let destURL = tempDir.appendingPathComponent("track.mp3")
+        try Data([0x01, 0x02, 0x03]).write(to: destURL) // 模擬上次留下的半成品
+
+        let missingSourceURL = tempDir.appendingPathComponent("does_not_exist.mp3")
+        let copied = copyMusicFileOrCleanup(from: missingSourceURL, to: destURL)
+
+        XCTAssertFalse(copied, "來源不存在，複製要回報失敗")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: destURL.path),
+            "失敗後不能在目的檔名留下任何殘留檔案（半成品或舊檔）佔用檔名"
+        )
+    }
+
+    // 對照組：完整複製成功時檔案要存在、內容要完整，且回報 true。
+    func testCopyMusicFileOrCleanupSucceedsAndWritesFullContent() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("music_import_test_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let sourceURL = tempDir.appendingPathComponent("source.mp3")
+        let sourceBytes = Data([1, 2, 3, 4, 5])
+        try sourceBytes.write(to: sourceURL)
+        let destURL = tempDir.appendingPathComponent("track.mp3")
+
+        let copied = copyMusicFileOrCleanup(from: sourceURL, to: destURL)
+
+        XCTAssertTrue(copied)
+        XCTAssertEqual(try Data(contentsOf: destURL), sourceBytes)
+    }
+
+    // Layer 3：資料夾 bookmark／「含子資料夾」開關的持久化，用獨立的 UserDefaults suite
+    // 隔離測試，不影響真正的 App 設定；也驗證 clearFolder 之後狀態正確歸零。
+    func testExternalMusicFolderStorePersistsIncludeSubdirectoriesPreference() throws {
+        let store = ExternalMusicFolderStore.shared
+        let defaults = UserDefaults(suiteName: "FitnessRiderExternalFolderTest_\(UUID().uuidString)")!
+
+        // 舊版 MusicUtility.isIncludeSubdirectories 預設值就是 true
+        XCTAssertTrue(store.includeSubdirectories(defaults: defaults))
+        XCTAssertFalse(store.isFolderConfigured(defaults: defaults))
+
+        store.setIncludeSubdirectories(false, defaults: defaults)
+        XCTAssertFalse(store.includeSubdirectories(defaults: defaults))
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ext_folder_store_test_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Data([9, 9]).write(to: tempDir.appendingPathComponent("song.mp3"))
+
+        try store.persist(folderURL: tempDir, defaults: defaults)
+        XCTAssertTrue(store.isFolderConfigured(defaults: defaults))
+
+        // bookmark 有效時，withFileAccess 要能解析出資料夾底下的檔案並讀到內容
+        let sawFile = store.withFileAccess(relativePath: "song.mp3", defaults: defaults) { url in
+            FileManager.default.fileExists(atPath: url.path)
+        }
+        XCTAssertEqual(sawFile, true)
+
+        store.clearFolder(defaults: defaults)
+        XCTAssertFalse(store.isFolderConfigured(defaults: defaults))
+        // bookmark 被清除後（等同授權失效／使用者重新選擇前），withFileAccess 要回傳 nil，
+        // 不能讓呼叫端誤以為資料夾還在。
+        let afterClear = store.withFileAccess(relativePath: "song.mp3", defaults: defaults) { _ in true }
+        XCTAssertNil(afterClear)
+    }
+
     func testVersionLifecycleExpiration() {
         let baseDate = Date(timeIntervalSince1970: 1774000000) // Fixed point in time
         let manager = VersionLifecycleManager(buildDate: baseDate)

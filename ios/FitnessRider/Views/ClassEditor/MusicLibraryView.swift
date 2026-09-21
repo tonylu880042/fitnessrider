@@ -38,6 +38,13 @@ func filterMusicLibraryTracks(_ tracks: [MusicLibraryTrack], query: String) -> [
     return tracks.filter { $0.title.range(of: trimmed, options: .caseInsensitive) != nil }
 }
 
+/// 同一套即時搜尋邏輯套用在 Layer 3 的外部資料夾項目上，比對顯示檔名子字串。
+func filterExternalMusicEntries(_ entries: [ExternalMusicEntry], query: String) -> [ExternalMusicEntry] {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return entries }
+    return entries.filter { $0.displayName.range(of: trimmed, options: .caseInsensitive) != nil }
+}
+
 /// 從音樂庫多選既有曲目 -> 直接建立 N 個段落，行為對應 Layer 1 的
 /// `buildSegmentsForImportedTracks`，唯一差異是曲目已經在 `Music/` 目錄裡，不會再產生檔案複製。
 func buildSegmentsFromLibrarySelection(
@@ -49,14 +56,48 @@ func buildSegmentsFromLibrarySelection(
     return buildSegmentsForImportedTracks(tracks: importInfos, classId: classId, startOrderIndex: startOrderIndex)
 }
 
+/// Layer 3：從外部資料夾多選曲目 -> 直接建立 N 個段落，musicFileName 存
+/// `"extfolder://" + 相對路徑`（`MusicSource.isExternal` 用來辨識來源）。時長／BPM 先用預設值，
+/// 實際數值等教練在編輯畫面選到該段落時，由既有的 WaveformAnalyzer 分析並寫回
+/// （跟 Layer 1 對新匯入檔案的處理是同一條路徑）。
+func buildSegmentsFromExternalSelection(
+    entries: [ExternalMusicEntry],
+    classId: UUID,
+    startOrderIndex: Int
+) -> [WorkoutSegment] {
+    let importInfos = entries.map {
+        ImportedTrackInfo(
+            fileName: MusicSource.externalPrefix + $0.relativePath,
+            durationMs: 300_000,
+            bpm: 128.0,
+            displayTitle: musicTitleFromFileName($0.displayName)
+        )
+    }
+    return buildSegmentsForImportedTracks(tracks: importInfos, classId: classId, startOrderIndex: startOrderIndex)
+}
+
+/// 複製匯入的音樂檔到 [destURL]。中途失敗時清掉半成品，不在 Music 目錄留下截斷檔佔用檔名
+/// （CLAUDE.md「已知落差」第二項：匯入失敗時已寫入一半的檔案沒有清掉）。
+@discardableResult
+func copyMusicFileOrCleanup(from sourceURL: URL, to destURL: URL) -> Bool {
+    do {
+        try? FileManager.default.removeItem(at: destURL)
+        try FileManager.default.copyItem(at: sourceURL, to: destURL)
+        return true
+    } catch {
+        try? FileManager.default.removeItem(at: destURL)
+        return false
+    }
+}
+
 private func formatDuration(_ durationMs: Int) -> String {
     let totalSec = durationMs / 1000
     return String(format: "%02d:%02d", totalSec / 60, totalSec % 60)
 }
 
-/// Layer 2：app 內音樂庫。段落指定音樂時開這個列表取代直接開系統檔案選擇器；
-/// `.fileImporter` 只保留在畫面內「＋匯入新檔」這一個入口。選既有曲目時完全不複製檔案，
-/// 直接沿用 `Music/` 目錄裡已經有的檔名（與其已經算好、存進波形快取的 duration/BPM）。
+/// Layer 2 + Layer 3：app 內音樂庫，用分頁清楚區分兩種音樂來源，避免教練搞混「哪些檔案在哪」：
+/// - 「已匯入音樂庫」：複製進 `Music/` 目錄的曲目（Layer 2）。
+/// - 「音樂資料夾」：教練指定的外部資料夾，直接讀取內容、完全不複製檔案進 App（Layer 3）。
 ///
 /// 試聽沿用 AVFoundation（app 既有的音訊框架，`WaveformAnalyzer`／`AudioEngineManager` 都建構在它上面），
 /// 用內建的 `AVAudioPlayer` 播放單一檔案，沒有引入任何新的播放器套件或依賴。
@@ -67,16 +108,34 @@ struct MusicLibraryView: View {
     let onSegmentsCreated: ([WorkoutSegment]) -> Void
     let onImportFailed: ([String]) -> Void
 
+    @State private var selectedTab: Int = 0
     @State private var searchQuery: String = ""
+
+    // Layer 2：已匯入音樂庫狀態
     @State private var allTracks: [MusicLibraryTrack] = []
     @State private var selectedFileNames: Set<String> = []
     @State private var isImporting: Bool = false
     @State private var isShowingFileImporter: Bool = false
+
+    // Layer 3：外部資料夾狀態
+    @State private var folderConfigured: Bool = ExternalMusicFolderStore.shared.isFolderConfigured()
+    @State private var includeSubdirectories: Bool = ExternalMusicFolderStore.shared.includeSubdirectories()
+    @State private var externalEntries: [ExternalMusicEntry] = []
+    @State private var selectedExternalPaths: Set<String> = []
+    @State private var isLoadingExternal: Bool = false
+    @State private var externalFolderError: String?
+    @State private var isShowingFolderImporter: Bool = false
+
+    // 兩個分頁共用同一顆試聽 AVAudioPlayer，用同一個 key 空間避免互相干擾：
+    // "lib:<fileName>" 代表已匯入音樂庫項目，"ext:<relativePath>" 代表外部資料夾項目。
     @State private var previewPlayer: AVAudioPlayer?
-    @State private var playingFileName: String?
+    @State private var playingKey: String?
 
     private var filteredTracks: [MusicLibraryTrack] {
         filterMusicLibraryTracks(allTracks, query: searchQuery)
+    }
+    private var filteredExternalEntries: [ExternalMusicEntry] {
+        filterExternalMusicEntries(externalEntries, query: searchQuery)
     }
 
     var body: some View {
@@ -90,11 +149,20 @@ struct MusicLibraryView: View {
                     }
                 },
                 trailing: {
-                    Button {
-                        isShowingFileImporter = true
-                    } label: {
-                        Label("匯入新檔", systemImage: "plus")
-                            .font(.system(size: 15, weight: .bold))
+                    if selectedTab == 0 {
+                        Button {
+                            isShowingFileImporter = true
+                        } label: {
+                            Label("匯入新檔", systemImage: "plus")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                    } else {
+                        Button {
+                            isShowingFolderImporter = true
+                        } label: {
+                            Label(folderConfigured ? "更換資料夾" : "選擇資料夾", systemImage: "folder")
+                                .font(.system(size: 15, weight: .bold))
+                        }
                     }
                 }
             )
@@ -104,7 +172,16 @@ struct MusicLibraryView: View {
                     .foregroundColor(.white)
             )
 
-            // 搜尋列：比照舊版 FragDialogSelectMusic 的即時 filter。
+            // 分頁：清楚區分「複製進 App 的曲目」與「外部資料夾曲目」，避免教練搞混哪些檔案在哪。
+            Picker("", selection: $selectedTab) {
+                Text("已匯入音樂庫").tag(0)
+                Text("音樂資料夾").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            // 搜尋列：比照舊版 FragDialogSelectMusic 的即時 filter，兩個分頁共用同一個搜尋框。
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(FitnessRiderTheme.textSecondary)
@@ -119,56 +196,38 @@ struct MusicLibraryView: View {
             )
             .padding(16)
 
-            if filteredTracks.isEmpty {
-                Spacer()
-                VStack(spacing: 8) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 48))
-                        .foregroundColor(FitnessRiderTheme.textMuted)
-                    Text(allTracks.isEmpty ? "尚未匯入任何音樂，點右上角「匯入新檔」開始" : "找不到符合的曲目")
-                        .font(.system(size: 14))
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
-                }
-                Spacer()
+            if selectedTab == 0 {
+                libraryTabContent
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredTracks) { track in
-                            trackRow(track)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
+                folderTabContent
             }
 
             Divider()
 
             Button {
-                let selected = allTracks.filter { selectedFileNames.contains($0.fileName) }
-                guard !selected.isEmpty else { return }
-                let newSegments = buildSegmentsFromLibrarySelection(
-                    tracks: selected,
-                    classId: classId,
-                    startOrderIndex: startOrderIndex
-                )
-                stopPreview()
-                onSegmentsCreated(newSegments)
-                onDismiss()
+                confirmSelection()
             } label: {
-                Text(isImporting ? "匯入中..." : "加入 \(selectedFileNames.count) 首到課表")
+                Text(isImporting ? "匯入中..." : "加入 \(currentSelectionCount) 首到課表")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(selectedFileNames.isEmpty || isImporting ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreen)
+                    .background(currentSelectionCount == 0 || isImporting ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreen)
                     .cornerRadius(10)
             }
-            .disabled(selectedFileNames.isEmpty || isImporting)
+            .disabled(currentSelectionCount == 0 || isImporting)
             .padding(16)
         }
         .background(FitnessRiderTheme.canvasWhite)
-        .onAppear { reload() }
+        .onAppear {
+            reload()
+            if folderConfigured { reloadExternalEntries() }
+        }
         .onDisappear { stopPreview() }
+        .onChange(of: includeSubdirectories) { _, newValue in
+            ExternalMusicFolderStore.shared.setIncludeSubdirectories(newValue)
+            reloadExternalEntries()
+        }
         .fileImporter(
             isPresented: $isShowingFileImporter,
             allowedContentTypes: [UTType.audio, UTType.mp3, UTType.mpeg4Audio],
@@ -176,25 +235,200 @@ struct MusicLibraryView: View {
         ) { result in
             handleImportedMusic(result)
         }
+        .fileImporter(
+            isPresented: $isShowingFolderImporter,
+            allowedContentTypes: [UTType.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFolderPicked(result)
+        }
     }
 
-    // MARK: - Rows
+    private var currentSelectionCount: Int {
+        selectedTab == 0 ? selectedFileNames.count : selectedExternalPaths.count
+    }
 
-    private func trackRow(_ track: MusicLibraryTrack) -> some View {
-        let isSelected = selectedFileNames.contains(track.fileName)
-        let isPlaying = playingFileName == track.fileName
+    private func confirmSelection() {
+        if selectedTab == 0 {
+            let selected = allTracks.filter { selectedFileNames.contains($0.fileName) }
+            guard !selected.isEmpty else { return }
+            let newSegments = buildSegmentsFromLibrarySelection(
+                tracks: selected,
+                classId: classId,
+                startOrderIndex: startOrderIndex
+            )
+            stopPreview()
+            onSegmentsCreated(newSegments)
+            onDismiss()
+        } else {
+            let selected = externalEntries.filter { selectedExternalPaths.contains($0.relativePath) }
+            guard !selected.isEmpty else { return }
+            let newSegments = buildSegmentsFromExternalSelection(
+                entries: selected,
+                classId: classId,
+                startOrderIndex: startOrderIndex
+            )
+            stopPreview()
+            onSegmentsCreated(newSegments)
+            onDismiss()
+        }
+    }
 
-        return HStack(spacing: 12) {
+    // MARK: - Layer 2 分頁
+
+    private var libraryTabContent: some View {
+        Group {
+            if filteredTracks.isEmpty {
+                Spacer()
+                emptyState(
+                    icon: "music.note",
+                    message: allTracks.isEmpty ? "尚未匯入任何音樂，點右上角「匯入新檔」開始" : "找不到符合的曲目"
+                )
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(filteredTracks) { track in
+                            let isSelected = selectedFileNames.contains(track.fileName)
+                            let isPlaying = playingKey == "lib:\(track.fileName)"
+                            musicRow(
+                                title: track.title,
+                                subtitle: "\(formatDuration(track.durationMs)) ・ \(Int(track.bpm)) BPM",
+                                isSelected: isSelected,
+                                isPlaying: isPlaying,
+                                onToggleSelect: {
+                                    if isSelected {
+                                        selectedFileNames.remove(track.fileName)
+                                    } else {
+                                        selectedFileNames.insert(track.fileName)
+                                    }
+                                },
+                                onTogglePreview: { toggleLibraryPreview(track) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    // MARK: - Layer 3 分頁
+
+    private var folderTabContent: some View {
+        VStack(spacing: 0) {
+            if folderConfigured {
+                // 說明目前列出的是外部資料夾內容，不佔用 App 儲存空間，跟上方分頁的「已匯入音樂庫」是不同來源。
+                HStack {
+                    Text("直接讀取資料夾內容，不會複製進 App")
+                        .font(.system(size: 12))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    Spacer()
+                    Toggle("含子資料夾", isOn: $includeSubdirectories)
+                        .toggleStyle(.switch)
+                        .font(.system(size: 12))
+                        .fixedSize()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
+            }
+
+            if !folderConfigured {
+                Spacer()
+                emptyState(icon: "folder", message: "尚未選擇音樂資料夾", actionLabel: "選擇資料夾") {
+                    isShowingFolderImporter = true
+                }
+                Spacer()
+            } else if let error = externalFolderError {
+                Spacer()
+                emptyState(icon: "exclamationmark.triangle", message: error, actionLabel: "重新選擇資料夾") {
+                    isShowingFolderImporter = true
+                }
+                Spacer()
+            } else if isLoadingExternal {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else if filteredExternalEntries.isEmpty {
+                Spacer()
+                emptyState(
+                    icon: "music.note",
+                    message: externalEntries.isEmpty ? "這個資料夾裡沒有找到音樂檔" : "找不到符合的曲目"
+                )
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(filteredExternalEntries) { entry in
+                            let isSelected = selectedExternalPaths.contains(entry.relativePath)
+                            let isPlaying = playingKey == "ext:\(entry.relativePath)"
+                            musicRow(
+                                title: musicTitleFromFileName(entry.displayName),
+                                subtitle: "外部資料夾",
+                                isSelected: isSelected,
+                                isPlaying: isPlaying,
+                                onToggleSelect: {
+                                    if isSelected {
+                                        selectedExternalPaths.remove(entry.relativePath)
+                                    } else {
+                                        selectedExternalPaths.insert(entry.relativePath)
+                                    }
+                                },
+                                onTogglePreview: { toggleExternalPreview(entry) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    // MARK: - Shared Rows
+
+    private func emptyState(icon: String, message: String, actionLabel: String? = nil, action: (() -> Void)? = nil) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundColor(FitnessRiderTheme.textMuted)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundColor(FitnessRiderTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            if let actionLabel = actionLabel, let action = action {
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(FitnessRiderTheme.topBarGreen)
+                        .cornerRadius(8)
+                }
+            }
+        }
+    }
+
+    private func musicRow(
+        title: String,
+        subtitle: String,
+        isSelected: Bool,
+        isPlaying: Bool,
+        onToggleSelect: @escaping () -> Void,
+        onTogglePreview: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 20))
                 .foregroundColor(isSelected ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.textMuted)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(track.title)
+                Text(title)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.textPrimary)
                     .lineLimit(1)
-                Text("\(formatDuration(track.durationMs)) ・ \(Int(track.bpm)) BPM")
+                Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
             }
@@ -202,7 +436,7 @@ struct MusicLibraryView: View {
             Spacer()
 
             Button {
-                togglePreview(track)
+                onTogglePreview()
             } label: {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 26))
@@ -214,16 +448,10 @@ struct MusicLibraryView: View {
         .background(isSelected ? FitnessRiderTheme.topBarGreen.opacity(0.1) : FitnessRiderTheme.cardBackground)
         .cornerRadius(10)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if isSelected {
-                selectedFileNames.remove(track.fileName)
-            } else {
-                selectedFileNames.insert(track.fileName)
-            }
-        }
+        .onTapGesture { onToggleSelect() }
     }
 
-    // MARK: - Data
+    // MARK: - Data (Layer 2)
 
     private func reload() {
         let musicDir = SQLiteDatabase.shared.musicDirectoryURL
@@ -234,10 +462,50 @@ struct MusicLibraryView: View {
         }
     }
 
+    // MARK: - Data (Layer 3)
+
+    private func reloadExternalEntries() {
+        guard folderConfigured else {
+            externalEntries = []
+            return
+        }
+        isLoadingExternal = true
+        externalFolderError = nil
+        let includeSubdirs = includeSubdirectories
+        DispatchQueue.global(qos: .userInitiated).async {
+            let entries = ExternalMusicFolderStore.shared.withFileAccess(relativePath: "") { baseURL in
+                listExternalMusicEntries(baseURL: baseURL, includeSubdirectories: includeSubdirs)
+            }
+            DispatchQueue.main.async {
+                self.isLoadingExternal = false
+                if let entries = entries {
+                    self.externalEntries = entries
+                } else {
+                    self.externalEntries = []
+                    self.externalFolderError = "資料夾存取已失效，請重新選擇資料夾"
+                }
+            }
+        }
+    }
+
+    private func handleFolderPicked(_ result: Result<[URL], Error>) {
+        guard let url = (try? result.get())?.first else { return }
+        do {
+            try ExternalMusicFolderStore.shared.persist(folderURL: url)
+            folderConfigured = true
+            externalFolderError = nil
+            selectedExternalPaths = []
+            reloadExternalEntries()
+        } catch {
+            externalFolderError = "資料夾存取已失效，請重新選擇資料夾"
+        }
+    }
+
     // MARK: - Preview Playback
 
-    private func togglePreview(_ track: MusicLibraryTrack) {
-        if playingFileName == track.fileName {
+    private func toggleLibraryPreview(_ track: MusicLibraryTrack) {
+        let key = "lib:\(track.fileName)"
+        if playingKey == key {
             stopPreview()
             return
         }
@@ -249,17 +517,36 @@ struct MusicLibraryView: View {
             player.prepareToPlay()
             player.play()
             previewPlayer = player
-            playingFileName = track.fileName
+            playingKey = key
         } catch {
             previewPlayer = nil
-            playingFileName = nil
+            playingKey = nil
         }
+    }
+
+    private func toggleExternalPreview(_ entry: ExternalMusicEntry) {
+        let key = "ext:\(entry.relativePath)"
+        if playingKey == key {
+            stopPreview()
+            return
+        }
+        stopPreview()
+        // AVAudioPlayer 在 security-scoped 存取視窗裡建立好之後，關閉視窗不影響後續播放
+        // （系統的檔案描述子已經開好），所以只需要把 init 包在 withResolvedFileURL 裡。
+        let player = MusicSource.withResolvedFileURL(for: MusicSource.externalPrefix + entry.relativePath) { url in
+            try? AVAudioPlayer(contentsOf: url)
+        }.flatMap { $0 }
+        guard let player = player else { return }
+        player.prepareToPlay()
+        player.play()
+        previewPlayer = player
+        playingKey = key
     }
 
     private func stopPreview() {
         previewPlayer?.stop()
         previewPlayer = nil
-        playingFileName = nil
+        playingKey = nil
     }
 
     // MARK: - Import New File(s)
@@ -294,10 +581,7 @@ struct MusicLibraryView: View {
                 existingNames.insert(fileName)
                 let destURL = musicDir.appendingPathComponent(fileName)
 
-                do {
-                    try? FileManager.default.removeItem(at: destURL)
-                    try FileManager.default.copyItem(at: url, to: destURL)
-                } catch {
+                guard copyMusicFileOrCleanup(from: url, to: destURL) else {
                     failedLabels.append(displayName)
                     continue
                 }

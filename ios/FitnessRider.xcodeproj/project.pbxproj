@@ -23,6 +23,8 @@
 		87AA2AD36743DDEB17611BFD /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92BD3C95326013660D39116 /* AppSettings.swift */; };
 		8B6B2D4655E2CD3A9CE2A60A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */; };
 		95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */; };
+		EFC69C72BE8131A34FFB229E /* MusicSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C477539DC25328EF22472324 /* MusicSource.swift */; };
+		EA7F56FDEFC1F82D6708B306 /* ExternalMusicFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */; };
 		E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100022C9B800100000001 /* TapTempoDetector.swift */; };
 		E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */; };
 		E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A100022C9B800100000001 /* VersionLifecycleManager.swift */; };
@@ -75,6 +77,8 @@
 		61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBackupView.swift; sourceTree = "<group>"; };
 		743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueAudioBeepPlayer.swift; sourceTree = "<group>"; };
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
+		C477539DC25328EF22472324 /* MusicSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicSource.swift; sourceTree = "<group>"; };
+		C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalMusicFolderStore.swift; sourceTree = "<group>"; };
 		E4A100022C9B800100000001 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
 		E4A100042C9B800100000002 /* BpmCalibrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BpmCalibrationSheet.swift; sourceTree = "<group>"; };
 		E5A100022C9B800100000001 /* VersionLifecycleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionLifecycleManager.swift; sourceTree = "<group>"; };
@@ -145,6 +149,7 @@
 				223924A3D765EA9F98F27AA0 /* RiderClassArchiveService.swift */,
 				FE803BA7F2F5F2C4055C80FC /* SQLiteBackupService.swift */,
 				041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */,
+				C8F6F524EC3B668FB18236AC /* ExternalMusicFolderStore.swift */,
 			);
 			path = Database;
 			sourceTree = "<group>";
@@ -261,6 +266,7 @@
 				743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */,
 				754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */,
 				E4A100022C9B800100000001 /* TapTempoDetector.swift */,
+				C477539DC25328EF22472324 /* MusicSource.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -401,6 +407,8 @@
 				2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */,
 				F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */,
 				95AA7A12E03FCB5AD606D917 /* WaveformAnalyzer.swift in Sources */,
+				EFC69C72BE8131A34FFB229E /* MusicSource.swift in Sources */,
+				EA7F56FDEFC1F82D6708B306 /* ExternalMusicFolderStore.swift in Sources */,
 				E4A100012C9B800100000001 /* TapTempoDetector.swift in Sources */,
 				E4A100032C9B800100000002 /* BpmCalibrationSheet.swift in Sources */,
 				E5A100012C9B800100000001 /* VersionLifecycleManager.swift in Sources */,

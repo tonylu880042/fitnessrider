@@ -4,8 +4,10 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.net.Uri
 import android.util.Log
 import com.fitnessrider.data.ClassRepository
+import com.fitnessrider.data.MusicSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -35,7 +37,8 @@ data class WaveformResult(
 class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
     suspend fun analyzeWaveform(fileName: String, targetPoints: Int = 800): WaveformResult = withContext(Dispatchers.IO) {
-        // 1. Check SQLite / Room Cache
+        // 1. Check SQLite / Room Cache（本地檔名、外部資料夾 content Uri 都用同一個快取表，
+        //    fileName 本身就是 key，Layer 3 不需要另外的快取結構）
         val cached = repository?.getWaveform(fileName)
         if (cached != null) {
             return@withContext WaveformResult(
@@ -45,16 +48,26 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             )
         }
 
+        // Layer 3：外部資料夾曲目一律以 content Uri 表示，透過 ContentResolver 讀取，
+        // 不落地複製到 app 儲存空間。授權被撤銷／檔案被搬走都會在這裡被吞成 fallback。
+        if (MusicSource.isExternalUri(fileName)) {
+            val context = repository?.context
+                ?: return@withContext generateFallbackResult(targetPoints)
+            return@withContext try {
+                val result = extractWaveformFromUri(context, Uri.parse(fileName), targetPoints)
+                repository.saveWaveform(fileName, result.samples, result.durationMs, result.bpm)
+                result
+            } catch (e: Exception) {
+                Log.e("WaveformAnalyzer", "Failed to decode external audio $fileName, using fallback", e)
+                generateFallbackResult(targetPoints)
+            }
+        }
+
         // 2. Check if file exists in musicDirectory
         val musicDir = repository?.musicDirectory
         val file = if (musicDir != null) File(musicDir, fileName) else File(fileName)
         if (!file.exists() || file.length() == 0L) {
-            val synthetic = generateSyntheticWaveform(targetPoints)
-            return@withContext WaveformResult(
-                samples = synthetic,
-                durationMs = 300_000,
-                bpm = 128.0
-            )
+            return@withContext generateFallbackResult(targetPoints)
         }
 
         // 3. MediaExtractor + MediaCodec streaming PCM extraction
@@ -65,20 +78,40 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             result
         } catch (e: Exception) {
             Log.e("WaveformAnalyzer", "Failed to decode audio file $fileName, using fallback", e)
-            val fallback = generateSyntheticWaveform(targetPoints)
-            WaveformResult(
-                samples = fallback,
-                durationMs = 300_000,
-                bpm = 128.0
-            )
+            generateFallbackResult(targetPoints)
         }
     }
 
+    private fun generateFallbackResult(targetPoints: Int) = WaveformResult(
+        samples = generateSyntheticWaveform(targetPoints),
+        durationMs = 300_000,
+        bpm = 128.0
+    )
+
     fun extractWaveformFromFile(file: File, targetPoints: Int = 800): WaveformResult {
         val extractor = MediaExtractor()
-        var codec: MediaCodec? = null
         try {
             extractor.setDataSource(file.absolutePath)
+            return decodeWaveform(extractor, targetPoints)
+        } finally {
+            try { extractor.release() } catch (_: Exception) {}
+        }
+    }
+
+    /** Layer 3：從外部資料夾的 content Uri 直接解碼，MediaExtractor 內建支援 content:// 來源。 */
+    fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800): WaveformResult {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(context, uri, null)
+            return decodeWaveform(extractor, targetPoints)
+        } finally {
+            try { extractor.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun decodeWaveform(extractor: MediaExtractor, targetPoints: Int): WaveformResult {
+        var codec: MediaCodec? = null
+        try {
             var audioTrackIndex = -1
             var format: MediaFormat? = null
             for (i in 0 until extractor.trackCount) {
@@ -174,9 +207,6 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             try {
                 codec?.stop()
                 codec?.release()
-            } catch (_: Exception) {}
-            try {
-                extractor.release()
             } catch (_: Exception) {}
         }
     }

@@ -20,7 +20,6 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 ## 已知落差（尚未排程）
 
 - **iOS 編輯器的段落試聽沒有聲音。** `ClassEditorView.startPreview` 只是個推進播放頭的 `Timer`，整個檔案沒有任何播放器；Android 同一個位置用的是真的 ExoPlayer。兩平台體驗不對等，但不在三層計畫範圍內，尚未決定要不要修。
-- **匯入失敗時已寫入一半的檔案沒有清掉**，會在 Music 目錄留下截斷檔並佔住檔名。適合併進 Layer 3 的檔案管理一起處理。
 
 ## 產品決策（不要當成 bug 修掉）
 
@@ -60,10 +59,21 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - 段落指定音樂時開這個列表，不再開系統檔案選擇器；SAF／`fileImporter` 只保留在「＋匯入新檔」一個入口。
 - 重用已匯入曲目不得再產生任何檔案複製。
 
-### Layer 3 — 資料夾記憶
+### Layer 3 — 資料夾記憶（已完成）
 
 對應舊版的 `MusicUtility.getMusicPath()` ＋ `GetMusicInfoTask`（含子資料夾掃描）。
 
-- Android：`OpenDocumentTree()` ＋ `takePersistableUriPermission`，記住教練的音樂資料夾，之後直接列出整個資料夾內容。
-- iOS：`.fileImporter` 選資料夾 ＋ security-scoped bookmark 持久化。
-- 資料夾內容以串流方式列出，不要一次把整個資料夾複製進 app 儲存空間。
+- Android：`OpenDocumentTree()` ＋ `takePersistableUriPermission`，記住教練的音樂資料夾，之後直接列出整個資料夾內容
+  （見 `data/ExternalMusicFolder.kt`）。段落的 `musicFileName` 直接存該檔案的 content Uri 字串
+  （`MusicSource.isExternalUri`），播放/波形分析一律透過 `data/MusicSource.kt` 判斷來源與存在性，不複製檔案。
+- iOS：`.fileImporter` 選資料夾 ＋ security-scoped bookmark 持久化（見 `Database/ExternalMusicFolderStore.swift`）。
+  `musicFileName` 存 `"extfolder://" + 相對路徑`（`MusicSource.isExternal`），實際存取一律透過
+  `Audio/MusicSource.swift` 的 `withResolvedFileURL`，把 security-scoped 存取視窗正確涵蓋在檔案開啟/讀取期間。
+- 資料夾內容以串流方式列出（Android 用 `DocumentsContract` 對 child documents 做 Cursor 查詢；iOS 用
+  `FileManager` 的 enumerator／`contentsOfDirectory`），不會一次把整個資料夾複製進 app 儲存空間。
+- 「含子資料夾」開關兩平台都保留，預設沿用舊版的 `true`。
+- 音樂庫畫面（Layer 2）用分頁清楚區分「已匯入音樂庫」與「音樂資料夾」，避免教練搞混哪些檔案在哪。
+- 資料夾授權被撤銷、或 bookmark／檔案已失效時，一律當作「找不到檔案」優雅降級（列表顯示「資料夾存取已失效」，
+  播放/波形分析退回預設值），不會讓 App 崩潰。
+- 匯出 `.riderclass`（`RiderClassArchiveService`）目前不會把外部資料夾曲目的音檔一併打包──
+  兩平台既有的「檔案不存在就跳過」邏輯剛好自然涵蓋這個情況，是刻意不擴充的範圍，不是遺漏。

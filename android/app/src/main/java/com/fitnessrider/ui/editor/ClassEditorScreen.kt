@@ -1,6 +1,5 @@
 package com.fitnessrider.ui.editor
 
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +30,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.fitnessrider.audio.WaveformAnalyzer
 import com.fitnessrider.data.ClassRepository
+import com.fitnessrider.data.MusicSource
 import com.fitnessrider.model.*
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.HandPositionBadge
@@ -40,7 +40,6 @@ import com.fitnessrider.ui.musiclibrary.MusicLibraryScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -52,7 +51,11 @@ import kotlin.math.roundToInt
 internal data class ImportedTrackInfo(
     val fileName: String,
     val durationMs: Int,
-    val bpm: Double
+    val bpm: Double,
+    // Layer 3：外部資料夾曲目的 fileName 是 content Uri（見 MusicSource.isExternalUri），
+    // 從 Uri 字串尾巴去副檔名得到的不會是人看得懂的曲名，所以另外帶一個顯示用標題；
+    // Layer 1/2 的呼叫端沿用預設 null，行為完全不變（title 一樣從 fileName 去副檔名取得）。
+    val displayTitle: String? = null
 )
 
 /**
@@ -93,7 +96,7 @@ internal fun buildSegmentsForImportedTracks(
             id = UUID.randomUUID().toString(),
             classId = classId,
             orderIndex = startOrderIndex + index,
-            title = musicTitleFromFileName(track.fileName),
+            title = track.displayTitle ?: musicTitleFromFileName(track.fileName),
             musicFileName = track.fileName,
             durationMs = if (track.durationMs > 0) track.durationMs else 300_000,
             baseBpm = if (track.bpm > 0) track.bpm else 128.0,
@@ -163,12 +166,14 @@ fun ClassEditorScreen(
             previewPlayheadMs = 0
             isPreviewPlaying = false
             previewPlayer.pause()
-            if (activeSegment.musicFileName.isNotBlank()) {
-                val file = File(repository.musicDirectory, activeSegment.musicFileName)
-                if (file.exists()) {
-                    previewPlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-                    previewPlayer.prepare()
-                }
+            // Layer 3：段落音樂可能來自外部資料夾（content Uri），一律交給 MusicSource 判斷
+            // 來源與存在性；資料夾授權失效或檔案被搬走時 exists() 回傳 false，維持原本
+            // 「檔案不存在就不設定 MediaItem」的容錯行為。
+            if (activeSegment.musicFileName.isNotBlank() &&
+                MusicSource.exists(context, repository, activeSegment.musicFileName)
+            ) {
+                previewPlayer.setMediaItem(MediaItem.fromUri(MusicSource.resolveUri(repository, activeSegment.musicFileName)))
+                previewPlayer.prepare()
             }
             val analyzer = WaveformAnalyzer.getInstance(context)
             val result = analyzer.analyzeWaveform(activeSegment.musicFileName)
@@ -391,7 +396,12 @@ fun ClassEditorScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = activeSegment.musicFileName.ifBlank { activeSegment.title },
+                            // 外部資料夾曲目的 musicFileName 是 content Uri，直接顯示對教練沒意義，改顯示標題。
+                            text = if (MusicSource.isExternalUri(activeSegment.musicFileName)) {
+                                activeSegment.title
+                            } else {
+                                activeSegment.musicFileName.ifBlank { activeSegment.title }
+                            },
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary,

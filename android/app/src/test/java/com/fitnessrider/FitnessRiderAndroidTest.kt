@@ -1,6 +1,9 @@
 package com.fitnessrider
 
+import com.fitnessrider.data.ExternalMusicEntry
+import com.fitnessrider.data.MusicSource
 import com.fitnessrider.data.RiderClassArchiveService
+import com.fitnessrider.data.isAudioDocument
 import com.fitnessrider.model.*
 import com.fitnessrider.ui.editor.ImportedTrackInfo
 import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
@@ -8,11 +11,17 @@ import com.fitnessrider.ui.editor.musicTitleFromFileName
 import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
+import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
+import com.fitnessrider.ui.musiclibrary.copyMusicFileOrCleanup
+import com.fitnessrider.ui.musiclibrary.filterExternalMusicEntries
 import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.io.InputStream
 import kotlin.math.roundToInt
 
 class FitnessRiderAndroidTest {
@@ -461,6 +470,111 @@ class FitnessRiderAndroidTest {
         assertEquals(130.0, segments[0].baseBpm, 0.001)
         assertEquals(240_000, segments[1].durationMs)
         assertEquals(140.0, segments[1].baseBpm, 0.001)
+    }
+
+    // Layer 3 第 1、2 項：外部資料夾曲目一律以 content Uri 字串表示，天然以 "content://" 開頭，
+    // 讓播放/波形分析/匯出等消費端可以用同一個欄位（musicFileName）判斷來源，不必額外加欄位。
+    @Test
+    fun testMusicSourceIsExternalUriDetectsContentScheme() {
+        assertTrue(MusicSource.isExternalUri("content://com.android.externalstorage.documents/tree/1234/document/5678"))
+        assertFalse(MusicSource.isExternalUri("track.mp3"))
+        assertFalse(MusicSource.isExternalUri(""))
+    }
+
+    // Layer 3：資料夾掃描要能用副檔名或 MIME type 過濾出音樂檔，排除資料夾裡的其他檔案。
+    @Test
+    fun testIsAudioDocumentMatchesByMimeOrExtension() {
+        assertTrue(isAudioDocument("track.mp3", "audio/mpeg"))
+        assertTrue(isAudioDocument("track.MP3", null)) // 沒有 MIME 時退回副檔名比對，且不分大小寫
+        assertTrue(isAudioDocument("track.m4a", null))
+        assertFalse(isAudioDocument("cover.jpg", "image/jpeg"))
+        assertFalse(isAudioDocument("readme.txt", null))
+    }
+
+    // Layer 3：從外部資料夾多選曲目 -> 建立段落時，musicFileName 直接存 content Uri 字串，
+    // 不會（也不能）像 Layer 1 的 resolveUniqueMusicFileName 一樣加後綴，因為根本沒有複製、
+    // 不會有檔名衝突的問題；時長/BPM 先用預設值，等教練實際選到該段落時才由 WaveformAnalyzer 分析。
+    @Test
+    fun testBuildSegmentsFromExternalSelectionUsesContentUriAsMusicFileName() {
+        val entries = listOf(
+            ExternalMusicEntry("content://docs/tree/1/document/warmup.mp3", "warmup.mp3"),
+            ExternalMusicEntry("content://docs/tree/1/document/sprint.mp3", "sprint.mp3")
+        )
+
+        val segments = buildSegmentsFromExternalSelection(
+            entries = entries,
+            classId = "class-external",
+            startOrderIndex = 2
+        )
+
+        assertEquals(2, segments.size)
+        assertEquals(2, segments[0].orderIndex)
+        assertEquals(3, segments[1].orderIndex)
+        assertEquals("content://docs/tree/1/document/warmup.mp3", segments[0].musicFileName)
+        assertEquals("content://docs/tree/1/document/sprint.mp3", segments[1].musicFileName)
+        assertEquals("warmup", segments[0].title)
+        assertEquals("sprint", segments[1].title)
+        assertEquals(300_000, segments[0].durationMs)
+        assertEquals(128.0, segments[0].baseBpm, 0.001)
+        assertTrue(MusicSource.isExternalUri(segments[0].musicFileName))
+    }
+
+    // Layer 3：資料夾列表的即時搜尋跟 Layer 2 音樂庫是同一套邏輯，比對顯示檔名子字串。
+    @Test
+    fun testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {
+        val entries = listOf(
+            ExternalMusicEntry("content://docs/1", "Sprint Fire.mp3"),
+            ExternalMusicEntry("content://docs/2", "warmup_groove.mp3")
+        )
+
+        assertEquals(2, filterExternalMusicEntries(entries, "").size)
+        assertEquals(1, filterExternalMusicEntries(entries, "sprint").size)
+        assertEquals("Sprint Fire.mp3", filterExternalMusicEntries(entries, "SPRINT").first().displayName)
+        assertEquals(0, filterExternalMusicEntries(entries, "不存在").size)
+    }
+
+    // 已知落差修復：匯入失敗時已寫入一半的檔案要清掉，不能在 Music 目錄留下截斷檔佔用檔名。
+    @Test
+    fun testCopyMusicFileOrCleanupDeletesPartialFileOnMidStreamFailure() {
+        val tempDir = kotlin.io.path.createTempDirectory(prefix = "music_import_test").toFile()
+        try {
+            val destFile = java.io.File(tempDir, "track.mp3")
+
+            // 模擬讀到一半就斷線的來源串流：先吐幾個 byte，再丟例外。
+            val flakyInput = object : InputStream() {
+                var bytesServed = 0
+                override fun read(): Int {
+                    if (bytesServed >= 4) throw IOException("模擬讀取中斷")
+                    bytesServed++
+                    return 0x42
+                }
+            }
+
+            val copied = copyMusicFileOrCleanup(destFile) { flakyInput }
+
+            assertFalse("複製中途失敗要回報 false", copied)
+            assertFalse("失敗後半成品檔案必須被刪除，不能留下截斷檔佔用檔名", destFile.exists())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    // 對照組：完整複製成功時檔案要存在、內容要完整，且回報 true。
+    @Test
+    fun testCopyMusicFileOrCleanupSucceedsAndWritesFullContent() {
+        val tempDir = kotlin.io.path.createTempDirectory(prefix = "music_import_test").toFile()
+        try {
+            val destFile = java.io.File(tempDir, "track.mp3")
+            val sourceBytes = byteArrayOf(1, 2, 3, 4, 5)
+
+            val copied = copyMusicFileOrCleanup(destFile) { sourceBytes.inputStream() }
+
+            assertTrue(copied)
+            assertTrue(destFile.exists())
+            assertTrue(sourceBytes.contentEquals(destFile.readBytes()))
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {

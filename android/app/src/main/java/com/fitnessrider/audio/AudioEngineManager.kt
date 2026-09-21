@@ -1,12 +1,12 @@
 package com.fitnessrider.audio
 
 import android.content.Context
-import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.fitnessrider.data.ClassRepository
+import com.fitnessrider.data.MusicSource
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutSegment
@@ -14,7 +14,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.File
 import kotlin.math.roundToInt
 
 class AudioEngineManager(private val context: Context) {
@@ -77,9 +76,11 @@ class AudioEngineManager(private val context: Context) {
         val segment = currentSegment ?: return
         setRate(segment.playbackRate)
 
-        val audioFile = File(repository.musicDirectory, segment.musicFileName)
-        if (audioFile.exists()) {
-            val mediaItem = MediaItem.fromUri(Uri.fromFile(audioFile))
+        // Layer 3：segment.musicFileName 可能是 Music/ 目錄下的檔名，也可能是外部資料夾的
+        // content Uri，一律交給 MusicSource 判斷來源與存在性（授權被撤銷/檔案被搬走都當作
+        // 「找不到檔案」退回模擬播放，行為與原本本機檔案不存在時一致）。
+        if (segment.musicFileName.isNotBlank() && MusicSource.exists(context, repository, segment.musicFileName)) {
+            val mediaItem = MediaItem.fromUri(MusicSource.resolveUri(repository, segment.musicFileName))
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             _currentDurationSeconds.value = (segment.durationMs / 1000.0)
@@ -93,8 +94,8 @@ class AudioEngineManager(private val context: Context) {
 
     fun play() {
         if (currentSegment != null) {
-            val audioFile = File(repository.musicDirectory, currentSegment?.musicFileName ?: "")
-            if (audioFile.exists()) {
+            val musicFileName = currentSegment?.musicFileName ?: ""
+            if (musicFileName.isNotBlank() && MusicSource.exists(context, repository, musicFileName)) {
                 exoPlayer.play()
             } else {
                 // Simulation mode

@@ -8,7 +8,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-class ClassRepository(private val context: Context) {
+class ClassRepository(val context: Context) {
     private val database = AppDatabase.getDatabase(context)
     private val dao = database.classDao()
 

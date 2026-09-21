@@ -7,6 +7,10 @@ struct ImportedTrackInfo {
     let fileName: String
     let durationMs: Int
     let bpm: Double
+    // Layer 3：外部資料夾曲目的 fileName 是 "extfolder://" + 相對路徑（見 MusicSource.isExternal），
+    // 從它去副檔名得到的不會是人看得懂的曲名，所以另外帶一個顯示用標題；
+    // Layer 1/2 的呼叫端沿用預設 nil，行為完全不變（title 一樣從 fileName 去副檔名取得）。
+    var displayTitle: String? = nil
 }
 
 /// 檔名碰撞處理：若 `desiredName` 已存在於 `existingNames`，在副檔名前加上 `_1`、`_2`... 直到唯一。
@@ -41,7 +45,7 @@ func buildSegmentsForImportedTracks(
             id: UUID(),
             classId: classId,
             orderIndex: startOrderIndex + index,
-            title: musicTitleFromFileName(track.fileName),
+            title: track.displayTitle ?? musicTitleFromFileName(track.fileName),
             musicFileName: track.fileName,
             durationMs: track.durationMs > 0 ? track.durationMs : 300_000,
             baseBpm: track.bpm > 0 ? track.bpm : 128.0,
