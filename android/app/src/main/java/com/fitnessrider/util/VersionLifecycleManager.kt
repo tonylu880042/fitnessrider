@@ -194,6 +194,8 @@ object VersionLifecycleManager {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         if (isPromo) {
+            promoBlockedByPaidVipMessage(context, code, overrideCurrentTimeMs)?.let { return Pair(false, it) }
+
             val redeemedSet = prefs.getStringSet(KEY_REDEEMED_PROMOS, emptySet())?.toMutableSet() ?: mutableSetOf()
             if (redeemedSet.contains(code)) {
                 return Pair(false, "本設備已兌換過此年度推廣代碼（$code），無法重複領取。")
@@ -201,7 +203,7 @@ object VersionLifecycleManager {
 
             val expiresMs = getFirstLaunchTimeMs(context) + (BuildConfig.PROMO_TOTAL_TRIAL_DAYS * MS_PER_DAY)
             if (expiresMs <= now) {
-                return Pair(false, "此推廣代碼體驗期限為首次啟用起算 ${BuildConfig.PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。")
+                return Pair(false, "此推廣代碼體驗期限為首次啟用起算 ${BuildConfig.PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 ${BuildConfig.PROMO_TOTAL_TRIAL_DAYS} 天，無法再使用此代碼，請升級專業年繳版。")
             }
 
             redeemedSet.add(code)
@@ -276,11 +278,35 @@ object VersionLifecycleManager {
     }
 
     /**
+     * 推廣碼是否該被「生效中的付費年繳 VIP」擋下來：要擋就回傳錯誤訊息，不用擋回傳 null。
+     *
+     * 本機與線上開通共用同一條規則（對應後端的 VIP_ALREADY_ACTIVE）。線上流程一定要在送出請求
+     * 「之前」先問過這裡 —— 伺服器只認得它自己記錄過的授權，付費序號當初若是離線開通的，
+     * 伺服器查無付費授權就會放行推廣碼，回傳 anchor + PROMO_TOTAL_TRIAL_DAYS，
+     * 把本機的 365 天蓋成 30 天。
+     */
+    fun promoBlockedByPaidVipMessage(context: Context, code: String, overrideCurrentTimeMs: Long? = null): String? {
+        if (!isPromoCode(code)) return null
+        if (!isVipActive(context, overrideCurrentTimeMs)) return null
+        if (isPromoVipCode(getVipCode(context))) return null
+        return "此設備已有生效中的專業年繳版 VIP 授權，無需使用體驗推廣代碼。"
+    }
+
+    /**
+     * 目前這份 VIP 狀態是不是「推廣代碼換來的」。刻意不看年度 ——
+     * [isPromoCode] 只認當年度代碼，但跨年時 26FR-NR 換來的授權可能還沒到期，
+     * 那時它仍然是推廣方案，不是付費年繳版。
+     */
+    fun isPromoVipCode(code: String?): Boolean {
+        val c = code?.trim()?.uppercase() ?: return false
+        return c == "PROMO_VERIFIED" || Regex("^\\d{2}FR-NR$").matches(c)
+    }
+
+    /**
      * 取得目前授權的方案名稱，若為推廣代碼則正確顯示體驗版名稱（spec 項目 4）。
      */
     fun getVipPlanName(context: Context): String {
-        val code = getVipCode(context) ?: ""
-        return if (isPromoCode(code) || code == "promo_verified") {
+        return if (isPromoVipCode(getVipCode(context))) {
             "推廣課程專屬版 (${BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)"
         } else {
             "專業年繳版 (VIP)"

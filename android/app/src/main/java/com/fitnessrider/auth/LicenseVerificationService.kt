@@ -71,6 +71,12 @@ class LicenseVerificationService(private val context: Context) {
     }
 
     suspend fun activateCode(code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        // 0. 付費年繳 VIP 生效中時，推廣碼連送都不要送：伺服器查不到「離線開通的」付費授權，
+        //    會放行推廣碼並回傳 anchor+30 天，成功分支會直接用它蓋掉本機的 365 天。
+        com.fitnessrider.util.VersionLifecycleManager
+            .promoBlockedByPaidVipMessage(context, code.trim().uppercase())
+            ?.let { return@withContext Pair(false, it) }
+
         // 1. Try online first to respect single-device limit & database audit
         try {
             val url = URL("$serverUrl/api/license/activate")
@@ -131,7 +137,15 @@ class LicenseVerificationService(private val context: Context) {
                 val errorMsg = respJson.getString("error")
                 val errorCode = respJson.optString("error_code", "")
                 // 若伺服器明確回傳防濫用拒絕（結構化 error_code），直接返回拒絕，避免重複刷碼
-                val antiAbuseCodes = setOf("PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED")
+                // VIP_ALREADY_ACTIVE 一定要在名單內：伺服器拒絕正是為了不讓推廣碼蓋掉付費年繳授權，
+                // 若落到離線 fallback，本機會把 VIP 到期日改寫成推廣碼的 anchor+30 天。
+                val antiAbuseCodes = setOf(
+                    "PROMO_EXPIRED",
+                    "PROMO_ALREADY_REDEEMED",
+                    "VIP_SERIAL_ALREADY_CLAIMED",
+                    "VIP_ALREADY_ACTIVE",
+                    "PROMO_YEAR_EXPIRED"
+                )
                 if (errorCode in antiAbuseCodes) {
                     return@withContext Pair(false, errorMsg)
                 }
@@ -255,6 +269,14 @@ class LicenseVerificationService(private val context: Context) {
 
     private suspend fun executeDeviceTransfer(bodyJson: JSONObject): DeviceTransferResult {
         return try {
+            // 這台設備若已經開通過就一定有裝置密鑰，簽章證明「轉移的目標設備就是本機」；
+            // 伺服器端對已有密鑰的目標設備一律要求簽章（見 backend device/transfer route）。
+            val timestamp = System.currentTimeMillis()
+            signRequest(timestamp)?.let { signature ->
+                bodyJson.put("timestamp", timestamp)
+                bodyJson.put("signature", signature)
+            }
+
             val url = URL("$serverUrl/api/device/transfer")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
@@ -296,8 +318,14 @@ class LicenseVerificationService(private val context: Context) {
 
                 // 直接信任伺服器已驗證過身分（帳號密碼 / 已在伺服器驗過簽章的序號）的結果，
                 // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖。
+                // plan_type 一定要帶進去：少了它，推廣方案換機後會被記成 "server_verified"，
+                // 之後既顯示成「專業年繳版」，也會讓下一年度的推廣碼被防降級檢查誤擋。
                 if (expiresAt.isNotEmpty()) {
-                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(context, expiresAt)
+                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(
+                        context,
+                        expiresAt,
+                        isPromo = plan == "promo_trial_30d"
+                    )
                 }
                 if (respJson.has("device_secret") && !respJson.isNull("device_secret")) {
                     deviceService.deviceSecret = respJson.getString("device_secret")
@@ -307,7 +335,7 @@ class LicenseVerificationService(private val context: Context) {
                 DeviceTransferResult(
                     success = true,
                     message = msg,
-                    planType = if (plan == "trial") "全功能免費試用版" else "專業年繳版 (VIP)",
+                    planType = if (plan == "trial") "全功能免費試用版" else com.fitnessrider.util.VersionLifecycleManager.getVipPlanName(context),
                     remainingDays = days
                 )
             } else {

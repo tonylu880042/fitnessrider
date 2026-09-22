@@ -46,7 +46,8 @@ public final class LicenseVerificationService: ObservableObject {
         let days = VersionLifecycleManager.shared.remainingDays()
 
         if isVIP {
-            self.planType = "專業年繳版 (VIP)"
+            // 推廣方案也是 VIP，但方案名不是「專業年繳版」—— 交給 vipPlanName 判斷。
+            self.planType = VersionLifecycleManager.shared.vipPlanName
             self.isLicensed = true
             self.remainingDays = days
             self.expirationDate = Date().addingTimeInterval(Double(days) * 86400)
@@ -59,6 +60,12 @@ public final class LicenseVerificationService: ObservableObject {
     }
 
     public func activateCode(code: String) async -> (Bool, String) {
+        // 0. 付費年繳 VIP 生效中時，推廣碼連送都不要送：伺服器查不到「離線開通的」付費授權，
+        //    會放行推廣碼並回傳 firstLaunchDate+30 天，成功分支會直接用它蓋掉本機的 365 天。
+        if let blocked = VersionLifecycleManager.shared.promoBlockedByPaidVipMessage(code) {
+            return (false, blocked)
+        }
+
         // 1. Try online activation first to respect single-device limit & database audit
         let (onlineSuccess, onlineMsg, errorCode) = await activateLicenseOnline(code: code)
         if onlineSuccess {
@@ -68,7 +75,15 @@ public final class LicenseVerificationService: ObservableObject {
 
         // If the server explicitly rejected the activation with an anti-abuse error_code,
         // return the rejection immediately to prevent duplicate abuse.
-        let antiAbuseCodes: Set<String> = ["PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED"]
+        // VIP_ALREADY_ACTIVE 一定要在名單內：伺服器拒絕正是為了不讓推廣碼蓋掉付費年繳授權，
+        // 若落到離線 fallback，本機會把 VIP 到期日改寫成推廣碼的 firstLaunchDate+30 天。
+        let antiAbuseCodes: Set<String> = [
+            "PROMO_EXPIRED",
+            "PROMO_ALREADY_REDEEMED",
+            "VIP_SERIAL_ALREADY_CLAIMED",
+            "VIP_ALREADY_ACTIVE",
+            "PROMO_YEAR_EXPIRED"
+        ]
         if let code = errorCode, antiAbuseCodes.contains(code) {
             return (false, onlineMsg)
         }
@@ -302,7 +317,16 @@ public final class LicenseVerificationService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        // 這台設備若已經開通過就一定有裝置密鑰，簽章證明「轉移的目標設備就是本機」；
+        // 伺服器端對已有密鑰的目標設備一律要求簽章（見 backend device/transfer route）。
+        var signedBody = body
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        if let signature = signRequest(timestampMs: timestamp) {
+            signedBody["timestamp"] = timestamp
+            signedBody["signature"] = signature
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: signedBody)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -334,8 +358,13 @@ public final class LicenseVerificationService: ObservableObject {
 
                 // 直接信任伺服器已驗證過身分（帳號密碼 / 已在伺服器驗過簽章的序號）的結果，
                 // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖。
+                // plan_type 一定要帶進去：少了它，推廣方案換機後會被記成 "server_verified"，
+                // 之後既顯示成「專業年繳版」，也會讓下一年度的推廣碼被防降級檢查誤擋。
                 if let expiresAtIso, let expiresAtDate = Self.parseISO8601(expiresAtIso) {
-                    VersionLifecycleManager.shared.activateVipFromServer(expiresAt: expiresAtDate)
+                    VersionLifecycleManager.shared.activateVipFromServer(
+                        expiresAt: expiresAtDate,
+                        isPromo: plan == "promo_trial_30d"
+                    )
                 }
                 if let deviceSecret = json["device_secret"] as? String {
                     DeviceIdentifierService.shared.deviceSecret = deviceSecret
@@ -345,7 +374,7 @@ public final class LicenseVerificationService: ObservableObject {
                 return DeviceTransferResult(
                     success: true,
                     message: msg,
-                    planType: plan == "trial" ? "全功能免費試用版" : "專業年繳版 (VIP)",
+                    planType: plan == "trial" ? "全功能免費試用版" : VersionLifecycleManager.planName(isPromo: plan == "promo_trial_30d"),
                     remainingDays: days
                 )
             } else {

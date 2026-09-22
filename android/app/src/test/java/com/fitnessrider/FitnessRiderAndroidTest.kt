@@ -614,6 +614,103 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertEquals("VIP expiresMs must be calculated from overrideCurrentTimeMs", expectedExpiresMs, actualExpiresMs)
     }
 
+    // 付費年繳 VIP 生效中時輸入推廣碼，必須被拒絕且不得蓋掉原本的到期日。
+    // 伺服器會回 VIP_ALREADY_ACTIVE，但離線時沒有伺服器可以擋，本機這條防線是唯一保障。
+    @Test
+    fun testPromoCodeCannotDowngradeActivePaidVip() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serial = signVipSerial(keyPair.private, "0A0B0C0D", 365)
+
+        // 裝置今天首次啟動，並以合法序號開通 365 天付費 VIP
+        val mockNow = 1_800_000_000_000L
+        manager.getFirstLaunchTimeMs(fakeContext, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(
+            manager.activateLicenseCode(
+                context = fakeContext,
+                rawCode = serial,
+                testVipPublicKeyOverride = publicKeyBase64,
+                overrideCurrentTimeMs = mockNow
+            ).first
+        )
+        val paidExpiresMs = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        org.junit.Assert.assertEquals(mockNow + 365L * 86_400_000L, paidExpiresMs)
+
+        // 此時輸入當年度推廣碼 -> 必須被拒絕
+        val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
+        val promoCode = String.format("%02dFR-NR", currentYear)
+        val (promoOk, promoMsg) = manager.activateLicenseCode(
+            context = fakeContext,
+            rawCode = promoCode,
+            overrideCurrentTimeMs = mockNow
+        )
+        org.junit.Assert.assertFalse("Promo code must not override an active paid VIP", promoOk)
+        org.junit.Assert.assertTrue(promoMsg.contains("已有生效中的專業年繳版"))
+
+        // 到期日與方案名稱都不能被改動，推廣碼也不得被計入已兌換清單
+        org.junit.Assert.assertEquals(paidExpiresMs, fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L))
+        org.junit.Assert.assertEquals("專業年繳版 (VIP)", manager.getVipPlanName(fakeContext))
+        org.junit.Assert.assertFalse(
+            fakePrefs.getStringSet(manager.KEY_REDEEMED_PROMOS, null)?.contains(promoCode) == true
+        )
+    }
+
+    // 線上開通（LicenseVerificationService.activateCode 送出請求前）與離線開通共用這支判斷 ——
+    // 付費序號若當初是離線開通的，伺服器查無付費授權就會放行推廣碼並回傳 anchor+30 天，
+    // 所以請求送出之前就得擋下來。同時不得誤擋推廣續領與一般試用中的裝置。
+    @Test
+    fun testPromoBlockedByPaidVipMessageOnlyBlocksPaidVip() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val prefs = FakeSharedPreferences()
+        val ctx = MockContext(prefs)
+        val now = 1_800_000_000_000L
+        val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
+        val promoCode = String.format("%02dFR-NR", currentYear)
+
+        // 還沒有任何 VIP（一般試用中）-> 放行
+        org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
+
+        // 推廣方案生效中（含跨年的舊代碼、伺服器線上兌換寫入的 promo_verified）-> 放行
+        prefs.edit()
+            .putBoolean(manager.KEY_VIP_ACTIVE, true)
+            .putLong(manager.KEY_VIP_EXPIRES, now + 86_400_000L)
+            .putString(manager.KEY_VIP_CODE, "25FR-NR")
+            .apply()
+        org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
+        prefs.edit().putString(manager.KEY_VIP_CODE, "promo_verified").apply()
+        org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
+
+        // 付費年繳 VIP 生效中 -> 擋下
+        prefs.edit().putString(manager.KEY_VIP_CODE, "FRVIP-01020304FFFF-AABB").apply()
+        org.junit.Assert.assertTrue(
+            manager.promoBlockedByPaidVipMessage(ctx, promoCode, now)?.contains("已有生效中的專業年繳版") == true
+        )
+
+        // 付費序號本身不是推廣碼，永遠不該被這支擋下
+        org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, "FRVIP-01020304FFFF-AABB", now))
+
+        // VIP 已過期 -> 放行（過期的付費授權不該擋住推廣體驗）
+        prefs.edit().putLong(manager.KEY_VIP_EXPIRES, now - 1L).apply()
+        org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
+    }
+
+    // isPromoVipCode 不看年度：跨年後 26FR-NR 換來、尚未到期的授權仍是推廣方案，
+    // 否則 getVipPlanName 會把它誤標成付費年繳版，且推廣防降級判斷會誤擋隔年的新代碼。
+    @Test
+    fun testIsPromoVipCodeIsYearAgnostic() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        org.junit.Assert.assertTrue(manager.isPromoVipCode("26FR-NR"))
+        org.junit.Assert.assertTrue(manager.isPromoVipCode("99FR-NR"))
+        org.junit.Assert.assertTrue(manager.isPromoVipCode("promo_verified"))
+        org.junit.Assert.assertFalse(manager.isPromoVipCode("server_verified"))
+        org.junit.Assert.assertFalse(manager.isPromoVipCode("FRVIP-01020304FFFF-AABB"))
+        org.junit.Assert.assertFalse(manager.isPromoVipCode(null))
+    }
+
     @Test
     fun testActivateVipFromServerWithPromoLabelsCorrectly() {
         val manager = com.fitnessrider.util.VersionLifecycleManager

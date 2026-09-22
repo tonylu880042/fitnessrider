@@ -78,6 +78,22 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
         // 3. Evaluate VIP status
         self.isVIP = evaluateVipStatus()
+        // 方案名稱要從「存下來的代碼」還原，否則每次重啟 App 都會退回預設的「專業年繳版」，
+        // 推廣方案的使用者會看到錯的方案名（Android 的 getVipPlanName 是即時算的，這裡補上對等行為）。
+        self.vipPlanName = Self.planName(isPromo: Self.isPromoVipCode(Self.storedVipCode(defaults: .standard)))
+    }
+
+    /// 方案顯示名稱的唯一來源，避免四個寫入點各自寫死字串而漂移。
+    static func planName(isPromo: Bool) -> String {
+        isPromo ? "推廣課程專屬版 (\(promoTotalTrialDays)天免費)" : "專業年繳版 (VIP)"
+    }
+
+    /// 目前本機記錄的 VIP 代碼。UserDefaults 優先，正式環境（`.standard`）才回退看 Keychain ——
+    /// iOS 重裝會清掉 UserDefaults 但 Keychain 會留著，只看 UserDefaults 會把還在效期內的
+    /// 推廣方案誤判成付費年繳版。測試用的自訂 suite 不碰共用 Keychain，保持可重現。
+    static func storedVipCode(defaults: UserDefaults) -> String? {
+        if let code = defaults.string(forKey: "fitness_rider_vip_code") { return code }
+        return defaults == UserDefaults.standard ? DeviceIdentifierService.shared.vipLicenseKey : nil
     }
 
     /// Check if device has an active VIP license.
@@ -92,7 +108,10 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
                 return true
             }
         }
-        if let _ = DeviceIdentifierService.shared.vipLicenseKey,
+        // 只有正式環境才回退看共用 Keychain；測試用的自訂 suite 不該讀到別的測試留下的 VIP
+        // （與 isExpired 的 isTrialPermanentlyLocked 判斷同一個慣例）。
+        if defaults == UserDefaults.standard,
+           let _ = DeviceIdentifierService.shared.vipLicenseKey,
            let expires = DeviceIdentifierService.shared.vipExpiresTimestamp {
             if expires > currentTime.timeIntervalSince1970 {
                 return true
@@ -170,6 +189,33 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         return Int(ceil(remaining / Self.secondsPerDay))
     }
 
+    /// 推廣碼是否該被「生效中的付費年繳 VIP」擋下來：要擋就回傳錯誤訊息，不用擋回傳 nil。
+    ///
+    /// 本機與線上開通共用同一條規則（對應後端的 VIP_ALREADY_ACTIVE）。線上流程一定要在送出請求
+    /// 「之前」先問過這裡 —— 伺服器只認得它自己記錄過的授權，付費序號當初若是離線開通的，
+    /// 伺服器查無付費授權就會放行推廣碼，回傳 firstLaunchDate + promoTotalTrialDays，
+    /// 把本機的 365 天蓋成 30 天。對應 Android 的 `promoBlockedByPaidVipMessage`。
+    public func promoBlockedByPaidVipMessage(
+        _ rawCode: String,
+        defaults: UserDefaults = .standard,
+        currentTime: Date = Date()
+    ) -> String? {
+        let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard Self.isPromoCode(code) else { return nil }
+        guard evaluateVipStatus(currentTime: currentTime, defaults: defaults) else { return nil }
+        guard !Self.isPromoVipCode(Self.storedVipCode(defaults: defaults)) else { return nil }
+        return "此設備已有生效中的專業年繳版 VIP 授權，無需使用體驗推廣代碼。"
+    }
+
+    /// 目前這份 VIP 狀態是不是「推廣代碼換來的」。刻意不看年度 ——
+    /// `isPromoCode` 只認當年度代碼，但跨年時 26FR-NR 換來的授權可能還沒到期，
+    /// 那時它仍然是推廣方案，不是付費年繳版。對應 Android 的 `isPromoVipCode`。
+    public static func isPromoVipCode(_ rawCode: String?) -> Bool {
+        guard let code = rawCode?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() else { return false }
+        if code == "PROMO_VERIFIED" { return true }
+        return code.range(of: "^\\d{2}FR-NR$", options: .regularExpression) != nil
+    }
+
     /// Check if a code is a valid promotional code for the CURRENT year (e.g. 26FR-NR in 2026).
     ///
     /// Only the code for the current year is valid. A future year's code (e.g. entering
@@ -217,6 +263,10 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
         // Single device check for promo code (anti-abuse)
         if isPromo {
+            if let blocked = promoBlockedByPaidVipMessage(code, defaults: defaults, currentTime: now) {
+                return (false, blocked)
+            }
+
             var redeemedList = defaults.stringArray(forKey: userDefaultsRedeemedPromosKey) ?? []
             if redeemedList.contains(code) {
                 return (false, "本設備已兌換過此年度推廣代碼（\(code)），無法重複領取。")
@@ -224,7 +274,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             let expiresTs = firstLaunchDate.addingTimeInterval(Double(Self.promoTotalTrialDays) * Self.secondsPerDay).timeIntervalSince1970
             if expiresTs <= now.timeIntervalSince1970 {
-                return (false, "此推廣代碼體驗期限為首次啟用起算 \(Self.promoTotalTrialDays) 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。")
+                return (false, "此推廣代碼體驗期限為首次啟用起算 \(Self.promoTotalTrialDays) 天。本設備首次啟用已超過 \(Self.promoTotalTrialDays) 天，無法再使用此代碼，請升級專業年繳版。")
             }
 
             redeemedList.append(code)
@@ -242,7 +292,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             self.isVIP = true
             self.isExpiredOnLaunch = false
-            self.vipPlanName = "推廣課程專屬版 (\(Self.promoTotalTrialDays)天免費)"
+            self.vipPlanName = Self.planName(isPromo: true)
             return (true, "推廣課程專屬代碼兌換成功！已為此設備啟用 \(Self.promoTotalTrialDays) 天全功能免費 VIP 體驗。")
         }
 
@@ -264,7 +314,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             self.isVIP = true
             self.isExpiredOnLaunch = false
-            self.vipPlanName = "專業年繳版 (VIP)"
+            self.vipPlanName = Self.planName(isPromo: false)
             return (true, "授權開通成功！已升級為「專業年繳版 (VIP)」")
         }
 
@@ -287,11 +337,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         }
         self.isVIP = true
         self.isExpiredOnLaunch = false
-        if isPromo {
-            self.vipPlanName = "推廣課程專屬版 (\(Self.promoTotalTrialDays)天免費)"
-        } else {
-            self.vipPlanName = "專業年繳版 (VIP)"
-        }
+        self.vipPlanName = Self.planName(isPromo: isPromo)
     }
 
     /// 用伺服器回傳的試用起算時間校正本機錨點，取「較早」的一個 —— 這樣即使本機
@@ -334,7 +380,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
     public var planStatusDescription: String {
         if isVIP {
-            return "專業年繳版 (VIP)"
+            return vipPlanName
         }
         let days = remainingDays()
         if days > 0 {

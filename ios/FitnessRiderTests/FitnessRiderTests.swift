@@ -943,11 +943,93 @@ final class FitnessRiderTests: XCTestCase {
 
         let result = manager.activateLicenseCode(promoCode, defaults: testDefaults, overrideCurrentDate: now)
         XCTAssertFalse(result.success, "首次啟動超過 30 天之設備不可兌換推廣代碼")
-        XCTAssertTrue(result.message.contains("超過 30 天"), "錯誤訊息應清楚告知已超過 30 天")
+        XCTAssertTrue(
+            result.message.contains("超過 \(VersionLifecycleManager.promoTotalTrialDays) 天"),
+            "錯誤訊息應清楚告知已超過 \(VersionLifecycleManager.promoTotalTrialDays) 天"
+        )
 
         let redeemedList = testDefaults.stringArray(forKey: "fitness_rider_redeemed_promos") ?? []
         XCTAssertFalse(redeemedList.contains(promoCode), "失敗時不可將代碼寫入已兌換清單（不得白燒額度）")
         XCTAssertFalse(testDefaults.bool(forKey: "fitness_rider_vip_active"), "不可設為 VIP 啟用")
+    }
+
+    // 付費年繳 VIP 生效中時輸入推廣碼，必須被拒絕且不得蓋掉原本的到期日。
+    // 伺服器會回 VIP_ALREADY_ACTIVE，但離線時沒有伺服器可以擋，本機這條防線是唯一保障。
+    func testPromoCodeCannotDowngradeActivePaidVip() throws {
+        let testDefaults = UserDefaults(suiteName: "PromoNoDowngrade_\(UUID().uuidString)")!
+        let now = Date()
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: now)
+
+        let keyPair = P256.Signing.PrivateKey()
+        let publicKeyB64 = keyPair.publicKey.derRepresentation.base64EncodedString()
+        let serial = try signVipSerial(privateKey: keyPair, serialIdHex: "0A0B0C0D", planDays: 365)
+
+        let vipResult = manager.activateLicenseCode(
+            serial,
+            defaults: testDefaults,
+            testVipPublicKeyOverride: publicKeyB64,
+            overrideCurrentDate: now
+        )
+        XCTAssertTrue(vipResult.success)
+        let paidExpiresTs = testDefaults.double(forKey: "fitness_rider_vip_expires")
+        XCTAssertEqual(paidExpiresTs, now.addingTimeInterval(365 * 86_400).timeIntervalSince1970, accuracy: 1.0)
+
+        let currentYear = Calendar.current.component(.year, from: Date()) % 100
+        let promoCode = String(format: "%02dFR-NR", currentYear)
+        let promoResult = manager.activateLicenseCode(promoCode, defaults: testDefaults, overrideCurrentDate: now)
+
+        XCTAssertFalse(promoResult.success, "推廣代碼不可覆蓋生效中的付費年繳 VIP")
+        XCTAssertTrue(promoResult.message.contains("已有生效中的專業年繳版"))
+        XCTAssertEqual(testDefaults.double(forKey: "fitness_rider_vip_expires"), paidExpiresTs, accuracy: 0.001)
+        let redeemedList = testDefaults.stringArray(forKey: "fitness_rider_redeemed_promos") ?? []
+        XCTAssertFalse(redeemedList.contains(promoCode), "被拒絕時不可白燒推廣碼額度")
+    }
+
+    // 線上開通（LicenseVerificationService.activateCode 送出請求前）與離線開通共用這支判斷 ——
+    // 付費序號若當初是離線開通的，伺服器查無付費授權就會放行推廣碼並回傳 firstLaunchDate+30 天，
+    // 所以請求送出之前就得擋下來。同時不得誤擋推廣續領與一般試用中的裝置。
+    func testPromoBlockedByPaidVipMessageOnlyBlocksPaidVip() {
+        let defaults = UserDefaults(suiteName: "PromoGuard_\(UUID().uuidString)")!
+        let now = Date()
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: now)
+        let currentYear = Calendar.current.component(.year, from: now) % 100
+        let promoCode = String(format: "%02dFR-NR", currentYear)
+
+        // 還沒有任何 VIP（一般試用中）-> 放行
+        XCTAssertNil(manager.promoBlockedByPaidVipMessage(promoCode, defaults: defaults, currentTime: now))
+
+        // 推廣方案生效中（含跨年的舊代碼、伺服器線上兌換寫入的 promo_verified）-> 放行
+        defaults.set(true, forKey: "fitness_rider_vip_active")
+        defaults.set(now.addingTimeInterval(86_400).timeIntervalSince1970, forKey: "fitness_rider_vip_expires")
+        defaults.set("25FR-NR", forKey: "fitness_rider_vip_code")
+        XCTAssertNil(manager.promoBlockedByPaidVipMessage(promoCode, defaults: defaults, currentTime: now))
+        defaults.set("promo_verified", forKey: "fitness_rider_vip_code")
+        XCTAssertNil(manager.promoBlockedByPaidVipMessage(promoCode, defaults: defaults, currentTime: now))
+
+        // 付費年繳 VIP 生效中 -> 擋下
+        defaults.set("FRVIP-01020304FFFF-AABB", forKey: "fitness_rider_vip_code")
+        XCTAssertTrue(
+            manager.promoBlockedByPaidVipMessage(promoCode, defaults: defaults, currentTime: now)?
+                .contains("已有生效中的專業年繳版") == true
+        )
+
+        // 付費序號本身不是推廣碼，永遠不該被這支擋下
+        XCTAssertNil(manager.promoBlockedByPaidVipMessage("FRVIP-01020304FFFF-AABB", defaults: defaults, currentTime: now))
+
+        // VIP 已過期 -> 放行（過期的付費授權不該擋住推廣體驗）
+        defaults.set(now.addingTimeInterval(-1).timeIntervalSince1970, forKey: "fitness_rider_vip_expires")
+        XCTAssertNil(manager.promoBlockedByPaidVipMessage(promoCode, defaults: defaults, currentTime: now))
+    }
+
+    // isPromoVipCode 不看年度：跨年後 26FR-NR 換來、尚未到期的授權仍是推廣方案，
+    // 否則方案名稱會被誤標成付費年繳版，且推廣防降級判斷會誤擋隔年的新代碼。
+    func testIsPromoVipCodeIsYearAgnostic() {
+        XCTAssertTrue(VersionLifecycleManager.isPromoVipCode("26FR-NR"))
+        XCTAssertTrue(VersionLifecycleManager.isPromoVipCode("99FR-NR"))
+        XCTAssertTrue(VersionLifecycleManager.isPromoVipCode("promo_verified"))
+        XCTAssertFalse(VersionLifecycleManager.isPromoVipCode("server_verified"))
+        XCTAssertFalse(VersionLifecycleManager.isPromoVipCode("FRVIP-01020304FFFF-AABB"))
+        XCTAssertFalse(VersionLifecycleManager.isPromoVipCode(nil))
     }
 
     // Keychain 存取方法測試
