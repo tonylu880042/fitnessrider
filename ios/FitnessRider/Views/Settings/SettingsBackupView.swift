@@ -36,10 +36,9 @@ public struct SettingsBackupView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Picker("曲目平滑切換 (Crossfade)", selection: $settings.crossfadeDurationSeconds) {
-                            Text("關閉 (0 秒)").tag(0.0)
-                            Text("1 秒").tag(1.0)
-                            Text("2 秒 (預設)").tag(2.0)
-                            Text("3 秒").tag(3.0)
+                            ForEach(AppSettings.crossfadeOptionsSeconds, id: \.self) { seconds in
+                                Text(Self.crossfadeOptionLabel(seconds)).tag(seconds)
+                            }
                         }
                         .disabled(settings.isAutoPauseBetweenSegmentsEnabled)
 
@@ -201,6 +200,16 @@ public struct SettingsBackupView: View {
             } message: {
                 Text("輸入推廣培訓專屬代碼（如 26FR-NR）享 30 天免費體驗，或輸入 VIP 授權序號：")
             }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private static func crossfadeOptionLabel(_ seconds: Double) -> String {
+        switch seconds {
+        case 0.0: return "關閉 (0 秒)"
+        case 2.0: return "2 秒 (預設)"
+        default: return "\(Int(seconds)) 秒"
         }
     }
 

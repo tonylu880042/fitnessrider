@@ -30,6 +30,9 @@ class AppSettings internal constructor(context: Context) {
         @Volatile
         private var INSTANCE: AppSettings? = null
 
+        /** 單一來源：Crossfade 秒數選項，Android／iOS 必須完全一致。預設值仍為 2.0 秒。 */
+        val CROSSFADE_OPTIONS_SECONDS: List<Double> = listOf(0.0, 1.0, 2.0, 3.0, 5.0, 8.0)
+
         fun getInstance(context: Context): AppSettings {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: AppSettings(context.applicationContext).also { INSTANCE = it }

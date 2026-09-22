@@ -140,38 +140,39 @@ fun SettingsScreen(
                             color = if (isAutoPauseEnabled) TextSecondary else TextPrimary
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            val options = listOf(
-                                0.0 to "關閉 (0s)",
-                                1.0 to "1 秒",
-                                2.0 to "2 秒 (預設)",
-                                3.0 to "3 秒"
-                            )
-                            options.forEach { (sec, label) ->
-                                val selected = crossfadeDuration == sec
-                                OutlinedButton(
-                                    onClick = {
-                                        crossfadeDuration = sec
-                                        settings.crossfadeDurationSeconds = sec
-                                    },
-                                    enabled = !isAutoPauseEnabled,
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (selected) TopBarGreen.copy(alpha = 0.15f) else Color.Transparent,
-                                        contentColor = if (selected) TopBarGreenDark else TextPrimary
-                                    ),
-                                    border = ButtonDefaults.outlinedButtonBorder(enabled = !isAutoPauseEnabled)
+                            AppSettings.CROSSFADE_OPTIONS_SECONDS.chunked(3).forEach { rowOptions ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = 1
-                                    )
+                                    rowOptions.forEach { sec ->
+                                        val selected = crossfadeDuration == sec
+                                        OutlinedButton(
+                                            onClick = {
+                                                crossfadeDuration = sec
+                                                settings.crossfadeDurationSeconds = sec
+                                            },
+                                            enabled = !isAutoPauseEnabled,
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (selected) TopBarGreen.copy(alpha = 0.15f) else Color.Transparent,
+                                                contentColor = if (selected) TopBarGreenDark else TextPrimary
+                                            ),
+                                            border = ButtonDefaults.outlinedButtonBorder(enabled = !isAutoPauseEnabled)
+                                        ) {
+                                            Text(
+                                                text = crossfadeOptionLabel(sec),
+                                                fontSize = 10.sp,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -380,6 +381,15 @@ fun SettingsScreen(
                 notificationMessage = msg
             }
         )
+    }
+}
+
+private fun crossfadeOptionLabel(seconds: Double): String {
+    val whole = seconds.toInt()
+    return when (seconds) {
+        0.0 -> "關閉 (0s)"
+        2.0 -> "2 秒 (預設)"
+        else -> "$whole 秒"
     }
 }
 

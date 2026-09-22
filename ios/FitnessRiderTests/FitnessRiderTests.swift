@@ -1155,6 +1155,14 @@ final class FitnessRiderTests: XCTestCase {
     }
 
     @MainActor
+    func testCrossfadeOptionsSecondsMatchAcrossPlatforms() {
+        // 客戶回報開發清單 A：選項定案 0/1/2/3/5/8 秒，Android／iOS 必須完全一致，預設仍為 2 秒。
+        let options = AppSettings.crossfadeOptionsSeconds
+        XCTAssertEqual(options, [0.0, 1.0, 2.0, 3.0, 5.0, 8.0])
+        XCTAssertTrue(options.contains(2.0), "預設值 2 秒必須仍是合法選項之一")
+    }
+
+    @MainActor
     func testAppSettingsHapticFeedbackEnabled() {
         let settings = AppSettings.shared
         let originalValue = settings.isHapticFeedbackEnabled
