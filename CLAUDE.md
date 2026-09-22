@@ -98,8 +98,9 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 
 - Android：`ui/settings/SettingsScreen.kt:147` 的 `options` 清單（目前 0/1/2/3）。
 - iOS：`Views/Settings/SettingsBackupView.swift:38` 的 `Picker` tag（同上）。
-- 兩端選項必須完全一致，預設仍為 2 秒；與「段落結束自動暫停」互斥的規則不變。
-- 選項一多，Android 現在的橫向等寬按鈕排會擠爆，需要改版面（下拉或兩排）。
+- **選項定案：0 / 1 / 2 / 3 / 5 / 8 秒**，兩端必須完全一致，預設仍為 2 秒；
+  與「段落結束自動暫停」互斥的規則不變。
+- 六個選項塞不進 Android 現在的橫向等寬按鈕排，改成兩排（3+3）。
 
 ### B. HUD 播放中「右滑加速、左滑減速」手勢
 
@@ -113,3 +114,20 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - iOS：`Views/ExecutionHUD/WorkoutHUDView.swift:393` 同上。
 - 按鈕不移除 —— 課堂中手汗／戴手套時按鈕比手勢可靠，手勢是加法不是取代。
 - 注意別和既有的滑動衝突（段落進度條的 seek、返回手勢）；手勢區限定在中央核心區。
+
+## 開發清單：編輯器段落清單（spec M1.2 補完）
+
+段落目前只能「就地取代」—— 編輯器所有操作都是 `segments[selectedIndex] = updated`，
+既不能刪除也不能改順序，匯入時多選錯一首就只能整張課表重建。
+
+- **刪除**：每列一顆刪除鍵，跳確認對話框（段落含 cue，誤刪成本高）。不做 undo。
+- **排序**：每列「上移／下移」兩顆按鈕，**不做 drag & drop** ——
+  SwiftUI 的 `.onMove` 幾乎免費，但 Compose 要自己算位移，兩端行為還難對齊；
+  上下移按鈕雙端一致、diff 小。第一列的上移與最後一列的下移要 disable，不要隱藏。
+- **`orderIndex` 一定要重編號再存**：兩端都是存 `segment.orderIndex` 這個欄位本身
+  （Android `data/ClassRepository.kt:140`、iOS `Database/ClassRepository.swift:136`），
+  載入時 `ORDER BY orderIndex ASC`。只換陣列位置而不重寫 orderIndex，畫面會對、
+  重新載入就打回原形。刪除後也一律從 0 連續重編，不要留洞。
+- 清單 UI：Android `ui/editor/ClassEditorScreen.kt:307`、iOS `Views/ClassEditor/ClassEditorView.swift:153`。
+- `selectedSegmentIndex` 要跟著移動／刪除修正，不然會指到別的段落或越界
+  （刪掉最後一個段落時尤其要注意）。
