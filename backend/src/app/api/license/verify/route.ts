@@ -93,11 +93,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 試用起算錨點（spec 項目 D / 項目 3）：
-    // 若尚未有錨點，初次啟動時為設備建立起算錨點（配合 db.ts 中的時間下限 clamp，防止偽造回 1970 年）。
-    // 重灌時透過回傳伺服器記錄之首次啟用時間，讓本機校準試用期，杜絕無限重置試用。
-    const clientFirstLaunchAt = (body.client_first_launch_at || body.clientFirstLaunchAt) as string | undefined;
-    const anchor = await db.getOrCreateDeviceTrialAnchor(deviceFingerprint, clientFirstLaunchAt);
+    // 試用起算錨點（spec 項目 D）：
+    // 若尚未有錨點，初次啟動時為設備建立起算錨點（以伺服器當前時間 Date.now() 為準，絕不接受客戶端傳入過去時間）。
+    // 重灌時透過回傳伺服器初次記錄之首次啟用時間，讓本機校準試用期，杜絕無限重置試用。
+    const anchor = await db.getOrCreateDeviceTrialAnchor(deviceFingerprint);
 
     const commonFields = {
       trial_started_at: anchor?.first_seen_at || null,

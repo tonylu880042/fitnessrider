@@ -235,22 +235,56 @@ object VersionLifecycleManager {
 
     /**
      * 信任伺服器已驗證過身分的授權結果，直接寫入本機 VIP 狀態
-     * （帳號密碼換機、或已在伺服器驗過簽章的序號換機成功後呼叫），
-     * 不透過 [VipSerialVerifier] 重新驗證 —— 這條路徑本來就不是靠使用者輸入序號觸發的。
+     * （帳號密碼換機、線上開通推廣代碼或已在伺服器驗過簽章的序號換機成功後呼叫）。
      */
-    fun activateVipFromServer(context: Context, expiresAtIso: String) {
+    fun activateVipFromServer(
+        context: Context,
+        expiresAtIso: String,
+        isPromo: Boolean = false,
+        code: String? = null
+    ) {
         val expiresMs = try {
             java.time.Instant.parse(expiresAtIso).toEpochMilli()
         } catch (e: Exception) {
             return
         }
+        val effectiveCode = code ?: if (isPromo) "promo_verified" else "server_verified"
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putBoolean(KEY_VIP_ACTIVE, true)
             .putLong(KEY_VIP_EXPIRES, expiresMs)
-            .putString(KEY_VIP_CODE, "server_verified")
+            .putString(KEY_VIP_CODE, effectiveCode)
             .putBoolean(KEY_IS_EXPIRED, false)
             .apply()
+    }
+
+    /**
+     * 將推廣代碼寫入本地已兌換清單，防止單機重複兌換（與 iOS 對齊，spec 項目 5）。
+     */
+    fun recordPromoRedemption(context: Context, code: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val redeemedSet = prefs.getStringSet(KEY_REDEEMED_PROMOS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        if (!redeemedSet.contains(code)) {
+            redeemedSet.add(code)
+            prefs.edit().putStringSet(KEY_REDEEMED_PROMOS, redeemedSet).apply()
+        }
+    }
+
+    fun getVipCode(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_VIP_CODE, null)
+    }
+
+    /**
+     * 取得目前授權的方案名稱，若為推廣代碼則正確顯示體驗版名稱（spec 項目 4）。
+     */
+    fun getVipPlanName(context: Context): String {
+        val code = getVipCode(context) ?: ""
+        return if (isPromoCode(code) || code == "promo_verified") {
+            "推廣課程專屬版 (${BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)"
+        } else {
+            "專業年繳版 (VIP)"
+        }
     }
 
     fun getFormattedBuildDate(): String {

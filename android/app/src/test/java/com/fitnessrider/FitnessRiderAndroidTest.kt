@@ -614,6 +614,25 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertEquals("VIP expiresMs must be calculated from overrideCurrentTimeMs", expectedExpiresMs, actualExpiresMs)
     }
 
+    @Test
+    fun testActivateVipFromServerWithPromoLabelsCorrectly() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val expiresIso = java.time.Instant.now().plusSeconds(30 * 86400L).toString()
+        manager.activateVipFromServer(fakeContext, expiresIso, isPromo = true, code = "26FR-NR")
+        manager.recordPromoRedemption(fakeContext, "26FR-NR")
+
+        org.junit.Assert.assertTrue(manager.isVipActive(fakeContext))
+        org.junit.Assert.assertEquals(
+            "推廣課程專屬版 (${com.fitnessrider.BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)",
+            manager.getVipPlanName(fakeContext)
+        )
+        val redeemed = fakePrefs.getStringSet(manager.KEY_REDEEMED_PROMOS, null)
+        org.junit.Assert.assertTrue(redeemed?.contains("26FR-NR") == true)
+    }
+
     // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
     @Test
     fun testResolveUniqueMusicFileNameAppendsSuffixOnCollision() {

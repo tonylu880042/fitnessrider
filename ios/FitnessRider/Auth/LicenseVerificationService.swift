@@ -60,15 +60,18 @@ public final class LicenseVerificationService: ObservableObject {
 
     public func activateCode(code: String) async -> (Bool, String) {
         // 1. Try online activation first to respect single-device limit & database audit
-        let (onlineSuccess, onlineMsg) = await activateLicenseOnline(code: code)
+        let (onlineSuccess, onlineMsg, errorCode) = await activateLicenseOnline(code: code)
         if onlineSuccess {
             refreshLicenseState()
             return (true, onlineMsg)
         }
 
         // If the server explicitly rejected the activation (e.g. 400 "本設備已兌換過..."),
-        // return the rejection immediately to prevent duplicate abuse.
-        if onlineMsg.contains("已兌換") || onlineMsg.contains("限領一次") {
+        // return the rejection immediately to prevent duplicate abuse (spec 項目 6).
+        let antiAbuseCodes: Set<String> = ["PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED", "DEVICE_SECRET_REQUIRED"]
+        let isAntiAbuse = (errorCode != nil && antiAbuseCodes.contains(errorCode!))
+            || onlineMsg.contains("已兌換") || onlineMsg.contains("限領一次") || onlineMsg.contains("超過") || onlineMsg.contains("已在其他設備開通過")
+        if isAntiAbuse {
             return (false, onlineMsg)
         }
 
@@ -91,21 +94,25 @@ public final class LicenseVerificationService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = [
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        var body: [String: Any] = [
             "device_fingerprint": DeviceIdentifierService.shared.deviceFingerprint,
             "license_code": code,
-            // 讓伺服器端 bindDevice() 能記錄真實 platform/device_model，
-            // 而不是寫死成 iOS/"Coach Device"（見 backend/src/lib/db.ts）。
             "platform": "ios",
-            "device_model": DeviceIdentifierService.shared.deviceModel
+            "device_model": DeviceIdentifierService.shared.deviceModel,
+            "client_first_launch_at": ISO8601DateFormatter().string(from: VersionLifecycleManager.shared.firstLaunchDate)
         ]
+        if let signature = signRequest(timestampMs: timestamp) {
+            body["timestamp"] = timestamp
+            body["signature"] = signature
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: request)
     }
 
-    private func activateLicenseOnline(code: String) async -> (Bool, String) {
+    private func activateLicenseOnline(code: String) async -> (success: Bool, message: String, errorCode: String?) {
         guard let url = URL(string: "\(serverURL)/api/license/activate") else {
-            return (false, "無效的伺服器網址")
+            return (false, "無效的伺服器位址", nil)
         }
 
         var request = URLRequest(url: url)
@@ -150,15 +157,16 @@ public final class LicenseVerificationService: ObservableObject {
                         }
                         refreshLicenseState()
                         let msg = json["message"] as? String ?? "開通成功！"
-                        return (true, msg)
+                        return (true, msg, nil)
                     } else if let errorMsg = json["error"] as? String {
-                        return (false, errorMsg)
+                        let errCode = json["error_code"] as? String
+                        return (false, errorMsg, errCode)
                     }
                 }
             }
-            return (false, "授權碼無效或驗證失敗")
+            return (false, "授權碼無效或驗證失敗", nil)
         } catch {
-            return (false, "網路連線失敗，請確認網路或使用離線授權碼")
+            return (false, "網路連線失敗，請確認網路或使用離線授權碼", nil)
         }
     }
 

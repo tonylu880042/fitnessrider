@@ -51,7 +51,7 @@ class LicenseVerificationService(private val context: Context) {
         val days = com.fitnessrider.util.VersionLifecycleManager.getRemainingDays(context)
 
         if (isVip) {
-            _planType.value = "專業年繳版 (VIP)"
+            _planType.value = com.fitnessrider.util.VersionLifecycleManager.getVipPlanName(context)
             _isLicensed.value = true
             _remainingDays.value = days
         } else {
@@ -111,9 +111,13 @@ class LicenseVerificationService(private val context: Context) {
             val respJson = if (responseText.isNotEmpty()) JSONObject(responseText) else JSONObject()
 
             if (conn.responseCode == 200 && respJson.optBoolean("success", false)) {
+                val isPromo = if (respJson.has("is_promo")) respJson.getBoolean("is_promo") else com.fitnessrider.util.VersionLifecycleManager.isPromoCode(code)
                 val expiresAt = respJson.optString("expires_at", "")
                 if (expiresAt.isNotEmpty()) {
-                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(context, expiresAt)
+                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(context, expiresAt, isPromo = isPromo, code = code)
+                    if (isPromo) {
+                        com.fitnessrider.util.VersionLifecycleManager.recordPromoRedemption(context, code)
+                    }
                 } else {
                     com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
                 }
@@ -125,11 +129,14 @@ class LicenseVerificationService(private val context: Context) {
                 return@withContext Pair(true, msg)
             } else if (respJson.has("error")) {
                 val errorMsg = respJson.getString("error")
-                // 若伺服器明確回傳防濫用拒絕（例如已兌換過、每台限領一次、已逾期、已在其他設備開通過），直接返回拒絕，避免重複刷碼
-                if (errorMsg.contains("已兌換") || errorMsg.contains("限領一次") || errorMsg.contains("超過 30 天") || errorMsg.contains("已在其他設備開通過")) {
+                val errorCode = respJson.optString("error_code", "")
+                // 若伺服器明確回傳防濫用拒絕（結構化 error_code 或中文字串相容比對），直接返回拒絕，避免重複刷碼
+                val isAntiAbuse = errorCode in setOf("PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED", "DEVICE_SECRET_REQUIRED")
+                    || errorMsg.contains("已兌換") || errorMsg.contains("限領一次") || errorMsg.contains("超過") || errorMsg.contains("已在其他設備開通過")
+                if (isAntiAbuse) {
                     return@withContext Pair(false, errorMsg)
                 }
-                // 非明確防濫用之伺服器錯誤（例如連線問題或簽章未過），允許進入離線驗證 fallback（spec 項目 2）
+                // 非明確防濫用之伺服器錯誤（例如連線問題或未知伺服器異常），允許進入離線驗證 fallback（spec 項目 2）
             }
         } catch (e: Exception) {
             // Fall back to offline

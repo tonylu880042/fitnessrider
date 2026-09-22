@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Pool } from 'pg';
 import { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
-import { PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
+import { BASE_TRIAL_DAYS, PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
 import { verifyVipSerial } from './vipSerial';
 
 interface InMemoryData {
@@ -304,14 +304,14 @@ export const db = {
 
   /**
    * 取得（或在合法開通/認證時建立）該裝置的試用起算錨點。
-   * clientFirstLaunchAt 有合法時間區間限制（不得早於 2026 年且不得早於現在往前推 35 天，防止篡改回 1970 年，spec 項目 5）。
+   * clientFirstLaunchAt 有合法時間區間限制（不得早於 2026 年且不得早於現在往前推 BASE_TRIAL_DAYS+1 天，因離線試用若超過該天數客戶端本身已過期，防止偽造回溯，spec 項目 1）。
    * 若伺服器已有既有紀錄，未經認證的請求絕不允許將既有錨點往前推移。
    */
   async getOrCreateDeviceTrialAnchor(deviceFingerprint: string, clientFirstLaunchAt?: string): Promise<DeviceTrialAnchor> {
     const now = Date.now();
     const EARLIEST_POSSIBLE_TIME = new Date('2026-01-01T00:00:00Z').getTime();
-    // 試用與推廣代碼至多允許往前推算 35 天（30 天試用上限 + 5 天緩衝），絕不允許無限回溯至 1970 年
-    const MAX_BACKDATE_MS = 35 * 24 * 60 * 60 * 1000;
+    // 試用起算錨點至多允許往前推算 BASE_TRIAL_DAYS + 1 天緩衝（8 天），防止惡意植入長過期錨點
+    const MAX_BACKDATE_MS = (BASE_TRIAL_DAYS + 1) * 24 * 60 * 60 * 1000;
     const minAllowedTime = Math.max(EARLIEST_POSSIBLE_TIME, now - MAX_BACKDATE_MS);
 
     let candidateFirstSeen = new Date(now).toISOString();
@@ -368,25 +368,21 @@ export const db = {
   },
 
   /**
-   * 強制設定或刷新該裝置的密鑰（僅在以合法 VIP 序號成功完成身分認證/重灌開通時呼叫）。
+   * 檢查某一序號是否已經被特定設備認領（用於判定重灌情境）。
    */
-  async setOrRotateDeviceSecret(deviceFingerprint: string, newSecret: string): Promise<string> {
-    await this.getOrCreateDeviceTrialAnchor(deviceFingerprint);
+  async isSerialClaimedByDevice(serialId: string, deviceFingerprint: string): Promise<boolean> {
     if (pgPool) {
       await initPgTables();
-      await pgPool.query(
-        `UPDATE device_trials SET device_secret = $2 WHERE device_fingerprint = $1`,
-        [deviceFingerprint, newSecret]
+      const existing = await pgPool.query(
+        'SELECT device_fingerprint FROM vip_serial_redemptions WHERE serial_id = $1 LIMIT 1',
+        [serialId]
       );
+      return existing.rows[0]?.device_fingerprint === deviceFingerprint;
     } else {
       const data = ensureLocalDb();
-      const anchor = data.device_trials?.find(t => t.device_fingerprint === deviceFingerprint);
-      if (anchor) {
-        anchor.device_secret = newSecret;
-        saveLocalDb(data);
-      }
+      const existing = data.vip_serial_redemptions?.find(r => r.serial_id === serialId);
+      return existing?.device_fingerprint === deviceFingerprint;
     }
-    return newSecret;
   },
 
   /**
@@ -502,6 +498,7 @@ export const db = {
   ): Promise<{
     success: boolean;
     error?: string;
+    error_code?: string;
     license?: License;
     is_promo?: boolean;
     trial_days?: number;
@@ -515,6 +512,7 @@ export const db = {
       return {
         success: false,
         error: `推廣代碼（${code}）已超過一年有效期限。請向講師或官方索取當前年度（${currentYearShort}FR-NR）最新代碼。`,
+        error_code: 'PROMO_YEAR_EXPIRED',
       };
     }
 
@@ -524,7 +522,7 @@ export const db = {
     const isValidVIP = !!vipSerialInfo;
 
     if (!isPromo && !isValidVIP) {
-      return { success: false, error: '無效的授權序號或推廣代碼' };
+      return { success: false, error: '無效的授權序號或推廣代碼', error_code: 'INVALID_CODE' };
     }
 
     let dev = await this.getDeviceByFingerprint(deviceFingerprint);
@@ -542,6 +540,7 @@ export const db = {
         return {
           success: false,
           error: '此設備已有生效中的專業年繳版 VIP 授權，無需使用體驗推廣代碼。',
+          error_code: 'VIP_ALREADY_ACTIVE',
         };
       }
     }
@@ -550,13 +549,13 @@ export const db = {
     let expiresAt: string;
     let durationDays: number;
 
-    // Single-device anti-abuse for promotional codes: each device can only redeem once per year
     if (isPromo) {
       const alreadyRedeemed = await this.hasDeviceRedeemedPromo(deviceFingerprint, code);
       if (alreadyRedeemed) {
         return {
           success: false,
           error: `本設備已兌換過此年度推廣代碼（${code}），每台設備限領一次。`,
+          error_code: 'PROMO_ALREADY_REDEEMED',
         };
       }
 
@@ -566,12 +565,13 @@ export const db = {
       const anchorMs = new Date(anchor.first_seen_at).getTime();
       const promoExpiresMs = anchorMs + PROMO_TOTAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
-      // 若首次啟動已超過 30 天，推廣體驗期已過，不扣抵次數、明確回報錯誤（spec 項目 3）。
+      // 若首次啟動已超過 30 天，推廣體驗期已過，不扣抵次數、明確回報錯誤（spec 項目 3 / 項目 6）。
       // 刻意放在建立帳號與設備綁定之前，避免留下孤兒資料（spec 項目 4）。
       if (promoExpiresMs <= Date.now()) {
         return {
           success: false,
-          error: `此推廣代碼體驗期限為首次啟用起算 ${PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。`,
+          error: `此推廣代碼體驗期限為首次啟用起算 ${PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 ${PROMO_TOTAL_TRIAL_DAYS} 天，無法再使用此代碼，請升級專業年繳版。`,
+          error_code: 'PROMO_EXPIRED',
         };
       }
 
@@ -594,6 +594,7 @@ export const db = {
         return {
           success: false,
           error: '此授權序號已在其他設備開通過。如需更換設備，請使用「轉移既有授權」功能。',
+          error_code: 'VIP_SERIAL_ALREADY_CLAIMED',
         };
       }
     }
@@ -636,11 +637,14 @@ export const db = {
     });
 
     // 開通成功即建立裝置密鑰，之後 /api/license/verify 用它簽章請求。
-    // 付費 VIP：出示合法 ECDSA 簽署序號已完成身分證明，直接簽發/刷新密鑰，確保重灌設備可復原密鑰（spec 項目 2）。
+    // 付費 VIP：若為重灌設備（先前記綠已綁定該序號），安全重用資料庫既有密鑰（不隨機旋轉，避免網路斷線導致客戶端密鑰脫節，spec 項目 3）。
     // 公開推廣代碼：若裝置早已存在密鑰則回傳 null，絕不對外洩漏既有密鑰（spec 項目 1）。
     let deviceSecret: string | null = null;
-    if (!isPromo) {
-      deviceSecret = await this.setOrRotateDeviceSecret(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
+    const existingAnchor = await this.getDeviceTrialAnchor(deviceFingerprint);
+    if (existingAnchor?.device_secret) {
+      if (!isPromo) {
+        deviceSecret = existingAnchor.device_secret;
+      }
     } else {
       deviceSecret = await this.setDeviceSecretIfAbsent(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
     }
