@@ -87,3 +87,29 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
   播放/波形分析退回預設值），不會讓 App 崩潰。
 - 匯出 `.riderclass`（`RiderClassArchiveService`）目前不會把外部資料夾曲目的音檔一併打包──
   兩平台既有的「檔案不存在就跳過」邏輯剛好自然涵蓋這個情況，是刻意不擴充的範圍，不是遺漏。
+
+## 開發清單：客戶回報（2026-09-23，教練 LINE 回報）
+
+### A. Crossfade 可選秒數要能拉長（目前上限 3 秒）
+
+教練反應 3 秒不夠長。只要改選項清單，**引擎不用動** ——
+`CrossfadeCalculator.effectiveDuration` 兩端都已經把實際淡入淡出時間 clamp 在「段落長度的一半」，
+所以選了 8 秒但段落只有 10 秒時會自動降成 5 秒，不會吃掉整段。
+
+- Android：`ui/settings/SettingsScreen.kt:147` 的 `options` 清單（目前 0/1/2/3）。
+- iOS：`Views/Settings/SettingsBackupView.swift:38` 的 `Picker` tag（同上）。
+- 兩端選項必須完全一致，預設仍為 2 秒；與「段落結束自動暫停」互斥的規則不變。
+- 選項一多，Android 現在的橫向等寬按鈕排會擠爆，需要改版面（下拉或兩排）。
+
+### B. HUD 播放中「右滑加速、左滑減速」手勢
+
+舊版有、新版退化成只有 `-2% / 100% / +2%` 三顆按鈕，教練點名這個手勢「很帥」要加回來。
+
+- 舊版實作：`original/.../FragClassProgress.java:1111` 的 `onFling`，水平位移超過 `slideThreshold`
+  就 ±0.1 倍速，範圍 1.0x ~ 1.4x。
+- **不要照抄舊版的級距與範圍**：新版是 ±15%（0.85x ~ 1.15x）、步進 2%（spec M2.1），
+  手勢一律走既有的 `adjustRatePercent(±2.0)`，不要另開一條改速路徑。
+- Android：`ui/hud/WorkoutHUDScreen.kt:583` 一帶的按鈕保留，畫面層加水平拖曳手勢。
+- iOS：`Views/ExecutionHUD/WorkoutHUDView.swift:393` 同上。
+- 按鈕不移除 —— 課堂中手汗／戴手套時按鈕比手勢可靠，手勢是加法不是取代。
+- 注意別和既有的滑動衝突（段落進度條的 seek、返回手勢）；手勢區限定在中央核心區。
