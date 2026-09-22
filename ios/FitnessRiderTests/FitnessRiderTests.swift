@@ -1329,5 +1329,35 @@ final class FitnessRiderTests: XCTestCase {
         // 水平仍然略大於垂直（且過門檻）才算數
         XCTAssertEqual(rateStepForSwipe(dx: 90, dy: 70, threshold: 60), 1)
     }
+
+    func testSegmentStepForSwipeVerticalPastThreshold() {
+        // 螢幕座標 y 向下為正：上滑（dy 負）＝下一首，下滑＝上一首
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -100, threshold: 80), 1)
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: 100, threshold: 80), -1)
+        // 未達門檻不動作；剛好等於門檻也不算（與變速手勢同一條規則）
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -60, threshold: 80), 0)
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -80, threshold: 80), 0)
+        // 水平為主一律忽略，交給變速手勢
+        XCTAssertEqual(segmentStepForSwipe(dx: 200, dy: -100, threshold: 80), 0)
+    }
+
+    // 變速與換曲靠「方向」分家，同一次滑動絕不能兩個都成立 ——
+    // 課堂中同時變速又跳掉一首歌是最糟的失敗模式。
+    func testRateAndSegmentSwipesAreMutuallyExclusive() {
+        let swipes: [(CGFloat, CGFloat)] = [
+            (200, 0), (-200, 0),
+            (0, 200), (0, -200),
+            (100, 120), (-100, 120),
+            (100, -160), (160, -100)
+        ]
+        for (dx, dy) in swipes {
+            let rate = rateStepForSwipe(dx: dx, dy: dy, threshold: 60)
+            let segment = segmentStepForSwipe(dx: dx, dy: dy, threshold: 80)
+            XCTAssertFalse(rate != 0 && segment != 0, "同一次滑動 (\(dx), \(dy)) 同時觸發了變速與換曲")
+        }
+        // 斜向安全死區：垂直大於水平、但還不到 1.5 倍時，兩個都不觸發
+        XCTAssertEqual(rateStepForSwipe(dx: 100, dy: 120, threshold: 60), 0)
+        XCTAssertEqual(segmentStepForSwipe(dx: 100, dy: 120, threshold: 80), 0)
+    }
 }
 

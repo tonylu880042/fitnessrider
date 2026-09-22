@@ -19,6 +19,7 @@ import com.fitnessrider.ui.editor.segmentsAfterRemoval
 import com.fitnessrider.ui.editor.selectedIndexAfterMove
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.rateStepForSwipe
+import com.fitnessrider.ui.hud.segmentStepForSwipe
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
@@ -1442,6 +1443,48 @@ class FitnessRiderAndroidTest {
         assertEquals(0, rateStepForSwipe(dx = -70f, dy = 100f, threshold = 60f))
         // 水平仍然略大於垂直（且過門檻）才算數
         assertEquals(1, rateStepForSwipe(dx = 90f, dy = 70f, threshold = 60f))
+    }
+
+
+    @Test
+    fun testSegmentStepForSwipeVerticalPastThreshold() {
+        // 螢幕座標 y 向下為正：上滑（dy 負）＝下一首，下滑＝上一首
+        assertEquals(1, segmentStepForSwipe(dx = 0f, dy = -100f, threshold = 80f))
+        assertEquals(-1, segmentStepForSwipe(dx = 0f, dy = 100f, threshold = 80f))
+        // 未達門檻不動作；剛好等於門檻也不算（與變速手勢同一條規則）
+        assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -60f, threshold = 80f))
+        assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -80f, threshold = 80f))
+        // 水平為主一律忽略，交給變速手勢
+        assertEquals(0, segmentStepForSwipe(dx = 200f, dy = -100f, threshold = 80f))
+    }
+
+    // 變速與換曲靠「方向」分家，同一次滑動絕不能兩個都成立 ——
+    // 課堂中同時變速又跳掉一首歌是最糟的失敗模式。
+    @Test
+    fun testRateAndSegmentSwipesAreMutuallyExclusive() {
+        val rateThreshold = 60f
+        val segmentThreshold = 80f
+        val swipes = listOf(
+            200f to 0f,      // 純水平
+            -200f to 0f,
+            0f to 200f,      // 純垂直
+            0f to -200f,
+            100f to 120f,    // 斜向死區：垂直略大但不到 1.5 倍，兩邊都不成立
+            -100f to 120f,
+            100f to -160f,   // 垂直為主
+            160f to -100f    // 水平為主
+        )
+        swipes.forEach { (dx, dy) ->
+            val rate = rateStepForSwipe(dx, dy, rateThreshold)
+            val segment = segmentStepForSwipe(dx, dy, segmentThreshold)
+            org.junit.Assert.assertFalse(
+                "同一次滑動 ($dx, $dy) 同時觸發了變速與換曲",
+                rate != 0 && segment != 0
+            )
+        }
+        // 斜向安全死區：垂直大於水平、但還不到 1.5 倍時，兩個都不觸發
+        assertEquals(0, rateStepForSwipe(100f, 120f, rateThreshold))
+        assertEquals(0, segmentStepForSwipe(100f, 120f, segmentThreshold))
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {

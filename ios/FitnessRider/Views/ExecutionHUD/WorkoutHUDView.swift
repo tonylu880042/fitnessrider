@@ -4,6 +4,9 @@ import UIKit
 // HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
 private let rateSwipeThreshold: CGFloat = 60
 
+// 「上滑下一首、下滑上一首」：換曲在課堂中代價高，門檻抓得比變速大一些，要滑得果斷一點
+private let segmentSwipeThreshold: CGFloat = 80
+
 /// 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
 /// 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
 /// 一次滑動只前進一階，不做「滑越遠調越多」——與 Android 同名同行為。
@@ -13,6 +16,21 @@ func rateStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     if absDy > absDx { return 0 }
     if absDx <= threshold { return 0 }
     return dx > 0 ? 1 : -1
+}
+
+/// 手勢位移 → 要不要換曲、換哪一首。回傳 +1（上滑，下一首）、-1（下滑，上一首）、0（忽略）。
+///
+/// 用「方向」而不是「位置」跟變速手勢分家：變速要求水平位移較大，換曲要求垂直位移大於
+/// 水平的 1.5 倍，兩者不可能同時成立，中間的斜向區間兩個都不觸發（刻意留的安全死區）。
+/// 課堂中教練目視前方、車上流汗，靠瞄準特定區塊區分手勢誤觸代價太高——滑錯方向頂多沒反應，
+/// 滑錯位置卻會跳掉一整首歌。與 Android 同名同行為。
+func segmentStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
+    let absDx = abs(dx)
+    let absDy = abs(dy)
+    if absDy <= absDx * 1.5 { return 0 }
+    if absDy <= threshold { return 0 }
+    // 螢幕座標 y 軸向下為正：上滑（dy < 0）＝下一首，與清單往下捲動推進的直覺一致
+    return dy < 0 ? 1 : -1
 }
 
 public struct WorkoutHUDView: View {
@@ -432,15 +450,29 @@ public struct WorkoutHUDView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .gesture(
-            DragGesture(minimumDistance: 40)
+            // 同一支手勢依「方向」分派，而不是靠手指落在哪個子視圖上：
+            // 水平＝變速、垂直＝換曲，兩者互斥（見 rateStepForSwipe／segmentStepForSwipe）。
+            DragGesture(minimumDistance: 10)
                 .onEnded { value in
-                    // Horizontal swipe: width displacement dominates height by at least 1.5x
-                    if abs(value.translation.width) > abs(value.translation.height) * 1.5 {
-                        if value.translation.width < -70 {
-                            audioManager.nextSegment()
-                        } else if value.translation.width > 70 {
-                            audioManager.previousSegment()
-                        }
+                    let rateStep = rateStepForSwipe(
+                        dx: value.translation.width,
+                        dy: value.translation.height,
+                        threshold: rateSwipeThreshold
+                    )
+                    if rateStep != 0 {
+                        audioManager.adjustRatePercent(by: Double(rateStep) * 2.0)
+                        HapticFeedbackManager.shared.playCountdownTick()
+                        return
+                    }
+                    let segmentStep = segmentStepForSwipe(
+                        dx: value.translation.width,
+                        dy: value.translation.height,
+                        threshold: segmentSwipeThreshold
+                    )
+                    if segmentStep > 0 {
+                        audioManager.nextSegment()
+                    } else if segmentStep < 0 {
+                        audioManager.previousSegment()
                     }
                 }
         )
@@ -507,28 +539,6 @@ public struct WorkoutHUDView: View {
         .onTapGesture(count: 2) {
             audioManager.togglePlayPause()
         }
-        // 右滑加速／左滑減速：手勢區限定在中央圓形儀表。
-        //
-        // 這裡一定要用 `.gesture`，不能用 `.simultaneousGesture` —— 後者的語意是
-        // 「允許與其他手勢同時辨識」，父層 cockpitCore 上的曲目切換拖曳
-        // （`DragGesture(minimumDistance: 40)`，水平位移 > 70pt 觸發）會跟著一起成立：
-        // 在圓形儀表上水平滑超過 70pt 會同時變速「並」跳到上/下一首，課堂中直接毀掉一段。
-        // 子視圖的 `.gesture` 對落在子視圖內的觸控本來就優先於祖先的 `.gesture`。
-        // 雙擊播放/暫停不受影響：DragGesture 要位移 10pt 才辨識，雙擊沒有位移。
-        .gesture(
-            DragGesture(minimumDistance: 10)
-                .onEnded { value in
-                    let step = rateStepForSwipe(
-                        dx: value.translation.width,
-                        dy: value.translation.height,
-                        threshold: rateSwipeThreshold
-                    )
-                    if step != 0 {
-                        audioManager.adjustRatePercent(by: Double(step) * 2.0)
-                        HapticFeedbackManager.shared.playCountdownTick()
-                    }
-                }
-        )
     }
 
     private var totalElapsedTimeBadge: some View {

@@ -50,6 +50,9 @@ import kotlinx.coroutines.delay
 // HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
 private val RATE_SWIPE_THRESHOLD_DP = 60.dp
 
+// 「上滑下一首、下滑上一首」：換曲在課堂中代價高，門檻抓得比變速大一些，要滑得果斷一點
+private val SEGMENT_SWIPE_THRESHOLD_DP = 80.dp
+
 /**
  * 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
  * 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
@@ -61,6 +64,23 @@ fun rateStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     if (absDy > absDx) return 0
     if (absDx <= threshold) return 0
     return if (dx > 0) 1 else -1
+}
+
+/**
+ * 手勢位移 → 要不要換曲、換哪一首。回傳 +1（上滑，下一首）、-1（下滑，上一首）、0（忽略）。
+ *
+ * 用「方向」而不是「位置」跟變速手勢分家：變速要求水平位移較大，換曲要求垂直位移大於
+ * 水平的 1.5 倍，兩者不可能同時成立，中間的斜向區間兩個都不觸發（刻意留的安全死區）。
+ * 課堂中教練目視前方、車上流汗，靠瞄準特定區塊區分手勢誤觸代價太高——滑錯方向頂多沒反應，
+ * 滑錯位置卻會跳掉一整首歌。與 iOS 同名同行為。
+ */
+fun segmentStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
+    val absDx = kotlin.math.abs(dx)
+    val absDy = kotlin.math.abs(dy)
+    if (absDy <= absDx * 1.5f) return 0
+    if (absDy <= threshold) return 0
+    // 螢幕座標 y 軸向下為正：上滑（dy < 0）＝下一首，與清單往下捲動推進的直覺一致
+    return if (dy < 0) 1 else -1
 }
 
 @Composable
@@ -99,10 +119,9 @@ fun WorkoutHUDScreen(
     var reminderTick by remember { mutableStateOf(0) }
     var totalDragX by remember { mutableFloatStateOf(0f) }
     var totalDragY by remember { mutableFloatStateOf(0f) }
-    var rateSwipeDragX by remember { mutableFloatStateOf(0f) }
-    var rateSwipeDragY by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val rateSwipeThresholdPx = remember(density) { with(density) { RATE_SWIPE_THRESHOLD_DP.toPx() } }
+    val segmentSwipeThresholdPx = remember(density) { with(density) { SEGMENT_SWIPE_THRESHOLD_DP.toPx() } }
 
     // Intercept hardware/gesture back press to prevent accidental class exit
     BackHandler(enabled = true) {
@@ -355,11 +374,17 @@ fun WorkoutHUDScreen(
                                     totalDragY += dragAmount.y
                                 },
                                 onDragEnd = {
-                                    // Horizontal swipe: horizontal distance must exceed vertical by 1.5x, threshold 120px
-                                    if (kotlin.math.abs(totalDragX) > kotlin.math.abs(totalDragY) * 1.5f) {
-                                        if (totalDragX < -120f) {
+                                    // 同一支 handler 依「方向」分派，而不是靠手指落在哪個子元件上：
+                                    // 水平＝變速、垂直＝換曲，兩者互斥（見 rateStepForSwipe／segmentStepForSwipe）。
+                                    val rateStep = rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
+                                    if (rateStep != 0) {
+                                        audioManager.adjustRatePercent(rateStep * 2.0)
+                                        HapticFeedbackManager.playCountdownTick(context)
+                                    } else {
+                                        val segmentStep = segmentStepForSwipe(totalDragX, totalDragY, segmentSwipeThresholdPx)
+                                        if (segmentStep > 0) {
                                             audioManager.nextSegment()
-                                        } else if (totalDragX > 120f) {
+                                        } else if (segmentStep < 0) {
                                             audioManager.previousSegment()
                                         }
                                     }
@@ -387,29 +412,6 @@ fun WorkoutHUDScreen(
                                 detectTapGestures(
                                     onDoubleTap = {
                                         audioManager.togglePlayPause()
-                                    }
-                                )
-                            }
-                            // 右滑加速／左滑減速：手勢區限定在中央圓形儀表（300dp），
-                            // 是子節點，會比外層 Row 的曲目切換拖曳手勢先攔截並消費事件，
-                            // 不會互相打架；亦不影響上面的雙擊播放/暫停（不同手勢類型）。
-                            .pointerInput(Unit) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        rateSwipeDragX = 0f
-                                        rateSwipeDragY = 0f
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        rateSwipeDragX += dragAmount.x
-                                        rateSwipeDragY += dragAmount.y
-                                    },
-                                    onDragEnd = {
-                                        val step = rateStepForSwipe(rateSwipeDragX, rateSwipeDragY, rateSwipeThresholdPx)
-                                        if (step != 0) {
-                                            audioManager.adjustRatePercent(step * 2.0)
-                                            HapticFeedbackManager.playCountdownTick(context)
-                                        }
                                     }
                                 )
                             }
