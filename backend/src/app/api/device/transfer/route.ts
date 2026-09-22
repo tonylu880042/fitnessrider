@@ -73,6 +73,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 目標設備若已經開通過（資料庫已有 device_secret），呼叫端必須用「該設備的密鑰」簽章，
+    // 證明自己真的坐在那台設備前。否則任何人都能拿受害者的 ANDROID_ID 當「新設備」：
+    //   a. 用自己的帳號把綁定搬過去 —— devices 只在 user_id 上有唯一性，bindDevice 會直接改寫，
+    //      之後 /api/license/activate 的「JWT 帳號綁定設備 === 目標設備」檢查就會通過，
+    //      可竄改受害者的授權與試用錨點（與 /api/auth/register 的 DEVICE_ALREADY_BOUND 同一條規則）；
+    //   b. 用一組全新序號走下面的「模式 2」分支，activateLicenseWithCode 對非推廣碼會回傳
+    //      該設備既有的 device_secret，等於把受害者的密鑰原封不動送給攻擊者。
+    // 全新、從未開通過的設備沒有密鑰可簽，也沒有東西可被竊，照常放行。
+    const targetAnchor = await db.getDeviceTrialAnchor(new_device_fingerprint);
+    if (targetAnchor?.device_secret) {
+      const timestamp = Number(body.timestamp);
+      const signature = typeof body.signature === 'string' ? body.signature : '';
+      const ownsTargetDevice =
+        timestamp && signature
+          ? await db.verifyDeviceSignature(new_device_fingerprint, timestamp, signature)
+          : false;
+      if (!ownsTargetDevice) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: '此設備已完成開通綁定，請在該設備上操作轉移（需原設備密鑰簽章驗證）',
+            error_code: 'DEVICE_SECRET_REQUIRED',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     let targetUserId: string | null = null;
     let targetEmail: string = '';
 

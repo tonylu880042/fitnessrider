@@ -34,6 +34,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 設備指紋已綁定他人帳號時一律拒絕註冊：devices 只在 user_id 上有唯一性，
+    // 若放任同一個 device_fingerprint 綁到多個帳號，攻擊者只要用受害者的
+    // ANDROID_ID 註冊一組人頭帳號，就能讓 /api/license/activate 的
+    // 「JWT 帳號綁定設備 === 目標設備」檢查通過，進而取得受害者的 device_secret。
+    const boundDevice = await db.getDeviceByFingerprint(device_fingerprint);
+    if (boundDevice) {
+      return NextResponse.json<AuthResponse>(
+        { success: false, error: '此設備已綁定其他帳號，請改用「轉移既有授權」功能', error_code: 'DEVICE_ALREADY_BOUND' },
+        { status: 409 }
+      );
+    }
+
     // 1. 建立使用者
     const userId = crypto.randomUUID();
     const password_hash = await hashPassword(password);

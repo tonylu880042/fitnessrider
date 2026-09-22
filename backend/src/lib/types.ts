@@ -85,7 +85,7 @@ export interface AuthResponse {
     is_valid: boolean;
   };
   error?: string;
-  error_code?: 'INVALID_CREDENTIALS' | 'DEVICE_MISMATCH' | 'EMAIL_EXISTS' | 'LICENSE_EXPIRED' | 'TRANSFER_COOLDOWN' | 'SERVER_ERROR';
+  error_code?: 'INVALID_CREDENTIALS' | 'DEVICE_MISMATCH' | 'EMAIL_EXISTS' | 'DEVICE_ALREADY_BOUND' | 'LICENSE_EXPIRED' | 'TRANSFER_COOLDOWN' | 'SERVER_ERROR';
   current_bound_device?: {
     device_model: string;
     bound_at: string;

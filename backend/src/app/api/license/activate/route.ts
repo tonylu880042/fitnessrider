@@ -16,29 +16,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 驗證檢查：若該裝置先前已開通過且已有 device_secret，未經授權（無 JWT / 無原裝置簽章）的請求必須受檢
+    // 先判定呼叫端身分：JWT 帳號目前綁定的設備要與目標設備相符，或帶有原設備密鑰簽章。
+    let authorized = false;
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const decoded = await verifyJwt(token);
+      if (decoded) {
+        const boundDevice = await db.getDeviceByUserId(decoded.userId);
+        if (boundDevice && boundDevice.device_fingerprint === deviceFingerprint) {
+          authorized = true;
+        }
+      }
+    }
+    if (!authorized) {
+      const timestamp = Number(body.timestamp);
+      const signature = typeof body.signature === 'string' ? body.signature : '';
+      if (timestamp && signature) {
+        authorized = await db.verifyDeviceSignature(deviceFingerprint, timestamp, signature);
+      }
+    }
+
+    // 驗證檢查：若該裝置先前已開通過且已有 device_secret，未經授權的請求必須受檢
     const existingAnchor = await db.getDeviceTrialAnchor(deviceFingerprint);
     if (existingAnchor?.device_secret) {
-      let authorized = false;
-      const authHeader = req.headers.get('authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const decoded = await verifyJwt(token);
-        if (decoded) {
-          const boundDevice = await db.getDeviceByUserId(decoded.userId);
-          if (boundDevice && boundDevice.device_fingerprint === deviceFingerprint) {
-            authorized = true;
-          }
-        }
-      }
-      if (!authorized) {
-        const timestamp = Number(body.timestamp);
-        const signature = typeof body.signature === 'string' ? body.signature : '';
-        if (timestamp && signature) {
-          authorized = await db.verifyDeviceSignature(deviceFingerprint, timestamp, signature);
-        }
-      }
-
       if (!authorized) {
         if (isPromoCode(licenseCode)) {
           // 公開推廣碼（如 26FR-NR）任何人皆可輸入，未認證請求一律以 403 阻擋，避免他人篡改受害者授權（spec 項目 1）
@@ -73,7 +74,12 @@ export async function POST(req: NextRequest) {
 
     const platform = body.platform === 'android' ? 'android' : 'ios';
     const deviceModel = body.device_model || body.deviceModel || (platform === 'android' ? 'Android Device' : 'iPad / iPhone');
-    const clientFirstLaunchAt = (body.client_first_launch_at || body.clientFirstLaunchAt) as string | undefined;
+    // 只有通過身分驗證的請求才可以把試用起算錨點往回推。未認證請求一律用伺服器當下時間建立錨點 ——
+    // 否則任何人只要拿受害者的 ANDROID_ID 送一次 client_first_launch_at=<30 天前>，
+    // 錨點就會被種成過期值（錨點一旦建立就不再移動），受害者首次啟動當下試用即已結束。
+    const clientFirstLaunchAt = authorized
+      ? ((body.client_first_launch_at || body.clientFirstLaunchAt) as string | undefined)
+      : undefined;
 
     const result = await db.activateLicenseWithCode(deviceFingerprint, licenseCode, platform, deviceModel, clientFirstLaunchAt);
     if (!result.success) {
