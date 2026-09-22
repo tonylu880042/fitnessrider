@@ -114,6 +114,52 @@ internal fun buildSegmentsForImportedTracks(
     }
 }
 
+/** 依陣列位置把 orderIndex 從 0 連續重編號。對應 CLAUDE.md「編輯器段落清單」開發清單。 */
+internal fun reindexedSegments(segments: List<WorkoutSegment>): List<WorkoutSegment> =
+    segments.mapIndexed { index, seg -> seg.copy(orderIndex = index) }
+
+/**
+ * 把 index 位置的段落移動 offset 格（-1 上移／+1 下移），並重新編號 orderIndex。
+ * index 或 index+offset 超出範圍時原樣傳回。
+ */
+internal fun segmentsAfterMove(segments: List<WorkoutSegment>, index: Int, offset: Int): List<WorkoutSegment> {
+    val target = index + offset
+    if (index !in segments.indices || target !in segments.indices) return segments
+    val mutable = segments.toMutableList()
+    val moved = mutable.removeAt(index)
+    mutable.add(target, moved)
+    return reindexedSegments(mutable)
+}
+
+/** 刪除 index 位置的段落，並重新編號 orderIndex。index 超出範圍時原樣傳回。 */
+internal fun segmentsAfterRemoval(segments: List<WorkoutSegment>, index: Int): List<WorkoutSegment> {
+    if (index !in segments.indices) return segments
+    val mutable = segments.toMutableList()
+    mutable.removeAt(index)
+    return reindexedSegments(mutable)
+}
+
+/**
+ * 段落移動後，跟著調整 selectedSegmentIndex 讓它繼續指向同一個邏輯段落。
+ *
+ * ponytail: 只算得對「相鄰對調」（UI 的上移／下移，offset ±1）。offset 絕對值大於 1 時
+ * [segmentsAfterMove] 是整段位移而不是對調，夾在中間的段落索引也會變，這裡不會跟著算 ——
+ * 真要支援 drag & drop 拖過多格時，這支要改成依新舊陣列比對 id 找位置。
+ */
+internal fun selectedIndexAfterMove(selectedIndex: Int, movedFromIndex: Int, movedToIndex: Int): Int {
+    return when (selectedIndex) {
+        movedFromIndex -> movedToIndex
+        movedToIndex -> movedFromIndex
+        else -> selectedIndex
+    }
+}
+
+/** 段落刪除後，跟著調整 selectedSegmentIndex，並 clamp 進新陣列的有效範圍（newSize 可能是 0）。 */
+internal fun selectedIndexAfterRemoval(selectedIndex: Int, removedIndex: Int, newSize: Int): Int {
+    val shifted = if (selectedIndex > removedIndex) selectedIndex - 1 else selectedIndex
+    return shifted.coerceIn(0, (newSize - 1).coerceAtLeast(0))
+}
+
 @Composable
 fun ClassEditorScreen(
     initialClass: WorkoutClass,
@@ -138,6 +184,8 @@ fun ClassEditorScreen(
     var isEditingCueDialogVisible by remember { mutableStateOf(false) }
     var currentEditingCue by remember { mutableStateOf<WorkoutCue?>(null) }
     var isBpmDialogVisible by remember { mutableStateOf(false) }
+    // 段落刪除需二次確認，見 CLAUDE.md「編輯器段落清單」開發清單。
+    var segmentPendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
 
     var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
     var previewPlayheadMs by remember { mutableStateOf(0) }
@@ -309,7 +357,7 @@ fun ClassEditorScreen(
                 Column(
                     modifier = Modifier
                         .width(170.dp)
-                        .height(100.dp)
+                        .height(136.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (isSelected) TopBarGreen.copy(alpha = 0.1f) else CardBackground)
                         .border(
@@ -347,6 +395,57 @@ fun ClassEditorScreen(
                         Spacer(modifier = Modifier.weight(1f))
                         Text(text = "${segment.cues.size} Cues", fontSize = 11.sp, color = TextSecondary)
                     }
+                    // 段落排序／刪除，對應 CLAUDE.md「編輯器段落清單」開發清單：
+                    // 每次移動／刪除都要重編號全部段落的 orderIndex，避免只改記憶體順序、DB 重讀後打回原狀。
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            enabled = index > 0,
+                            onClick = {
+                                val moved = segmentsAfterMove(workoutClass.segments, index, -1)
+                                selectedSegmentIndex = selectedIndexAfterMove(selectedSegmentIndex, index, index - 1)
+                                workoutClass = workoutClass.copy(segments = moved)
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowUp,
+                                contentDescription = "上移段落",
+                                tint = if (index > 0) TextSecondary else TextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            enabled = index < workoutClass.segments.lastIndex,
+                            onClick = {
+                                val moved = segmentsAfterMove(workoutClass.segments, index, 1)
+                                selectedSegmentIndex = selectedIndexAfterMove(selectedSegmentIndex, index, index + 1)
+                                workoutClass = workoutClass.copy(segments = moved)
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = "下移段落",
+                                tint = if (index < workoutClass.segments.lastIndex) TextSecondary else TextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { segmentPendingDeleteIndex = index },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "刪除段落",
+                                tint = AccentRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -355,7 +454,7 @@ fun ClassEditorScreen(
                 Box(
                     modifier = Modifier
                         .width(130.dp)
-                        .height(100.dp)
+                        .height(136.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .border(1.dp, TopBarGreen, RoundedCornerShape(10.dp))
                         .clickable {
@@ -719,6 +818,32 @@ fun ClassEditorScreen(
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("匯入失敗：${failedLabels.joinToString("、")}")
                 }
+            }
+        )
+    }
+
+    segmentPendingDeleteIndex?.let { idx ->
+        val targetTitle = workoutClass.segments.getOrNull(idx)?.title.orEmpty()
+        AlertDialog(
+            onDismissRequest = { segmentPendingDeleteIndex = null },
+            title = { Text("刪除段落", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Text(
+                    "確定要刪除「$targetTitle」嗎？段落內的動作提示會一併刪除，此動作無法復原。",
+                    fontSize = 14.sp,
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val newSegments = segmentsAfterRemoval(workoutClass.segments, idx)
+                    selectedSegmentIndex = selectedIndexAfterRemoval(selectedSegmentIndex, idx, newSegments.size)
+                    workoutClass = workoutClass.copy(segments = newSegments).withRecalculatedTotals()
+                    segmentPendingDeleteIndex = null
+                }) { Text("刪除", color = AccentRed, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { segmentPendingDeleteIndex = null }) { Text("取消") }
             }
         )
     }

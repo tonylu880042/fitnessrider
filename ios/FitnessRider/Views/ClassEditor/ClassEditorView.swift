@@ -59,6 +59,51 @@ func buildSegmentsForImportedTracks(
     }
 }
 
+/// 依陣列位置把 orderIndex 從 0 連續重編號。對應 CLAUDE.md「編輯器段落清單」開發清單。
+func reindexedSegments(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
+    segments.enumerated().map { index, seg in
+        var s = seg
+        s.orderIndex = index
+        return s
+    }
+}
+
+/// 把 index 位置的段落移動 offset 格（-1 上移／+1 下移），並重新編號 orderIndex。
+/// index 或 index+offset 超出範圍時原樣傳回。
+func segmentsAfterMove(_ segments: [WorkoutSegment], index: Int, offset: Int) -> [WorkoutSegment] {
+    let target = index + offset
+    guard segments.indices.contains(index), segments.indices.contains(target) else { return segments }
+    var mutable = segments
+    let item = mutable.remove(at: index)
+    mutable.insert(item, at: target)
+    return reindexedSegments(mutable)
+}
+
+/// 刪除 index 位置的段落，並重新編號 orderIndex。index 超出範圍時原樣傳回。
+func segmentsAfterRemoval(_ segments: [WorkoutSegment], index: Int) -> [WorkoutSegment] {
+    guard segments.indices.contains(index) else { return segments }
+    var mutable = segments
+    mutable.remove(at: index)
+    return reindexedSegments(mutable)
+}
+
+/// 段落移動後，跟著調整 selectedSegmentIndex 讓它繼續指向同一個邏輯段落。
+///
+/// ponytail: 只算得對「相鄰對調」（UI 的上移／下移，offset ±1）。offset 絕對值大於 1 時
+/// `segmentsAfterMove` 是整段位移而不是對調，夾在中間的段落索引也會變，這裡不會跟著算 ——
+/// 真要支援 drag & drop 拖過多格時，這支要改成依新舊陣列比對 id 找位置。
+func selectedIndexAfterMove(_ selectedIndex: Int, movedFromIndex: Int, movedToIndex: Int) -> Int {
+    if selectedIndex == movedFromIndex { return movedToIndex }
+    if selectedIndex == movedToIndex { return movedFromIndex }
+    return selectedIndex
+}
+
+/// 段落刪除後，跟著調整 selectedSegmentIndex，並 clamp 進新陣列的有效範圍（newSize 可能是 0）。
+func selectedIndexAfterRemoval(_ selectedIndex: Int, removedIndex: Int, newSize: Int) -> Int {
+    let adjusted = selectedIndex > removedIndex ? selectedIndex - 1 : selectedIndex
+    return min(max(adjusted, 0), max(newSize - 1, 0))
+}
+
 public struct ClassEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -79,6 +124,9 @@ public struct ClassEditorView: View {
     @State private var previewPlayer: AVAudioPlayer?
     @State private var previewTimer: Timer?
     @State private var importErrorMessage: String?
+    // 段落刪除確認（spec M1.2 補完）：跳確認對話框，段落含 cue，誤刪成本高，不做 undo。
+    @State private var segmentPendingDeleteIndex: Int?
+    @State private var isShowingDeleteSegmentAlert: Bool = false
 
     public init(workoutClass: WorkoutClass, onSave: @escaping (WorkoutClass) -> Void) {
         self._workoutClass = State(initialValue: workoutClass)
@@ -166,7 +214,7 @@ public struct ClassEditorView: View {
                                 .font(.system(size: 14, weight: .bold))
                         }
                         .foregroundColor(FitnessRiderTheme.topBarGreen)
-                        .frame(width: 140, height: 100)
+                        .frame(width: 140, height: 132)
                         .background(FitnessRiderTheme.cardBackground)
                         .cornerRadius(10)
                         .overlay(
@@ -247,6 +295,20 @@ public struct ClassEditorView: View {
         } message: {
             Text(importErrorMessage ?? "")
         }
+        // 段落刪除確認，樣式沿用 ClassListView 的刪除課表 Alert（spec M1.2 補完）。
+        .alert("刪除段落", isPresented: $isShowingDeleteSegmentAlert) {
+            Button("取消", role: .cancel) {}
+            Button("刪除", role: .destructive) {
+                if let index = segmentPendingDeleteIndex {
+                    deleteSegmentInEditor(at: index)
+                }
+            }
+        } message: {
+            let title = segmentPendingDeleteIndex.flatMap { idx in
+                workoutClass.segments.indices.contains(idx) ? workoutClass.segments[idx].title : nil
+            } ?? ""
+            Text("確定要刪除「\(title)」嗎？段落內的動作提示會一併刪除，此動作無法復原。")
+        }
     }
 
     // MARK: - Subviews
@@ -283,9 +345,44 @@ public struct ClassEditorView: View {
             }
             .font(.system(size: 11))
             .foregroundColor(FitnessRiderTheme.textSecondary)
+
+            Spacer(minLength: 0)
+
+            // 排序／刪除（spec M1.2 補完）：上移／下移／刪除，不做 drag & drop、不做 undo。
+            HStack(spacing: 12) {
+                Button {
+                    moveSegmentInEditor(at: index, offset: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .disabled(index == 0)
+                .foregroundColor(index == 0 ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreenDark)
+
+                Button {
+                    moveSegmentInEditor(at: index, offset: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .disabled(index == workoutClass.segments.count - 1)
+                .foregroundColor(index == workoutClass.segments.count - 1 ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreenDark)
+
+                Spacer()
+
+                Button {
+                    segmentPendingDeleteIndex = index
+                    isShowingDeleteSegmentAlert = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundColor(FitnessRiderTheme.accentRed)
+            }
+            .buttonStyle(.plain)
         }
         .padding(12)
-        .frame(width: 170, height: 100)
+        .frame(width: 170, height: 132)
         .background(isSelected ? FitnessRiderTheme.topBarGreen.opacity(0.08) : FitnessRiderTheme.cardBackground)
         .cornerRadius(10)
         .overlay(
@@ -644,6 +741,23 @@ public struct ClassEditorView: View {
         guard !newSegments.isEmpty else { return }
         workoutClass.segments.append(contentsOf: newSegments)
         selectedSegmentIndex = workoutClass.segments.count - 1
+        workoutClass.recalculateTotals()
+    }
+
+    // 上移／下移（spec M1.2 補完）：orderIndex 一定要重編號再存，只換陣列位置重新載入會打回原形。
+    private func moveSegmentInEditor(at index: Int, offset: Int) {
+        let target = index + offset
+        guard workoutClass.segments.indices.contains(target) else { return }
+        workoutClass.segments = segmentsAfterMove(workoutClass.segments, index: index, offset: offset)
+        selectedSegmentIndex = selectedIndexAfterMove(selectedSegmentIndex, movedFromIndex: index, movedToIndex: target)
+    }
+
+    // 刪除段落（spec M1.2 補完）：刪除後也一律從 0 連續重編 orderIndex，並重算總時長。
+    private func deleteSegmentInEditor(at index: Int) {
+        guard workoutClass.segments.indices.contains(index) else { return }
+        let newSegments = segmentsAfterRemoval(workoutClass.segments, index: index)
+        selectedSegmentIndex = selectedIndexAfterRemoval(selectedSegmentIndex, removedIndex: index, newSize: newSegments.count)
+        workoutClass.segments = newSegments
         workoutClass.recalculateTotals()
     }
 }

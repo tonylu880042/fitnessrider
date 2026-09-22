@@ -13,6 +13,11 @@ import com.fitnessrider.ui.editor.ImportedTrackInfo
 import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
 import com.fitnessrider.ui.editor.musicTitleFromFileName
 import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
+import com.fitnessrider.ui.editor.reindexedSegments
+import com.fitnessrider.ui.editor.segmentsAfterMove
+import com.fitnessrider.ui.editor.segmentsAfterRemoval
+import com.fitnessrider.ui.editor.selectedIndexAfterMove
+import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
@@ -1343,6 +1348,62 @@ class FitnessRiderAndroidTest {
         manager.activateVipFromServer(mockContext, expiresAtIso)
         assertTrue(manager.isVipActive(mockContext, overrideCurrentTimeMs = futureTime))
         assertFalse(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
+    }
+
+    @Test
+    fun testSegmentReorderAndDeleteReindexesOrderIndex() {
+        fun seg(title: String, orderIndex: Int) = WorkoutSegment(title = title, orderIndex = orderIndex)
+        val segments = listOf(seg("A", 0), seg("B", 1), seg("C", 2), seg("D", 3))
+
+        // 移動 A（index 0）到 index 2：B、C 應該往前補位，全部 orderIndex 都要重編號，不只是交換的兩個。
+        val moved = segmentsAfterMove(segments, 0, 2)
+        assertEquals(listOf("B", "C", "A", "D"), moved.map { it.title })
+        assertEquals(listOf(0, 1, 2, 3), moved.map { it.orderIndex })
+
+        // 刪除中間一個段落，剩餘段落的 orderIndex 要從 0 連續，不留空隙。
+        val removed = segmentsAfterRemoval(segments, 1)
+        assertEquals(listOf("A", "C", "D"), removed.map { it.title })
+        assertEquals(listOf(0, 1, 2), removed.map { it.orderIndex })
+
+        // reindexedSegments 對任意順序的陣列都應該按目前位置重編號。
+        val shuffled = listOf(seg("X", 9), seg("Y", 4))
+        val reindexed = reindexedSegments(shuffled)
+        assertEquals(listOf(0, 1), reindexed.map { it.orderIndex })
+    }
+
+    @Test
+    fun testSegmentMoveAndRemovalOutOfRangeIsNoOp() {
+        fun seg(title: String, orderIndex: Int) = WorkoutSegment(title = title, orderIndex = orderIndex)
+        val segments = listOf(seg("A", 0), seg("B", 1), seg("C", 2))
+
+        // 第一個段落再上移、最後一個段落再下移，都超出範圍，應原樣傳回、不崩潰。
+        val firstUpNoOp = segmentsAfterMove(segments, 0, -1)
+        assertEquals(segments, firstUpNoOp)
+        val lastDownNoOp = segmentsAfterMove(segments, segments.lastIndex, 1)
+        assertEquals(segments, lastDownNoOp)
+
+        // 刪除超出範圍的 index 也應該原樣傳回。
+        assertEquals(segments, segmentsAfterRemoval(segments, 5))
+        assertEquals(segments, segmentsAfterRemoval(segments, -1))
+    }
+
+    @Test
+    fun testSelectedSegmentIndexTracksMoveAndRemoval() {
+        // 只驗相鄰對調（offset ±1），也就是 UI 唯一會觸發的情況 —— 見 selectedIndexAfterMove 的註解。
+        // 選到的段落跟著它一起移動。
+        assertEquals(1, selectedIndexAfterMove(0, 0, 1))
+        // 被換到另一邊的那一筆（原本站在目標位置）也要跟著換。
+        assertEquals(0, selectedIndexAfterMove(1, 0, 1))
+        // 選到的段落跟這次移動無關，索引不變。
+        assertEquals(3, selectedIndexAfterMove(3, 0, 1))
+
+        // 刪除排在選取段落之前的段落，選取索引要跟著往前補一格。
+        assertEquals(1, selectedIndexAfterRemoval(2, 0, 2))
+        // 刪除排在選取段落之後的段落，選取索引不受影響。
+        assertEquals(0, selectedIndexAfterRemoval(0, 2, 2))
+        // 刪掉最後一個段落（newSize = 0）不能產生負數或超出範圍的索引。
+        assertEquals(0, selectedIndexAfterRemoval(0, 0, 0))
+        assertTrue(selectedIndexAfterRemoval(0, 0, 0) >= 0)
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {

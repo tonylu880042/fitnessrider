@@ -1242,5 +1242,58 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(manager.evaluateVipStatus(defaults: testDefaults))
         XCTAssertEqual(manager.vipPlanName, "推廣課程專屬版 (\(VersionLifecycleManager.promoTotalTrialDays)天免費)")
     }
+
+    // spec M1.2 補完：orderIndex 一定要重編號再存，不能只換陣列位置。
+    // 這裡驗證「移動」與「刪除」都要把全部段落的 orderIndex 重編為 0..n-1，不留洞、不只改動到的兩筆。
+    func testSegmentReorderAndDeleteReindexesOrderIndex() {
+        let classId = UUID()
+        func seg(_ title: String, _ order: Int) -> WorkoutSegment {
+            WorkoutSegment(id: UUID(), classId: classId, orderIndex: order, title: title)
+        }
+        let original = [seg("A", 0), seg("B", 1), seg("C", 2), seg("D", 3)]
+
+        // 把 index 0 的 A 下移到 index 2（模擬連續下移兩次的最終效果：一次直接移動 offset 2 的行為由呼叫端逐步觸發，
+        // 這裡直接測 segmentsAfterMove 單次 offset 的重編號正確性）
+        let movedOnce = segmentsAfterMove(original, index: 0, offset: 1)
+        XCTAssertEqual(movedOnce.map { $0.title }, ["B", "A", "C", "D"])
+        XCTAssertEqual(movedOnce.map { $0.orderIndex }, [0, 1, 2, 3])
+
+        // 移到最後一格也要整體重編號，不是只有交換到的兩筆
+        let movedToEnd = segmentsAfterMove(original, index: 0, offset: 3)
+        XCTAssertEqual(movedToEnd.map { $0.title }, ["B", "C", "D", "A"])
+        XCTAssertEqual(movedToEnd.map { $0.orderIndex }, [0, 1, 2, 3])
+
+        // 刪除中間一筆，其餘段落要從 0 連續重編，不留洞
+        let afterRemoval = segmentsAfterRemoval(original, index: 1)
+        XCTAssertEqual(afterRemoval.map { $0.title }, ["A", "C", "D"])
+        XCTAssertEqual(afterRemoval.map { $0.orderIndex }, [0, 1, 2])
+
+        // 越界的 move（第一筆再上移）原樣傳回，不崩潰、不改動
+        let outOfRangeMove = segmentsAfterMove(original, index: 0, offset: -1)
+        XCTAssertEqual(outOfRangeMove, original)
+
+        // 越界的 removal 原樣傳回
+        let outOfRangeRemoval = segmentsAfterRemoval(original, index: 99)
+        XCTAssertEqual(outOfRangeRemoval, original)
+    }
+
+    // spec M1.2 補完：selectedSegmentIndex 要跟著移動／刪除修正，刪掉最後一個段落時尤其要注意，不能產生負數或越界索引。
+    func testSelectedSegmentIndexTracksMoveAndRemoval() {
+        // 選到的段落本身被上移，selectedIndex 要跟著它走到新位置
+        XCTAssertEqual(selectedIndexAfterMove(2, movedFromIndex: 2, movedToIndex: 1), 1)
+        // 選到的段落是被換到別處的那一筆（原本在 target 位置），selectedIndex 要跟著換到 movedFromIndex
+        XCTAssertEqual(selectedIndexAfterMove(1, movedFromIndex: 2, movedToIndex: 1), 2)
+        // 選到的段落跟這次移動無關，維持不變
+        XCTAssertEqual(selectedIndexAfterMove(3, movedFromIndex: 0, movedToIndex: 1), 3)
+
+        // 刪除選到段落「之前」的段落，selectedIndex 要往前補一格
+        XCTAssertEqual(selectedIndexAfterRemoval(2, removedIndex: 0, newSize: 3), 1)
+        // 刪除選到段落「之後」的段落，selectedIndex 不變
+        XCTAssertEqual(selectedIndexAfterRemoval(0, removedIndex: 2, newSize: 3), 0)
+        // 刪掉最後一個段落（newSize == 0）不能產生負數索引，要 clamp 到 0
+        XCTAssertEqual(selectedIndexAfterRemoval(0, removedIndex: 0, newSize: 0), 0)
+        // 刪掉目前選到、且是清單最後一筆的段落，selectedIndex 要 clamp 進新的有效範圍
+        XCTAssertEqual(selectedIndexAfterRemoval(3, removedIndex: 3, newSize: 3), 2)
+    }
 }
 
