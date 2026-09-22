@@ -25,7 +25,10 @@ export async function POST(req: NextRequest) {
         const token = authHeader.substring(7);
         const decoded = await verifyJwt(token);
         if (decoded) {
-          authorized = true;
+          const boundDevice = await db.getDeviceByUserId(decoded.userId);
+          if (boundDevice && boundDevice.device_fingerprint === deviceFingerprint) {
+            authorized = true;
+          }
         }
       }
       if (!authorized) {

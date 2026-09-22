@@ -66,12 +66,10 @@ public final class LicenseVerificationService: ObservableObject {
             return (true, onlineMsg)
         }
 
-        // If the server explicitly rejected the activation (e.g. 400 "本設備已兌換過..."),
-        // return the rejection immediately to prevent duplicate abuse (spec 項目 6).
-        let antiAbuseCodes: Set<String> = ["PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED", "DEVICE_SECRET_REQUIRED"]
-        let isAntiAbuse = (errorCode != nil && antiAbuseCodes.contains(errorCode!))
-            || onlineMsg.contains("已兌換") || onlineMsg.contains("限領一次") || onlineMsg.contains("超過") || onlineMsg.contains("已在其他設備開通過")
-        if isAntiAbuse {
+        // If the server explicitly rejected the activation with an anti-abuse error_code,
+        // return the rejection immediately to prevent duplicate abuse.
+        let antiAbuseCodes: Set<String> = ["PROMO_EXPIRED", "PROMO_ALREADY_REDEEMED", "VIP_SERIAL_ALREADY_CLAIMED"]
+        if let code = errorCode, antiAbuseCodes.contains(code) {
             return (false, onlineMsg)
         }
 

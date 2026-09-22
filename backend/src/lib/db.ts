@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Pool } from 'pg';
 import { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
-import { BASE_TRIAL_DAYS, PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
+import { PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
 import { verifyVipSerial } from './vipSerial';
 
 interface InMemoryData {
@@ -310,8 +310,8 @@ export const db = {
   async getOrCreateDeviceTrialAnchor(deviceFingerprint: string, clientFirstLaunchAt?: string): Promise<DeviceTrialAnchor> {
     const now = Date.now();
     const EARLIEST_POSSIBLE_TIME = new Date('2026-01-01T00:00:00Z').getTime();
-    // 試用起算錨點至多允許往前推算 BASE_TRIAL_DAYS + 1 天緩衝（8 天），防止惡意植入長過期錨點
-    const MAX_BACKDATE_MS = (BASE_TRIAL_DAYS + 1) * 24 * 60 * 60 * 1000;
+    // 試用起算錨點至多允許往前推算 PROMO_TOTAL_TRIAL_DAYS 天（30 天），因推廣代碼以首次啟用起算
+    const MAX_BACKDATE_MS = PROMO_TOTAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
     const minAllowedTime = Math.max(EARLIEST_POSSIBLE_TIME, now - MAX_BACKDATE_MS);
 
     let candidateFirstSeen = new Date(now).toISOString();
