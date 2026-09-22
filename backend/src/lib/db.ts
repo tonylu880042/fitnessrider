@@ -304,13 +304,20 @@ export const db = {
 
   /**
    * 取得（或在合法開通/認證時建立）該裝置的試用起算錨點。
-   * 若提供 clientFirstLaunchAt 且早於伺服器記錄，則校準更新為較早的時間（spec 項目 D / 項目 5）。
+   * clientFirstLaunchAt 有合法時間區間限制（不得早於 2026 年且不得早於現在往前推 35 天，防止篡改回 1970 年，spec 項目 5）。
+   * 若伺服器已有既有紀錄，未經認證的請求絕不允許將既有錨點往前推移。
    */
   async getOrCreateDeviceTrialAnchor(deviceFingerprint: string, clientFirstLaunchAt?: string): Promise<DeviceTrialAnchor> {
-    let candidateFirstSeen = new Date().toISOString();
+    const now = Date.now();
+    const EARLIEST_POSSIBLE_TIME = new Date('2026-01-01T00:00:00Z').getTime();
+    // 試用與推廣代碼至多允許往前推算 35 天（30 天試用上限 + 5 天緩衝），絕不允許無限回溯至 1970 年
+    const MAX_BACKDATE_MS = 35 * 24 * 60 * 60 * 1000;
+    const minAllowedTime = Math.max(EARLIEST_POSSIBLE_TIME, now - MAX_BACKDATE_MS);
+
+    let candidateFirstSeen = new Date(now).toISOString();
     if (clientFirstLaunchAt) {
       const parsed = new Date(clientFirstLaunchAt).getTime();
-      if (Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now()) {
+      if (Number.isFinite(parsed) && parsed >= minAllowedTime && parsed <= now) {
         candidateFirstSeen = new Date(parsed).toISOString();
       }
     }
@@ -323,15 +330,7 @@ export const db = {
       );
       if (existing.rows.length > 0) {
         const row = existing.rows[0];
-        const existingTime = new Date(row.first_seen_at).getTime();
-        const candidateTime = new Date(candidateFirstSeen).getTime();
-        if (candidateTime < existingTime) {
-          await pgPool.query(
-            'UPDATE device_trials SET first_seen_at = $2 WHERE device_fingerprint = $1',
-            [deviceFingerprint, candidateFirstSeen]
-          );
-          row.first_seen_at = candidateFirstSeen;
-        }
+        // 伺服器已有錨點紀錄時，未認證請求不可任意推移既有時間
         return {
           device_fingerprint: row.device_fingerprint,
           first_seen_at: new Date(row.first_seen_at).toISOString(),
@@ -363,16 +362,31 @@ export const db = {
         anchor = { device_fingerprint: deviceFingerprint, first_seen_at: candidateFirstSeen, device_secret: null };
         data.device_trials.push(anchor);
         saveLocalDb(data);
-      } else {
-        const existingTime = new Date(anchor.first_seen_at).getTime();
-        const candidateTime = new Date(candidateFirstSeen).getTime();
-        if (candidateTime < existingTime) {
-          anchor.first_seen_at = candidateFirstSeen;
-          saveLocalDb(data);
-        }
       }
       return anchor;
     }
+  },
+
+  /**
+   * 強制設定或刷新該裝置的密鑰（僅在以合法 VIP 序號成功完成身分認證/重灌開通時呼叫）。
+   */
+  async setOrRotateDeviceSecret(deviceFingerprint: string, newSecret: string): Promise<string> {
+    await this.getOrCreateDeviceTrialAnchor(deviceFingerprint);
+    if (pgPool) {
+      await initPgTables();
+      await pgPool.query(
+        `UPDATE device_trials SET device_secret = $2 WHERE device_fingerprint = $1`,
+        [deviceFingerprint, newSecret]
+      );
+    } else {
+      const data = ensureLocalDb();
+      const anchor = data.device_trials?.find(t => t.device_fingerprint === deviceFingerprint);
+      if (anchor) {
+        anchor.device_secret = newSecret;
+        saveLocalDb(data);
+      }
+    }
+    return newSecret;
   },
 
   /**
@@ -533,6 +547,10 @@ export const db = {
     }
 
     // Single-device anti-abuse for promotional codes: each device can only redeem once per year
+    let expiresAt: string;
+    let durationDays: number;
+
+    // Single-device anti-abuse for promotional codes: each device can only redeem once per year
     if (isPromo) {
       const alreadyRedeemed = await this.hasDeviceRedeemedPromo(deviceFingerprint, code);
       if (alreadyRedeemed) {
@@ -541,6 +559,27 @@ export const db = {
           error: `本設備已兌換過此年度推廣代碼（${code}），每台設備限領一次。`,
         };
       }
+
+      // 「延長一次到總共 30 天」，不是在剩餘天數上再加 30 天：以裝置的試用起算錨點
+      // （結合本機回報起算時間與伺服器記錄取較早者）+ PROMO_TOTAL_TRIAL_DAYS 為到期時間。
+      const anchor = await this.getOrCreateDeviceTrialAnchor(deviceFingerprint, clientFirstLaunchAt);
+      const anchorMs = new Date(anchor.first_seen_at).getTime();
+      const promoExpiresMs = anchorMs + PROMO_TOTAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+
+      // 若首次啟動已超過 30 天，推廣體驗期已過，不扣抵次數、明確回報錯誤（spec 項目 3）。
+      // 刻意放在建立帳號與設備綁定之前，避免留下孤兒資料（spec 項目 4）。
+      if (promoExpiresMs <= Date.now()) {
+        return {
+          success: false,
+          error: `此推廣代碼體驗期限為首次啟用起算 ${PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。`,
+        };
+      }
+
+      expiresAt = new Date(promoExpiresMs).toISOString();
+      durationDays = PROMO_TOTAL_TRIAL_DAYS;
+    } else {
+      durationDays = vipSerialInfo!.planDays;
+      expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
     }
 
     // 付費序號限制：同一組序號只能在一台裝置上開通過一次，防止序號外流後被無限次開通。
@@ -576,27 +615,7 @@ export const db = {
       });
     }
 
-    let expiresAt: string;
-    let durationDays: number;
-
     if (isPromo) {
-      // 「延長一次到總共 30 天」，不是在剩餘天數上再加 30 天：以裝置的試用起算錨點
-      // （結合本機回報起算時間與伺服器記錄取較早者）+ PROMO_TOTAL_TRIAL_DAYS 為到期時間。
-      const anchor = await this.getOrCreateDeviceTrialAnchor(deviceFingerprint, clientFirstLaunchAt);
-      const anchorMs = new Date(anchor.first_seen_at).getTime();
-      const promoExpiresMs = anchorMs + PROMO_TOTAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
-
-      // 若首次啟動已超過 30 天，推廣體驗期已過，不扣抵次數、明確回報錯誤（spec 項目 3）。
-      if (promoExpiresMs <= Date.now()) {
-        return {
-          success: false,
-          error: `此推廣代碼體驗期限為首次啟用起算 ${PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。`,
-        };
-      }
-
-      expiresAt = new Date(promoExpiresMs).toISOString();
-      durationDays = PROMO_TOTAL_TRIAL_DAYS;
-
       await this.recordPromoRedemption({
         id: crypto.randomUUID(),
         device_fingerprint: deviceFingerprint,
@@ -605,10 +624,6 @@ export const db = {
         expires_at: expiresAt,
         trial_days: PROMO_TOTAL_TRIAL_DAYS,
       });
-    } else {
-      durationDays = vipSerialInfo!.planDays;
-      expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-      // 序號兌換紀錄已經在上面的 claimVipSerial 一併寫入，這裡不需要再寫一次。
     }
 
     const license = await this.setLicense({
@@ -620,9 +635,15 @@ export const db = {
       revenuecat_entitlement_id: code,
     });
 
-    // 開通成功即建立（若尚未有）裝置密鑰，之後 /api/license/verify 用它簽章請求。
-    // 若該裝置早已設定過密鑰，setDeviceSecretIfAbsent 會回傳 null，避免洩漏既有密鑰（spec 項目 1）。
-    const deviceSecret = await this.setDeviceSecretIfAbsent(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
+    // 開通成功即建立裝置密鑰，之後 /api/license/verify 用它簽章請求。
+    // 付費 VIP：出示合法 ECDSA 簽署序號已完成身分證明，直接簽發/刷新密鑰，確保重灌設備可復原密鑰（spec 項目 2）。
+    // 公開推廣代碼：若裝置早已存在密鑰則回傳 null，絕不對外洩漏既有密鑰（spec 項目 1）。
+    let deviceSecret: string | null = null;
+    if (!isPromo) {
+      deviceSecret = await this.setOrRotateDeviceSecret(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
+    } else {
+      deviceSecret = await this.setDeviceSecretIfAbsent(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
+    }
 
     return {
       success: true,

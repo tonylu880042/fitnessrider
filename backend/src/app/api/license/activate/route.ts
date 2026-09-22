@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, isPromoCode } from '@/lib/db';
 import { verifyJwt } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -15,31 +15,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 若該裝置先前已開通過且已有 device_secret，未經授權（無 JWT / 無原裝置簽章）的請求一律阻擋，
-    // 防止任何人僅靠 ANDROID_ID + 公開推廣碼篡改受害者授權或取得密鑰（spec 項目 1）。
-    const existingAnchor = await db.getDeviceTrialAnchor(deviceFingerprint);
-    if (existingAnchor?.device_secret) {
-      let authorized = false;
-      const authHeader = req.headers.get('authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const decoded = await verifyJwt(token);
-        if (decoded) {
-          authorized = true;
+    // 若該裝置先前已開通過且已有 device_secret，且使用者輸入的是「公開推廣代碼」，未經授權（無 JWT / 無原裝置簽章）的請求一律阻擋，
+    // 防止任何人僅靠 ANDROID_ID + 公開推廣碼（如 26FR-NR）篡改受害者授權或探測密鑰（spec 項目 1）。
+    // 若使用者輸入的是付費 VIP 序號（非公開推廣碼），ECDSA 簽章序號本身即為私密持有人憑證，
+    // 在 db.activateLicenseWithCode 內由 claimVipSerial 檢驗該序號是否已綁定此設備或未被認領；
+    // 讓 Android 重裝（SharedPreferences 清空、密鑰遺失）的合法付費 VIP 擁有者能夠憑其合法序號成功重新開通並復原密鑰（spec 項目 2）。
+    if (isPromoCode(licenseCode)) {
+      const existingAnchor = await db.getDeviceTrialAnchor(deviceFingerprint);
+      if (existingAnchor?.device_secret) {
+        let authorized = false;
+        const authHeader = req.headers.get('authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          const decoded = await verifyJwt(token);
+          if (decoded) {
+            authorized = true;
+          }
         }
-      }
-      if (!authorized) {
-        const timestamp = Number(body.timestamp);
-        const signature = typeof body.signature === 'string' ? body.signature : '';
-        if (timestamp && signature) {
-          authorized = await db.verifyDeviceSignature(deviceFingerprint, timestamp, signature);
+        if (!authorized) {
+          const timestamp = Number(body.timestamp);
+          const signature = typeof body.signature === 'string' ? body.signature : '';
+          if (timestamp && signature) {
+            authorized = await db.verifyDeviceSignature(deviceFingerprint, timestamp, signature);
+          }
         }
-      }
-      if (!authorized) {
-        return NextResponse.json(
-          { success: false, error: '此設備已完成開通綁定，需透過原設備簽章或帳號登入驗證' },
-          { status: 403 }
-        );
+        if (!authorized) {
+          return NextResponse.json(
+            { success: false, error: '此設備已完成開通綁定，需透過原設備簽章或帳號登入驗證' },
+            { status: 403 }
+          );
+        }
       }
     }
 

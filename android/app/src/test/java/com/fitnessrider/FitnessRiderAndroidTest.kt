@@ -590,6 +590,30 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertFalse("VIP must NOT be active", manager.isVipActive(fakeContext))
     }
 
+    @Test
+    fun testVipActivationRespectsOverrideCurrentTimeMs() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serial = signVipSerial(keyPair.private, "01020304", 365)
+
+        val mockNow = 1750000000_000L
+        val (success, _) = manager.activateLicenseCode(
+            context = fakeContext,
+            rawCode = serial,
+            testVipPublicKeyOverride = publicKeyBase64,
+            overrideCurrentTimeMs = mockNow
+        )
+
+        org.junit.Assert.assertTrue("VIP activation should succeed", success)
+        val expectedExpiresMs = mockNow + (365L * 86_400_000L)
+        val actualExpiresMs = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        org.junit.Assert.assertEquals("VIP expiresMs must be calculated from overrideCurrentTimeMs", expectedExpiresMs, actualExpiresMs)
+    }
+
     // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
     @Test
     fun testResolveUniqueMusicFileNameAppendsSuffixOnCollision() {

@@ -125,7 +125,11 @@ class LicenseVerificationService(private val context: Context) {
                 return@withContext Pair(true, msg)
             } else if (respJson.has("error")) {
                 val errorMsg = respJson.getString("error")
-                return@withContext Pair(false, errorMsg)
+                // 若伺服器明確回傳防濫用拒絕（例如已兌換過、每台限領一次、已逾期、已在其他設備開通過），直接返回拒絕，避免重複刷碼
+                if (errorMsg.contains("已兌換") || errorMsg.contains("限領一次") || errorMsg.contains("超過 30 天") || errorMsg.contains("已在其他設備開通過")) {
+                    return@withContext Pair(false, errorMsg)
+                }
+                // 非明確防濫用之伺服器錯誤（例如連線問題或簽章未過），允許進入離線驗證 fallback（spec 項目 2）
             }
         } catch (e: Exception) {
             // Fall back to offline

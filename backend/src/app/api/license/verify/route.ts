@@ -19,11 +19,19 @@ import { minSupportedVersionCodeFor } from '@/lib/licenseConfig';
  * `min_supported_version_code`（App 啟動時一併帶回的強制更新門檻，spec 項目 F），
  * 這兩個欄位不敏感，可以放心對任何呼叫者回傳。
  */
-// In-memory rate limiter per IP (max 60 requests per minute)
+// In-memory rate limiter per IP (max 60 requests per minute).
+// 備註：在 Vercel 等 Serverless 架構中，各 Lambda 實例各自擁有獨立記憶體；
+// 此處提供實例內請求頻率防護，並具備逾期條目自動清理機制以防記憶體洩漏（spec 項目 6）。
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const MAX_RATE_LIMIT_ENTRIES = 1000;
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
+  if (rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES) {
+    for (const [k, v] of rateLimitMap) {
+      if (now > v.resetAt) rateLimitMap.delete(k);
+    }
+  }
   const entry = rateLimitMap.get(ip);
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
@@ -85,12 +93,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 試用錨點：未通過身分驗證時，僅查詢既有紀錄，查無紀錄回傳 null，絕不自動新增紀錄（防止未認證濫建錨點，spec 項目 10）。
-    // 若已通過身分驗證，則確保該已驗證裝置有錨點紀錄。
-    let anchor = await db.getDeviceTrialAnchor(deviceFingerprint);
-    if (!anchor && authorizedUserId) {
-      anchor = await db.getOrCreateDeviceTrialAnchor(deviceFingerprint);
-    }
+    // 試用起算錨點（spec 項目 D / 項目 3）：
+    // 若尚未有錨點，初次啟動時為設備建立起算錨點（配合 db.ts 中的時間下限 clamp，防止偽造回 1970 年）。
+    // 重灌時透過回傳伺服器記錄之首次啟用時間，讓本機校準試用期，杜絕無限重置試用。
+    const clientFirstLaunchAt = (body.client_first_launch_at || body.clientFirstLaunchAt) as string | undefined;
+    const anchor = await db.getOrCreateDeviceTrialAnchor(deviceFingerprint, clientFirstLaunchAt);
 
     const commonFields = {
       trial_started_at: anchor?.first_seen_at || null,

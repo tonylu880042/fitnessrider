@@ -68,9 +68,28 @@ elif [ "$PROMO_YEAR" -eq "$CURRENT_YEAR" ] && [ "$CURRENT_MONTH" -eq "12" ]; the
     echo "詳情請參考 docs/PROMO_CODES.md 的更新手冊。"
     echo ""
 
-# 檢查情況 3: 正常有效中
 else
     echo "✔ 推廣代碼檢查通過：${PROMO_YEAR} 年度專屬代碼 [${PROMO_CODE}] 正常生效中。"
     echo "  （學員享有 30 天全功能免費 VIP 試用，單機限領一次）"
 fi
+
+# 檢查情況 4: 商業常數一致性檢查 (promo.properties vs backend licenseConfig.ts)
+LICENSE_CONFIG="${PROJECT_DIR}/backend/src/lib/licenseConfig.ts"
+if [ -f "$LICENSE_CONFIG" ]; then
+    PROP_BASE=$(grep -E "^BASE_TRIAL_DAYS=" "$PROMO_PROPS" | cut -d'=' -f2 | tr -d ' "\r\n')
+    PROP_TRIAL=$(grep -E "^TRIAL_DAYS=" "$PROMO_PROPS" | cut -d'=' -f2 | tr -d ' "\r\n')
+    
+    CONF_BASE=$(grep -E "export const BASE_TRIAL_DAYS" "$LICENSE_CONFIG" | grep -oE "[0-9]+")
+    CONF_TRIAL=$(grep -E "export const PROMO_TOTAL_TRIAL_DAYS" "$LICENSE_CONFIG" | grep -oE "[0-9]+")
+
+    if [ "$PROP_BASE" != "$CONF_BASE" ] || [ "$PROP_TRIAL" != "$CONF_TRIAL" ]; then
+        echo "🚨 [錯誤] backend/src/lib/licenseConfig.ts 與 promo.properties 常數不一致！" >&2
+        echo "  promo.properties: BASE_TRIAL_DAYS=${PROP_BASE}, TRIAL_DAYS=${PROP_TRIAL}" >&2
+        echo "  licenseConfig.ts: BASE_TRIAL_DAYS=${CONF_BASE}, PROMO_TOTAL_TRIAL_DAYS=${CONF_TRIAL}" >&2
+        exit 1
+    else
+        echo "✔ 後端商業常數一致性檢查通過：BASE_TRIAL_DAYS=${CONF_BASE}, PROMO_TOTAL_TRIAL_DAYS=${CONF_TRIAL}"
+    fi
+fi
 echo "================================================================="
+

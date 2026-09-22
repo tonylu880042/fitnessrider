@@ -272,22 +272,26 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     }
 
     /// 信任伺服器已驗證過身分的授權結果，直接寫入本機 VIP 狀態
-    /// （帳號密碼換機、或已在伺服器驗過簽章的序號換機成功後呼叫），
-    /// 不透過 [VipSerialVerifier] 重新驗證 —— 這條路徑本來就不是靠使用者輸入序號觸發的。
-    public func activateVipFromServer(expiresAt: Date, defaults: UserDefaults = .standard) {
+    /// （帳號密碼換機、線上兌換推廣代碼或已在伺服器驗過簽章的序號換機成功後呼叫）。
+    public func activateVipFromServer(expiresAt: Date, isPromo: Bool = false, code: String? = nil, defaults: UserDefaults = .standard) {
         let expiresTs = expiresAt.timeIntervalSince1970
+        let effectiveCode = code ?? (isPromo ? "promo_verified" : "server_verified")
         defaults.set(true, forKey: "fitness_rider_vip_active")
         defaults.set(expiresTs, forKey: "fitness_rider_vip_expires")
-        defaults.set("server_verified", forKey: "fitness_rider_vip_code")
+        defaults.set(effectiveCode, forKey: "fitness_rider_vip_code")
         defaults.set(false, forKey: userDefaultsExpiredKey)
         if defaults == UserDefaults.standard {
-            DeviceIdentifierService.shared.vipLicenseKey = "server_verified"
+            DeviceIdentifierService.shared.vipLicenseKey = effectiveCode
             DeviceIdentifierService.shared.vipExpiresTimestamp = expiresTs
             DeviceIdentifierService.shared.isTrialPermanentlyLocked = false
         }
         self.isVIP = true
         self.isExpiredOnLaunch = false
-        self.vipPlanName = "專業年繳版 (VIP)"
+        if isPromo {
+            self.vipPlanName = "推廣課程專屬版 (\(Self.promoTotalTrialDays)天免費)"
+        } else {
+            self.vipPlanName = "專業年繳版 (VIP)"
+        }
     }
 
     /// 用伺服器回傳的試用起算時間校正本機錨點，取「較早」的一個 —— 這樣即使本機

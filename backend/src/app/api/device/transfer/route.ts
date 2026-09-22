@@ -198,11 +198,10 @@ export async function POST(req: NextRequest) {
     const daysRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / (1000 * 60 * 60 * 24)));
 
     // 新設備也要有自己的裝置密鑰，之後才能用簽章呼叫 /api/license/verify（spec 項目 E）。
-    let deviceSecret = await db.setDeviceSecretIfAbsent(new_device_fingerprint, crypto.randomBytes(32).toString('hex'));
-    if (!deviceSecret) {
-      const existingAnchor = await db.getDeviceTrialAnchor(new_device_fingerprint);
-      deviceSecret = existingAnchor?.device_secret || null;
-    }
+    // 若該新設備為初次加入，setDeviceSecretIfAbsent 會產生並回傳新密鑰。
+    // 若該設備先前早已存在密鑰，setDeviceSecretIfAbsent 會回傳 null；此處絕不可對外 echo 既有密鑰，
+    // 避免攻擊者持有一組付費序號 + 受害者指紋即藉由轉移端點窺探他人密鑰（spec 項目 1）。
+    const deviceSecret = await db.setDeviceSecretIfAbsent(new_device_fingerprint, crypto.randomBytes(32).toString('hex'));
 
     return NextResponse.json({
       success: true,
@@ -219,7 +218,7 @@ export async function POST(req: NextRequest) {
         days_remaining: daysRemaining,
         is_valid: isValidLicense,
       },
-      device_secret: deviceSecret,
+      ...(deviceSecret ? { device_secret: deviceSecret } : {}),
     });
   } catch (error) {
     console.error('Device Transfer Error:', error);

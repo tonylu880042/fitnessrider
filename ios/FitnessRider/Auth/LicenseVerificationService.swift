@@ -131,13 +131,16 @@ public final class LicenseVerificationService: ObservableObject {
             if let httpRes = response as? HTTPURLResponse {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     if httpRes.statusCode == 200, let success = json["success"] as? Bool, success {
+                        let isPromo = (json["is_promo"] as? Bool) ?? VersionLifecycleManager.isPromoCode(code)
                         if let expiresAtIso = json["expires_at"] as? String,
                            let expiresDate = Self.parseISO8601(expiresAtIso) {
-                            VersionLifecycleManager.shared.activateVipFromServer(expiresAt: expiresDate)
-                            var redeemedList = UserDefaults.standard.stringArray(forKey: "fitness_rider_redeemed_promos") ?? []
-                            if !redeemedList.contains(code) {
-                                redeemedList.append(code)
-                                UserDefaults.standard.set(redeemedList, forKey: "fitness_rider_redeemed_promos")
+                            VersionLifecycleManager.shared.activateVipFromServer(expiresAt: expiresDate, isPromo: isPromo, code: code)
+                            if isPromo {
+                                var redeemedList = UserDefaults.standard.stringArray(forKey: "fitness_rider_redeemed_promos") ?? []
+                                if !redeemedList.contains(code) {
+                                    redeemedList.append(code)
+                                    UserDefaults.standard.set(redeemedList, forKey: "fitness_rider_redeemed_promos")
+                                }
                             }
                         } else {
                             _ = VersionLifecycleManager.shared.activateLicenseCode(code)

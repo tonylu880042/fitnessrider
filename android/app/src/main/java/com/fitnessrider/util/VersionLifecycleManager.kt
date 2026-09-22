@@ -218,7 +218,7 @@ object VersionLifecycleManager {
 
         if (vipSerialInfo != null) {
             val planMs = vipSerialInfo.planDays.toLong() * MS_PER_DAY
-            val expiresMs = System.currentTimeMillis() + planMs
+            val expiresMs = now + planMs
 
             prefs.edit()
                 .putBoolean(KEY_VIP_ACTIVE, true)

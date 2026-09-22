@@ -1148,6 +1148,17 @@ final class FitnessRiderTests: XCTestCase {
         manager.activateVipFromServer(expiresAt: expiresAt, defaults: testDefaults)
         XCTAssertFalse(manager.isExpired(currentTime: future, defaults: testDefaults))
         XCTAssertTrue(manager.evaluateVipStatus(currentTime: future, defaults: testDefaults))
+        XCTAssertEqual(manager.vipPlanName, "專業年繳版 (VIP)")
+    }
+
+    func testActivateVipFromServerWithPromoLabelsCorrectly() {
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: Date())
+        let testDefaults = UserDefaults(suiteName: "PromoTestDefaults_\(UUID().uuidString)")!
+        let expiresAt = Date().addingTimeInterval(30 * 86400.0)
+
+        manager.activateVipFromServer(expiresAt: expiresAt, isPromo: true, code: "26FR-NR", defaults: testDefaults)
+        XCTAssertTrue(manager.evaluateVipStatus(defaults: testDefaults))
+        XCTAssertEqual(manager.vipPlanName, "推廣課程專屬版 (\(VersionLifecycleManager.promoTotalTrialDays)天免費)")
     }
 }
 
