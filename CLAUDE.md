@@ -15,10 +15,14 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - **Android 與 iOS 必須維持功能對等**。任一平台的行為改動，另一平台同一份工作要一起改完，不得只做一邊。
 - 顏色用 `theme/Color.kt`（Android）與 `FitnessRiderTheme`（iOS）既有 token，不要寫死色碼。
 - 非顯而易見的邏輯要留一個可執行的檢查：Android 加進 `android/app/src/test/java/com/fitnessrider/FitnessRiderAndroidTest.kt`，iOS 加進 `ios/FitnessRiderTests/FitnessRiderTests.swift`。不要引入新測試框架。
-- **程式碼裡不要寫任何註解。** 不寫行內註解、不寫 KDoc／Swift doc comment、不寫檔頭說明，
+- **主程式碼裡不要寫任何註解。** 不寫行內註解、不寫 KDoc／Swift doc comment、不寫檔頭說明，
   既有註解也已全部移除。理由：註解會和程式碼脫節，然後把讀的人（和 AI）帶往錯誤的方向；
   唯一的事實來源是程式架構與程式碼本身。要讓意圖清楚就改名字、拆函式、加測試，不是加註解。
   需要保留的「為什麼」寫在這份 CLAUDE.md 或 commit message，那兩個地方會跟著決策一起維護。
+  - 範圍：`android/app/src/`、`ios/FitnessRider/`、`ios/FitnessRiderTests/`、`backend/src/`。
+  - **周邊工具不在此限，也不要去清它們**：`tools/` 的 shell／Python 腳本、
+    `build.gradle.kts` 等建置腳本、`*.properties` 設定檔的註解一律保留原樣。
+    那些註解記的是踩過的坑，改壞了測試抓不到，要到下次發佈才會炸。
 - 不要為了「以後可能需要」而加抽象層、介面、設定項。最短可行的 diff 優先。
 
 ## 已知落差（已修復對齊）
