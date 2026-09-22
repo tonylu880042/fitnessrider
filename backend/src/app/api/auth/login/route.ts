@@ -34,10 +34,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 檢核單一設備綁定
     const boundDevice = await db.getDeviceByUserId(user.id);
     if (!boundDevice) {
-      // 首次從 App 登入，自動綁定
       await db.bindDevice({
         id: crypto.randomUUID(),
         user_id: user.id,
@@ -46,7 +44,6 @@ export async function POST(req: NextRequest) {
         device_model: device_model || 'Unknown Device',
       });
     } else if (boundDevice.device_fingerprint !== device_fingerprint) {
-      // 設備不相符（防共用作弊）
       return NextResponse.json<AuthResponse>(
         {
           success: false,
@@ -60,18 +57,15 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     } else {
-      // 相同設備，更新最後活躍時間
       await db.updateDeviceLastActive(user.id);
     }
 
-    // 檢查授權狀態
     const license = await db.getLicenseByUserId(user.id);
     const now = Date.now();
     const expiresAtMs = license ? new Date(license.expires_at).getTime() : 0;
     const isValidLicense = expiresAtMs > now && license?.status === 'active';
     const daysRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / (1000 * 60 * 60 * 24)));
 
-    // 簽發 JWT Token
     const token = await signJwt({
       userId: user.id,
       email: user.email,

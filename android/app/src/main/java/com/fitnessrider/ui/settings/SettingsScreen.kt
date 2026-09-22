@@ -89,7 +89,6 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section 1: Audio & Playback
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardBackground),
                 shape = RoundedCornerShape(12.dp),
@@ -200,7 +199,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Section 2: SQLite Backup
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardBackground),
                 shape = RoundedCornerShape(12.dp),
@@ -228,7 +226,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Section 3: Device Binding & Licensing
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardBackground),
                 shape = RoundedCornerShape(12.dp),

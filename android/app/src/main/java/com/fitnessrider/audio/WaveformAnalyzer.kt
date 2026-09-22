@@ -37,8 +37,6 @@ data class WaveformResult(
 class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
     suspend fun analyzeWaveform(fileName: String, targetPoints: Int = 800): WaveformResult = withContext(Dispatchers.IO) {
-        // 1. Check SQLite / Room Cache（本地檔名、外部資料夾 content Uri 都用同一個快取表，
-        //    fileName 本身就是 key，Layer 3 不需要另外的快取結構）
         val cached = repository?.getWaveform(fileName)
         if (cached != null) {
             return@withContext WaveformResult(
@@ -48,8 +46,6 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             )
         }
 
-        // Layer 3：外部資料夾曲目一律以 content Uri 表示，透過 ContentResolver 讀取，
-        // 不落地複製到 app 儲存空間。授權被撤銷／檔案被搬走都會在這裡被吞成 fallback。
         if (MusicSource.isExternalUri(fileName)) {
             val context = repository?.context
                 ?: return@withContext generateFallbackResult(targetPoints)
@@ -63,17 +59,14 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             }
         }
 
-        // 2. Check if file exists in musicDirectory
         val musicDir = repository?.musicDirectory
         val file = if (musicDir != null) File(musicDir, fileName) else File(fileName)
         if (!file.exists() || file.length() == 0L) {
             return@withContext generateFallbackResult(targetPoints)
         }
 
-        // 3. MediaExtractor + MediaCodec streaming PCM extraction
         try {
             val result = extractWaveformFromFile(file, targetPoints)
-            // Cache into Room
             repository?.saveWaveform(fileName, result.samples, result.durationMs, result.bpm)
             result
         } catch (e: Exception) {
@@ -98,7 +91,6 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         }
     }
 
-    /** Layer 3：從外部資料夾的 content Uri 直接解碼，MediaExtractor 內建支援 content:// 來源。 */
     fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800): WaveformResult {
         val extractor = MediaExtractor()
         try {
@@ -178,7 +170,6 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
                         val shortBuffer = outputBuffer.asShortBuffer()
                         var maxPeak = bucketPeaks[bucketIdx]
 
-                        // Sample every 4 shorts for performance
                         val count = shortBuffer.remaining()
                         var i = 0
                         while (i < count) {
@@ -192,14 +183,12 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
                 }
             }
 
-            // Normalize and smooth small dropouts
             val maxAmp = bucketPeaks.maxOrNull() ?: 1.0f
             val scale = if (maxAmp > 0.05f) 0.95f / maxAmp else 1.0f
             for (i in bucketPeaks.indices) {
                 bucketPeaks[i] = (bucketPeaks[i] * scale).coerceIn(0.05f, 1.0f)
             }
 
-            // Estimate BPM
             val estimatedBpm = estimateBpm(bucketPeaks, durationMs)
 
             return WaveformResult(bucketPeaks, durationMs, estimatedBpm)

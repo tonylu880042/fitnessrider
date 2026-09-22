@@ -35,7 +35,6 @@ interface ClassDao {
     @Query("DELETE FROM classes WHERE id = :id")
     suspend fun deleteClass(id: String)
 
-    // Waveform Cache
     @Query("SELECT * FROM waveform_cache WHERE fileName = :fileName LIMIT 1")
     suspend fun getWaveform(fileName: String): WaveformEntity?
 

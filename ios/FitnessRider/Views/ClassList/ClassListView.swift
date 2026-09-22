@@ -21,7 +21,6 @@ public struct ClassListView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Signature #84BF09 Top Bar
                 TopNavBar(
                     title: "課表清單",
                     leading: {
@@ -42,7 +41,6 @@ public struct ClassListView: View {
                     }
                 )
 
-                // Advance expiration warning banner (1 <= remainingDays <= 7)
                 if !isWarningDismissed && !VersionLifecycleManager.shared.isVIP && remainingDays >= 1 && remainingDays <= 7 {
                     HStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -91,7 +89,6 @@ public struct ClassListView: View {
                     .padding(.top, 8)
                 }
 
-                // Content List
                 if classes.isEmpty {
                     emptyStateView
                 } else {
@@ -109,7 +106,6 @@ public struct ClassListView: View {
             .onAppear {
                 loadClasses()
             }
-            // Navigation Destinations & Sheets
             .fullScreenCover(item: $selectedClassForHUD) { workoutClass in
                 WorkoutHUDView(workoutClass: workoutClass)
             }
@@ -143,8 +139,6 @@ public struct ClassListView: View {
         }
     }
 
-    // MARK: - Subviews
-
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -177,7 +171,6 @@ public struct ClassListView: View {
 
     private func classCard(for workoutClass: WorkoutClass) -> some View {
         VStack(spacing: 0) {
-            // Upper Card (Light Gray Header)
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(workoutClass.title)
@@ -194,7 +187,6 @@ public struct ClassListView: View {
 
                 Spacer()
 
-                // Share .riderclass Button
                 Button {
                     shareClassPackage(workoutClass)
                 } label: {
@@ -204,7 +196,6 @@ public struct ClassListView: View {
                         .padding(8)
                 }
 
-                // Delete Button
                 Button {
                     classToDelete = workoutClass
                     isShowingDeleteAlert = true
@@ -222,9 +213,7 @@ public struct ClassListView: View {
             Divider()
                 .background(FitnessRiderTheme.cardBorder)
 
-            // Lower Card (Actions & Visual Segments)
             HStack(spacing: 18) {
-                // Play Button (Starts Execution HUD)
                 Button {
                     selectedClassForHUD = workoutClass
                 } label: {
@@ -242,7 +231,6 @@ public struct ClassListView: View {
                     .shadow(color: FitnessRiderTheme.topBarGreen.opacity(0.35), radius: 4, x: 0, y: 2)
                 }
 
-                // Segment Ratio Bar & Summary
                 VStack(alignment: .leading, spacing: 6) {
                     SegmentProgressBar(segments: workoutClass.segments, height: 10)
 
@@ -253,7 +241,6 @@ public struct ClassListView: View {
 
                 Spacer()
 
-                // Edit Button
                 Button {
                     selectedClassForEdit = workoutClass
                 } label: {
@@ -280,8 +267,6 @@ public struct ClassListView: View {
         )
         .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
     }
-
-    // MARK: - Actions
 
     private func loadClasses() {
         self.classes = ClassRepository.shared.fetchAllClasses()
@@ -313,7 +298,6 @@ public struct ClassListView: View {
     }
 }
 
-// UIKit Share Sheet Wrapper
 struct ShareActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
     let applicationActivities: [UIActivity]? = nil

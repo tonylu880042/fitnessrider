@@ -73,14 +73,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 目標設備若已經開通過（資料庫已有 device_secret），呼叫端必須用「該設備的密鑰」簽章，
-    // 證明自己真的坐在那台設備前。否則任何人都能拿受害者的 ANDROID_ID 當「新設備」：
-    //   a. 用自己的帳號把綁定搬過去 —— devices 只在 user_id 上有唯一性，bindDevice 會直接改寫，
-    //      之後 /api/license/activate 的「JWT 帳號綁定設備 === 目標設備」檢查就會通過，
-    //      可竄改受害者的授權與試用錨點（與 /api/auth/register 的 DEVICE_ALREADY_BOUND 同一條規則）；
-    //   b. 用一組全新序號走下面的「模式 2」分支，activateLicenseWithCode 對非推廣碼會回傳
-    //      該設備既有的 device_secret，等於把受害者的密鑰原封不動送給攻擊者。
-    // 全新、從未開通過的設備沒有密鑰可簽，也沒有東西可被竊，照常放行。
     const targetAnchor = await db.getDeviceTrialAnchor(new_device_fingerprint);
     if (targetAnchor?.device_secret) {
       const timestamp = Number(body.timestamp);
@@ -104,7 +96,6 @@ export async function POST(req: NextRequest) {
     let targetUserId: string | null = null;
     let targetEmail: string = '';
 
-    // 模式 1：以會員帳號密碼轉移
     if (email && password) {
       const user = await db.getUserByEmail(email);
       if (!user) {
@@ -125,7 +116,6 @@ export async function POST(req: NextRequest) {
       targetUserId = user.id;
       targetEmail = user.email;
     }
-    // 模式 2：以 VIP 授權序號轉移
     else if (license_code) {
       const vipSerialInfo = verifyVipSerial(license_code);
       if (!vipSerialInfo) {
@@ -141,7 +131,6 @@ export async function POST(req: NextRequest) {
         const user = await db.getUserById(targetUserId);
         targetEmail = user?.email || `vip_${license_code.slice(-6)}@fitnessrider.local`;
       } else {
-        // 全新合法序號轉移（首次直接在該機開通並綁定）
         const actRes = await db.activateLicenseWithCode(new_device_fingerprint, license_code, platform === 'android' ? 'android' : 'ios', device_model || 'New Device');
         if (actRes.success && actRes.license) {
           return NextResponse.json({
@@ -173,7 +162,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 檢查上次換機時間（30 天防共用限制）
     const lastTransfer = await db.getLastTransfer(targetUserId);
     if (lastTransfer) {
       const lastTransferTime = new Date(lastTransfer.transferred_at).getTime();
@@ -195,7 +183,6 @@ export async function POST(req: NextRequest) {
     const currentDevice = await db.getDeviceByUserId(targetUserId);
     const oldFingerprint = currentDevice ? currentDevice.device_fingerprint : 'none';
 
-    // 1. 記錄換機日誌
     await db.recordDeviceTransfer({
       id: crypto.randomUUID(),
       user_id: targetUserId,
@@ -203,7 +190,6 @@ export async function POST(req: NextRequest) {
       new_device_fingerprint,
     });
 
-    // 2. 更新設備綁定為新設備
     const newDevice = await db.bindDevice({
       id: crypto.randomUUID(),
       user_id: targetUserId,
@@ -212,7 +198,6 @@ export async function POST(req: NextRequest) {
       device_model: device_model || 'New Device',
     });
 
-    // 3. 簽發新 Token
     const token = await signJwt({
       userId: targetUserId,
       email: targetEmail,
@@ -225,10 +210,6 @@ export async function POST(req: NextRequest) {
     const isValidLicense = expiresAtMs > now && license?.status === 'active';
     const daysRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / (1000 * 60 * 60 * 24)));
 
-    // 新設備也要有自己的裝置密鑰，之後才能用簽章呼叫 /api/license/verify（spec 項目 E）。
-    // 若該新設備為初次加入，setDeviceSecretIfAbsent 會產生並回傳新密鑰。
-    // 若該設備先前早已存在密鑰，setDeviceSecretIfAbsent 會回傳 null；此處絕不可對外 echo 既有密鑰，
-    // 避免攻擊者持有一組付費序號 + 受害者指紋即藉由轉移端點窺探他人密鑰（spec 項目 1）。
     const deviceSecret = await db.setDeviceSecretIfAbsent(new_device_fingerprint, crypto.randomBytes(32).toString('hex'));
 
     return NextResponse.json({

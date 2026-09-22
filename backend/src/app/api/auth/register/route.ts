@@ -34,10 +34,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 設備指紋已綁定他人帳號時一律拒絕註冊：devices 只在 user_id 上有唯一性，
-    // 若放任同一個 device_fingerprint 綁到多個帳號，攻擊者只要用受害者的
-    // ANDROID_ID 註冊一組人頭帳號，就能讓 /api/license/activate 的
-    // 「JWT 帳號綁定設備 === 目標設備」檢查通過，進而取得受害者的 device_secret。
     const boundDevice = await db.getDeviceByFingerprint(device_fingerprint);
     if (boundDevice) {
       return NextResponse.json<AuthResponse>(
@@ -46,7 +42,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. 建立使用者
     const userId = crypto.randomUUID();
     const password_hash = await hashPassword(password);
     const user = await db.createUser({
@@ -56,7 +51,6 @@ export async function POST(req: NextRequest) {
       name: name || '飛輪教練',
     });
 
-    // 2. 綁定首次註冊的設備
     const device = await db.bindDevice({
       id: crypto.randomUUID(),
       user_id: userId,
@@ -65,7 +59,6 @@ export async function POST(req: NextRequest) {
       device_model: device_model || 'Unknown Device',
     });
 
-    // 3. 發放基礎 7 天全功能免費試用授權（推廣代碼可延長一次到總共 30 天，見 /api/license/activate）
     const trialDays = BASE_TRIAL_DAYS;
     const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
     const license = await db.setLicense({
@@ -76,7 +69,6 @@ export async function POST(req: NextRequest) {
       status: 'active',
     });
 
-    // 4. 簽發 JWT Token
     const token = await signJwt({
       userId,
       email: user.email,

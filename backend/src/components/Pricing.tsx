@@ -8,11 +8,10 @@ export default function Pricing() {
   const [classesPerWeek, setClassesPerWeek] = useState(3);
   const [hourlyRate, setHourlyRate] = useState(1000);
 
-  // Annual calculation
   const annualEarnings = classesPerWeek * 50 * hourlyRate;
   const yearlyPlanPrice = 2390;
   const classesToBreakEven = Math.max(1, Math.ceil(yearlyPlanPrice / hourlyRate));
-  const annualHoursSaved = classesPerWeek * 50 * 1; // 1 hour saved per class
+  const annualHoursSaved = classesPerWeek * 50 * 1;
 
   const plans = [
     {
@@ -89,7 +88,7 @@ export default function Pricing() {
           </p>
         </div>
 
-        {/* Pricing Cards */}
+        {}
         <div className="mt-16 grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
           {plans.map((plan, index) => (
             <div
@@ -163,7 +162,7 @@ export default function Pricing() {
           ))}
         </div>
 
-        {/* Interactive Coach ROI Calculator */}
+        {}
         <div className="mt-16 rounded-3xl border border-zinc-800 bg-zinc-900/60 p-6 sm:p-10 backdrop-blur-md">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
             <div className="max-w-xl">
@@ -178,7 +177,7 @@ export default function Pricing() {
                 以全台商業健身房平均每堂飛輪課鐘點費 NT$ 800 ~ 1,500 計算，每年僅需帶 1 ~ 2 堂課即可全額賺回軟體年費，剩下的 50 週全是純收益與倍增的教學效率！
               </p>
 
-              {/* Sliders */}
+              {}
               <div className="mt-6 space-y-4">
                 <div>
                   <div className="flex justify-between text-xs font-semibold text-zinc-300 mb-1.5">
@@ -221,7 +220,7 @@ export default function Pricing() {
               </div>
             </div>
 
-            {/* Calculated Results */}
+            {}
             <div className="w-full lg:w-80 rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-center shadow-xl">
               <span className="text-xs uppercase tracking-wider text-zinc-400 font-medium">投資年回報率 (ROI)</span>
               <div className="mt-3 text-4xl font-black text-emerald-400 font-mono">

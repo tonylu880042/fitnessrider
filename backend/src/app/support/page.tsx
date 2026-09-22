@@ -54,7 +54,7 @@ export default function SupportPage() {
           返回首頁
         </Link>
 
-        {/* Header */}
+        {}
         <div className="flex items-center gap-4 mb-8">
           <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
             <HelpCircle className="h-7 w-7" />
@@ -67,7 +67,7 @@ export default function SupportPage() {
           </div>
         </div>
 
-        {/* Quick Contact Box */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-14">
           <div className="rounded-3xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/20 via-zinc-900 to-zinc-950 p-6 sm:p-8">
             <div className="flex items-center gap-3 mb-4">
@@ -103,7 +103,7 @@ export default function SupportPage() {
           </div>
         </div>
 
-        {/* Troubleshooting Cards */}
+        {}
         <div className="mb-14 border-t border-zinc-800/80 pt-10">
           <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
             <span>常見技術問題快速排除</span>
@@ -124,7 +124,7 @@ export default function SupportPage() {
           </div>
         </div>
 
-        {/* Legal Links Banner */}
+        {}
         <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/20 p-6 text-center text-xs text-zinc-500">
           <p className="mb-2">相關法律協議與條款公開連結：</p>
           <div className="flex justify-center gap-6">

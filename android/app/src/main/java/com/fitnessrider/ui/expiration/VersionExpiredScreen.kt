@@ -34,12 +34,6 @@ import com.fitnessrider.theme.*
 import com.fitnessrider.util.VersionLifecycleManager
 import kotlinx.coroutines.launch
 
-/**
- * 到期畫面的兩種用途（spec 項目 F）：
- * - [TRIAL_ENDED]：試用期滿，導向輸入推廣碼／購買 VIP。
- * - [MUST_UPDATE]：伺服器回報這支建置版本已低於 min_supported_version_code，
- *   導向下載最新版本；跟建置日期到期無關，純粹是「有新版可拿」才會觸發。
- */
 enum class ExpirationReason {
     TRIAL_ENDED,
     MUST_UPDATE
@@ -82,9 +76,7 @@ fun VersionExpiredScreen(
         }
     }
 
-    // Block back button and predictive back gesture completely
     BackHandler(enabled = true) {
-        // Do nothing, preventing bypass
     }
 
     Box(
@@ -107,7 +99,6 @@ fun VersionExpiredScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Warning Badge Icon
                 Box(
                     modifier = Modifier
                         .size(68.dp)
@@ -143,7 +134,6 @@ fun VersionExpiredScreen(
 
                 HorizontalDivider(color = CardBorder, modifier = Modifier.padding(vertical = 2.dp))
 
-                // Version telemetry & Device ID detail box
                 Surface(
                     color = CardHeaderBackground,
                     shape = RoundedCornerShape(12.dp),
@@ -208,10 +198,7 @@ fun VersionExpiredScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // 試用結束：主要行動是輸入授權碼／轉移既有授權；必須更新的情況下這兩個按鈕
-                // 對使用者沒有幫助（版本不支援不是靠代碼解決的），直接隱藏，避免誤導。
                 if (reason == ExpirationReason.TRIAL_ENDED) {
-                    // Primary Action: Activate VIP Code
                     Button(
                         onClick = { showActivationDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
@@ -228,7 +215,6 @@ fun VersionExpiredScreen(
                         )
                     }
 
-                    // Transfer Action: Transfer Existing Device License
                     TextButton(
                         onClick = { showDeviceTransferDialog = true },
                         modifier = Modifier
@@ -244,7 +230,6 @@ fun VersionExpiredScreen(
                     }
                 }
 
-                // Download Latest Version — 必須更新時這是唯一、最主要的行動，改用實心主色按鈕。
                 val downloadClick: () -> Unit = {
                     if (onUpdateClick != null) {
                         onUpdateClick()
@@ -301,7 +286,6 @@ fun VersionExpiredScreen(
                     }
                 }
 
-                // Copy URL Action for Kiosk/Restricted Tablets
                 TextButton(
                     onClick = { copyUpdateUrlToClipboard() },
                     modifier = Modifier.fillMaxWidth()
@@ -315,7 +299,6 @@ fun VersionExpiredScreen(
                     )
                 }
 
-                // Secondary Action: Exit Application
                 TextButton(
                     onClick = {
                         (context as? Activity)?.finishAffinity()

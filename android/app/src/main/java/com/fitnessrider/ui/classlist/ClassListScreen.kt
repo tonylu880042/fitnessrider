@@ -48,7 +48,6 @@ fun ClassListScreen(
             .fillMaxSize()
             .background(CanvasWhite)
     ) {
-        // Signature TopBar
         TopNavBar(
             title = "課表清單",
             leading = {
@@ -63,7 +62,6 @@ fun ClassListScreen(
             }
         )
 
-        // Advance expiration warning banner (shows when 1 <= remainingDays <= 7 and not VIP)
         if (!isWarningDismissed && !VersionLifecycleManager.isVipActive(context) && remainingDays in 1..7) {
             Surface(
                 color = Color(0xFFFFF3CD),
@@ -194,7 +192,6 @@ private fun ClassCard(
             .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
             .background(Color.White)
     ) {
-        // Upper Card (Header)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -234,14 +231,12 @@ private fun ClassCard(
 
         HorizontalDivider(color = CardBorder)
 
-        // Lower Card (Actions & Segments Preview)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Play Button
             Button(
                 onClick = onPlayClick,
                 colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
@@ -255,7 +250,6 @@ private fun ClassCard(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Segments Preview Bar
             Column(modifier = Modifier.weight(1f)) {
                 SegmentProgressBar(segments = workoutClass.segments, height = 10.dp)
                 Spacer(modifier = Modifier.height(6.dp))
@@ -268,7 +262,6 @@ private fun ClassCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Edit Button
             OutlinedButton(
                 onClick = onEditClick,
                 shape = RoundedCornerShape(6.dp),

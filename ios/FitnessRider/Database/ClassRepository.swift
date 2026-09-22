@@ -11,8 +11,6 @@ public final class ClassRepository: @unchecked Sendable {
         seedInitialDataIfNeeded()
     }
 
-    // MARK: - Class Operations
-
     public func fetchAllClasses() -> [WorkoutClass] {
         guard let dbPtr = db.getDbPointer() else { return [] }
 
@@ -88,14 +86,10 @@ public final class ClassRepository: @unchecked Sendable {
     public func saveClass(_ workoutClassInput: WorkoutClass) {
         guard let dbPtr = db.getDbPointer() else { return }
 
-        // 保險：不管呼叫端（編輯畫面、封存匯入 RiderClassArchiveService、seed 資料...）是否記得在
-        // 改動 segments 後呼叫 recalculateTotals()，寫入 DB 前一律用目前的 segments 重新推算，
-        // 避免 totalDurationMs / estimatedCalories 跟 segments 兜不起來。
         var workoutClass = workoutClassInput
         workoutClass.recalculateTotals()
 
         try? db.executeWithTransaction {
-            // Upsert class
             let classSql = """
             INSERT OR REPLACE INTO classes (id, title, author, created_at, total_duration_ms, estimated_calories)
             VALUES (?, ?, ?, ?, ?, ?);
@@ -112,7 +106,6 @@ public final class ClassRepository: @unchecked Sendable {
             }
             sqlite3_finalize(stmt)
 
-            // Delete existing segments for this class to refresh
             let delSegSql = "DELETE FROM segments WHERE class_id = ?;"
             if sqlite3_prepare_v2(dbPtr, delSegSql, -1, &stmt, nil) == SQLITE_OK {
                 sqlite3_bind_text(stmt, 1, workoutClass.id.uuidString, -1, SQLITE_TRANSIENT)
@@ -120,7 +113,6 @@ public final class ClassRepository: @unchecked Sendable {
             }
             sqlite3_finalize(stmt)
 
-            // Insert segments & cues
             let segSql = """
             INSERT INTO segments (id, class_id, order_index, title, music_file_name, duration_ms, base_bpm, playback_rate, intensity_zone)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -178,8 +170,6 @@ public final class ClassRepository: @unchecked Sendable {
         }
         sqlite3_finalize(stmt)
     }
-
-    // MARK: - Segments & Cues Fetching
 
     private func fetchSegments(for classId: UUID) -> [WorkoutSegment] {
         guard let dbPtr = db.getDbPointer() else { return [] }
@@ -277,11 +267,6 @@ public final class ClassRepository: @unchecked Sendable {
         return cues
     }
 
-    // MARK: - Waveform Cache
-
-    // durationMs 也要一併帶回去，否則命中快取時 WaveformAnalyzer 只能拿到 samples/bpm，
-    // 時長會被丟棄變成 0（連帶讓 Layer 1 第 1 項「寫回時長」在快取命中時失效，
-    // 甚至可能把段落已知的正確時長覆寫掉）。
     public func fetchWaveform(for fileName: String) -> (samples: [Float], durationMs: Int, bpm: Double)? {
         guard let dbPtr = db.getDbPointer() else { return nil }
         let sql = "SELECT samples_blob, sample_count, duration_ms, calculated_bpm FROM waveform_cache WHERE file_name = ? LIMIT 1;"
@@ -326,8 +311,6 @@ public final class ClassRepository: @unchecked Sendable {
         }
         sqlite3_finalize(stmt)
     }
-
-    // MARK: - Seed Initial Sample Class
 
     private func seedInitialDataIfNeeded() {
         let existing = fetchAllClasses()

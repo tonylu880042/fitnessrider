@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { 
-  Play, 
-  Pause, 
-  Sparkles, 
-  ArrowDown, 
-  ChevronLeft, 
-  ChevronRight, 
-  Shuffle 
+import {
+  Play,
+  Pause,
+  Sparkles,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  Shuffle
 } from 'lucide-react';
 import { INTRO_COPY_LIST } from '@/lib/introCopyData';
 
@@ -24,8 +24,8 @@ export default function Hero() {
 
   const totalCopies = INTRO_COPY_LIST.length;
   const currentItem = INTRO_COPY_LIST[currentIndex];
-  const INTERVAL_DURATION = 6000; // 6 seconds per intro set
-  const PROGRESS_STEP = 50; // update progress every 50ms
+  const INTERVAL_DURATION = 6000;
+  const PROGRESS_STEP = 50;
 
   const switchIndex = useCallback((newIndex: number) => {
     setIsTransitioning(true);
@@ -52,7 +52,6 @@ export default function Hero() {
     switchIndex(nextRand);
   }, [currentIndex, totalCopies, switchIndex]);
 
-  // Auto-rotation & progress bar effect
   useEffect(() => {
     if (!isPlaying || isHovered) {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -78,12 +77,12 @@ export default function Hero() {
   }, [currentIndex, isPlaying, isHovered, handleNext]);
 
   return (
-    <section 
+    <section
       className="relative overflow-hidden pt-10 pb-20 md:pt-16 md:pb-28"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Background Gradients */}
+      {}
       <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 -translate-x-1/2 transform-gpu blur-3xl sm:-top-80">
         <div
           className="aspect-[1155/678] w-[68rem] bg-gradient-to-tr from-emerald-600/30 via-teal-500/20 to-cyan-500/30 opacity-40"
@@ -95,9 +94,9 @@ export default function Hero() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-        {/* Dynamic Rotation Controls Bar */}
+        {}
         <div className="mx-auto max-w-2xl mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800/90 bg-zinc-900/60 p-2 backdrop-blur-xl shadow-lg shadow-black/40">
-          {/* Badge & Category */}
+          {}
           <div className="flex items-center gap-2 text-left">
             <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/30">
@@ -108,9 +107,9 @@ export default function Hero() {
             </span>
           </div>
 
-          {/* Interactive Player Controls */}
+          {}
           <div className="flex items-center gap-1.5 ml-auto">
-            {/* Prev Button */}
+            {}
             <button
               onClick={handlePrev}
               className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
@@ -120,7 +119,7 @@ export default function Hero() {
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            {/* Play/Pause Button */}
+            {}
             <button
               onClick={() => setIsPlaying(!isPlaying)}
               className="flex h-7 px-2 items-center gap-1 rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors text-xs font-mono"
@@ -140,7 +139,7 @@ export default function Hero() {
               )}
             </button>
 
-            {/* Next Button */}
+            {}
             <button
               onClick={handleNext}
               className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
@@ -150,7 +149,7 @@ export default function Hero() {
               <ChevronRight className="h-4 w-4" />
             </button>
 
-            {/* Random Shuffle Button */}
+            {}
             <button
               onClick={handleRandom}
               className="hidden sm:flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-emerald-400 transition-colors"
@@ -160,13 +159,13 @@ export default function Hero() {
               <Shuffle className="h-3.5 w-3.5" />
             </button>
 
-            {/* Counter */}
+            {}
             <span className="ml-1 px-2 py-0.5 rounded bg-zinc-950/80 text-[11px] font-mono text-zinc-400 border border-zinc-800">
               <strong className="text-emerald-400">{String(currentIndex + 1).padStart(2, '0')}</strong> / {totalCopies}
             </span>
           </div>
 
-          {/* Progress Bar (Auto-rotate Timer) */}
+          {}
           <div className="w-full h-1 bg-zinc-800/60 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-75"
@@ -175,7 +174,7 @@ export default function Hero() {
           </div>
         </div>
 
-        {/* Dynamic Title with smooth transition */}
+        {}
         <div className="min-h-[140px] sm:min-h-[180px] lg:min-h-[210px] flex flex-col justify-center">
           <h1
             className={`text-4xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl font-sans transition-all duration-200 transform ${
@@ -191,7 +190,7 @@ export default function Hero() {
           </h1>
         </div>
 
-        {/* Dynamic Subtitle */}
+        {}
         <div className="min-h-[90px] sm:min-h-[75px] flex items-center justify-center">
           <p
             className={`mx-auto max-w-3xl text-base sm:text-lg text-zinc-300 leading-relaxed transition-all duration-200 ${
@@ -202,7 +201,7 @@ export default function Hero() {
           </p>
         </div>
 
-        {/* CTA Buttons */}
+        {}
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
             href="#download"
@@ -220,7 +219,7 @@ export default function Hero() {
           </Link>
         </div>
 
-        {/* Promo code badge for courses */}
+        {}
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-zinc-400">
           <span>🎓 搭配培訓推廣課程？App 內輸入 2026 年度專屬代碼</span>
           <span className="font-mono font-black text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/30">
@@ -229,7 +228,7 @@ export default function Hero() {
           <span>即享 30 天全功能免費體驗！</span>
         </div>
 
-        {/* Dynamic Key Feature Points (Syncs with Current Set) */}
+        {}
         <div
           className={`mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs sm:text-sm text-zinc-300 transition-all duration-200 ${
             isTransitioning ? 'opacity-0' : 'opacity-100'
@@ -246,7 +245,7 @@ export default function Hero() {
           ))}
         </div>
 
-        {/* 20 Topic Quick Nav Pills (Interactive Carousel/Tabs) */}
+        {}
         <div className="mt-10 mx-auto max-w-4xl">
           <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2.5 flex items-center justify-center gap-2">
             <Sparkles className="h-3 w-3 text-emerald-400" />
@@ -273,12 +272,12 @@ export default function Hero() {
           </div>
         </div>
 
-        {/* Mockup Showcase */}
+        {}
         <div id="hud-preview" className="relative mt-14 sm:mt-20">
           <div className="relative mx-auto max-w-5xl rounded-3xl border border-zinc-700/60 bg-zinc-900/90 p-3 sm:p-5 shadow-2xl shadow-emerald-950/40 backdrop-blur-xl">
-            {/* iPad Frame Mockup */}
+            {}
             <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-4 sm:p-8 text-left">
-              {/* Header Bar */}
+              {}
               <div className="flex flex-wrap items-center justify-between border-b border-zinc-800/80 pb-4 mb-6 gap-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -305,9 +304,9 @@ export default function Hero() {
                 </div>
               </div>
 
-              {/* Main HUD Display Area */}
+              {}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-                {/* Countdown Ring */}
+                {}
                 <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/60">
                   <div className="relative flex h-40 w-40 items-center justify-center rounded-full border-4 border-emerald-500/20 shadow-inner shadow-emerald-500/20">
                     <div className="absolute inset-0 rounded-full border-4 border-emerald-400 border-t-transparent animate-spin [animation-duration:8s]" />
@@ -320,7 +319,7 @@ export default function Hero() {
                   <span className="mt-4 text-xs font-medium text-zinc-400">當前階段：連續陡坡 (Zone 4)</span>
                 </div>
 
-                {/* Target RPM & Posture Indicator */}
+                {}
                 <div className="flex flex-col justify-between h-full p-6 rounded-2xl bg-gradient-to-br from-zinc-900/80 to-zinc-950 border border-zinc-800/80">
                   <div>
                     <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">當前指令 (CURRENT CUE)</span>
@@ -335,7 +334,7 @@ export default function Hero() {
                       <span>姿勢：<strong className="text-amber-400 font-bold">站姿爬坡 (Standing Climb)</strong></span>
                       <span>阻力：<strong className="text-white font-bold">微調 2 圈</strong></span>
                     </div>
-                    {/* Intensity Bar */}
+                    {}
                     <div className="h-2.5 w-full rounded-full bg-zinc-800 overflow-hidden flex">
                       <div className="h-full bg-blue-500 w-1/5" />
                       <div className="h-full bg-teal-500 w-1/5" />
@@ -351,9 +350,9 @@ export default function Hero() {
                   </div>
                 </div>
 
-                {/* Next Cue Alert & Audio Bar */}
+                {}
                 <div className="flex flex-col justify-between h-full p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800/60">
-                  {/* Next Alert */}
+                  {}
                   <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4">
                     <div className="flex items-center justify-between text-xs font-bold text-amber-400">
                       <span>⚡ 下一動作預告 (NEXT CUE)</span>
@@ -362,13 +361,13 @@ export default function Hero() {
                     <p className="mt-1 text-sm font-semibold text-white">坐姿平路緩和衝刺・目標 100 RPM</p>
                   </div>
 
-                  {/* Audio Controls Mockup */}
+                  {}
                   <div className="mt-4 pt-4 border-t border-zinc-800">
                     <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
                       <span className="truncate">🎵 Track 03 - Titanium (Remix)</span>
                       <span className="font-mono text-emerald-400">128 BPM (1.05x)</span>
                     </div>
-                    {/* Fake Waveform */}
+                    {}
                     <div className="flex items-end gap-0.5 h-8 w-full">
                       {[30, 45, 60, 80, 50, 95, 70, 85, 40, 60, 75, 90, 100, 65, 80, 45, 70, 85, 90, 60, 40, 75, 90, 85, 55, 65, 80, 95, 70, 50].map((h, i) => (
                         <div

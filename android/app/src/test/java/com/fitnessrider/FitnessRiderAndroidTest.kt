@@ -72,7 +72,7 @@ class FitnessRiderAndroidTest {
         assertEquals(HandPosition.POSITION_1, HandPosition.fromValue(1))
         assertEquals(HandPosition.POSITION_2, HandPosition.fromValue(2))
         assertEquals(HandPosition.POSITION_3, HandPosition.fromValue(3))
-        assertEquals(HandPosition.POSITION_1, HandPosition.fromValue(99)) // default fallback
+        assertEquals(HandPosition.POSITION_1, HandPosition.fromValue(99))
     }
 
     @Test
@@ -93,27 +93,21 @@ class FitnessRiderAndroidTest {
     fun testWorkoutDurationFormatting() {
         val workout = WorkoutClass(
             title = "測試課表",
-            totalDurationMs = 2700000 // 45 minutes
+            totalDurationMs = 2700000
         )
         assertEquals("45:00", workout.formattedDuration)
 
         val segment = WorkoutSegment(
             title = "測試段落",
-            durationMs = 185000 // 3m 5s
+            durationMs = 185000
         )
         assertEquals("03:05", segment.formattedDuration)
     }
 
-    // Layer 1 第 1 項延伸：匯入音樂後 WorkoutClass.totalDurationMs / estimatedCalories 要能從
-    // segments 正確重算，不能停在匯入前的舊值（或 0）。公式必須與 iOS
-    // WorkoutClass.recalculateTotals()（Models/WorkoutClass.swift:41-59）算出同一個數字：
-    // 用同一組輸入（118000/93000/206000ms、zone 1/3/5）在 FitnessRiderTests.swift 也驗證了
-    // 417000ms 總時長、85.8 kcal，兩邊算出來要一致。
     @Test
     fun testWithRecalculatedTotalsMatchesSegmentsAndIosFormula() {
         val workoutClass = WorkoutClass(
             title = "測試課表",
-            // 故意帶入跟 segments 對不上的舊值，模擬匯入前的 stale 狀態
             totalDurationMs = 999,
             estimatedCalories = 999.0,
             segments = listOf(
@@ -128,12 +122,10 @@ class FitnessRiderAndroidTest {
         assertEquals(417_000, recalculated.totalDurationMs)
         assertEquals(85.8, recalculated.estimatedCalories, 0.001)
 
-        // 沒有段落時要歸零，不能維持舊值
         val empty = workoutClass.copy(segments = emptyList()).withRecalculatedTotals()
         assertEquals(0, empty.totalDurationMs)
         assertEquals(0.0, empty.estimatedCalories, 0.001)
 
-        // 未知 intensityZone（例如 0 或超出 1..5）要 fallback 到預設 10 kcal/min，跟 iOS 的 default 分支一致
         val unknownZone = WorkoutClass(
             segments = listOf(WorkoutSegment(durationMs = 60_000, intensityZone = 0))
         ).withRecalculatedTotals()
@@ -145,19 +137,15 @@ class FitnessRiderAndroidTest {
     fun testTempoClampingAndPercentageStepping() {
         var currentRate = 1.0
 
-        // +2% step
         currentRate += 0.02
         assertEquals(1.02, (currentRate * 100).roundToInt() / 100.0, 0.001)
 
-        // -4% step
         currentRate -= 0.04
         assertEquals(0.98, (currentRate * 100).roundToInt() / 100.0, 0.001)
 
-        // Upper limit clamp (1.15)
         var clampedRate = 1.50.coerceIn(0.85, 1.15)
         assertEquals(1.15, clampedRate, 0.001)
 
-        // Lower limit clamp (0.85)
         clampedRate = 0.50.coerceIn(0.85, 1.15)
         assertEquals(0.85, clampedRate, 0.001)
     }
@@ -209,12 +197,10 @@ class FitnessRiderAndroidTest {
             )
         )
 
-        // Serialize to JSON
         val json = RiderClassArchiveService.serializeClassToJson(testClass)
         assertTrue(json.contains("\"handPosition\": 3"))
         assertTrue(json.contains("站立的姿勢來爬坡，鍛練股四頭肌的力量"))
 
-        // Deserialize back
         val decoded = RiderClassArchiveService.deserializeJsonToClass(json)
         assertEquals("test-class-1", decoded.id)
         assertEquals("高燃脂耐力騎行", decoded.title)
@@ -234,25 +220,21 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testM4RealtimeCalorieAccumulationAndBounds() {
-        val totalClassSec = 3000 // 50 minutes
+        val totalClassSec = 3000
         val totalCalories = 500.0
 
-        // At start (0s)
         var elapsedSec = 0
         var ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
         assertEquals(0, (totalCalories * ratio).toInt())
 
-        // At midpoint (1500s)
         elapsedSec = 1500
         ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
         assertEquals(250, (totalCalories * ratio).toInt())
 
-        // At end (3000s)
         elapsedSec = 3000
         ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
         assertEquals(500, (totalCalories * ratio).toInt())
 
-        // Overtime clamp (3200s)
         elapsedSec = 3200
         ratio = (elapsedSec.toDouble() / totalClassSec).coerceIn(0.0, 1.0)
         assertEquals(500, (totalCalories * ratio).toInt())
@@ -275,19 +257,16 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testM4AudioSeekingBounds() {
-        val duration = 180.0 // 3 minutes
+        val duration = 180.0
 
-        // Seek -10 from 5s -> clamped to 0.0
         var currentOffset = 5.0
         var targetOffset = (currentOffset - 10.0).coerceIn(0.0, duration)
         assertEquals(0.0, targetOffset, 0.001)
 
-        // Seek +10 from 30s -> 40s
         currentOffset = 30.0
         targetOffset = (currentOffset + 10.0).coerceIn(0.0, duration)
         assertEquals(40.0, targetOffset, 0.001)
 
-        // Seek +10 from 175s -> clamped to 180s
         currentOffset = 175.0
         targetOffset = (currentOffset + 10.0).coerceIn(0.0, duration)
         assertEquals(180.0, targetOffset, 0.001)
@@ -299,59 +278,48 @@ class FitnessRiderAndroidTest {
         val buildTime = manager.buildTimeMs
         val oneDayMs = 86_400_000L
 
-        // 1. Same day as build -> not expired, ~7 days remaining
         val day0 = buildTime
         org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day0))
         assertEquals(7, manager.getRemainingDays(overrideCurrentTimeMs = day0))
 
-        // 2. Day 3 -> not expired, 4 days remaining
         val day3 = buildTime + (3 * oneDayMs)
         org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day3))
         assertEquals(4, manager.getRemainingDays(overrideCurrentTimeMs = day3))
 
-        // 3. Day 6 -> not expired, 1 day remaining
         val day6 = buildTime + (6 * oneDayMs)
         org.junit.Assert.assertFalse(manager.isExpired(overrideCurrentTimeMs = day6))
         assertEquals(1, manager.getRemainingDays(overrideCurrentTimeMs = day6))
 
-        // 4. Day 7 -> reached/exceeded 7-day lifecycle -> expired!
         val day7 = buildTime + (7 * oneDayMs)
         org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day7))
         assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day7))
 
-        // 5. Day 10 -> expired
         val day10 = buildTime + (10 * oneDayMs)
         org.junit.Assert.assertTrue(manager.isExpired(overrideCurrentTimeMs = day10))
         assertEquals(0, manager.getRemainingDays(overrideCurrentTimeMs = day10))
 
-        // 6. Formatting tests
         org.junit.Assert.assertTrue(manager.getFormattedBuildDate().isNotEmpty())
         org.junit.Assert.assertTrue(manager.getFormattedExpirationDate().isNotEmpty())
         org.junit.Assert.assertTrue(manager.updateUrl.startsWith("https://"))
 
-        // 7. Persistence & Anti-Clock Rollback verification with mock Context
         val fakePrefs = FakeSharedPreferences()
         fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, buildTime).apply()
         val fakeContext = MockContext(fakePrefs)
 
-        // Normal launch on Day 3
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day3))
         org.junit.Assert.assertFalse(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
         assertEquals(day3, fakePrefs.getLong(manager.KEY_LAST_LAUNCH_TIME, 0L))
         assertEquals(4, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day3))
 
-        // Advance warning range on Day 5 (2 days remaining, in 1..7 range)
         val day5 = buildTime + (5 * oneDayMs)
         val remainingDay5 = manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day5)
         assertEquals(2, remainingDay5)
         org.junit.Assert.assertTrue(remainingDay5 in 1..7)
 
-        // Expired launch on Day 10 -> must persist KEY_IS_EXPIRED = true
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
         org.junit.Assert.assertTrue(fakePrefs.getBoolean(manager.KEY_IS_EXPIRED, false))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day10))
 
-        // Time Rollback Attempt: Clock rolled back to Day 2 after expiration
         val day2 = buildTime + (2 * oneDayMs)
         org.junit.Assert.assertTrue("Rollback attempt after expiration must remain expired", manager.isExpired(fakeContext, overrideCurrentTimeMs = day2))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day2))
@@ -366,21 +334,17 @@ class FitnessRiderAndroidTest {
 
         val firstLaunchTime = 1775000000_000L
 
-        // Day 0: 首次啟動當天 -> 剩餘 7 天，未過期
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
         assertEquals(7, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = firstLaunchTime))
 
-        // Day 3: 試用第 3 天 -> 剩餘 4 天
         val day3 = firstLaunchTime + (3 * oneDayMs)
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day3))
         assertEquals(4, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day3))
 
-        // Day 7: 滿 7 天 -> 過期，剩餘 0 天
         val day7 = firstLaunchTime + (7 * oneDayMs)
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day7))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day7))
 
-        // 格式驗證
         org.junit.Assert.assertTrue(manager.getFormattedTrialStartDate(fakeContext).isNotEmpty())
     }
 
@@ -394,24 +358,20 @@ class FitnessRiderAndroidTest {
         val firstLaunchTime = 1775000000_000L
         fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunchTime).apply()
 
-        // 1. 滿 10 天，基準 7 天試用已過期
         val day10 = firstLaunchTime + (10 * oneDayMs)
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
 
-        // 2. 首次輸入 2026 年度推廣代碼 26FR-NR -> 成功兌換 30 天 VIP 試用
         val promoRes = manager.activateLicenseCode(fakeContext, "26FR-NR", overrideCurrentTimeMs = day10)
         org.junit.Assert.assertTrue(promoRes.first)
         org.junit.Assert.assertTrue(promoRes.second.contains("30 天"))
         org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day10))
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
 
-        // 3. 同一台設備再次輸入 26FR-NR -> 失敗，防止重複領取（單機防刷）
         val duplicateRes = manager.activateLicenseCode(fakeContext, "26FR-NR", overrideCurrentTimeMs = day10)
         org.junit.Assert.assertFalse(duplicateRes.first)
         org.junit.Assert.assertTrue(duplicateRes.second.contains("無法重複領取") || duplicateRes.second.contains("已兌換過"))
     }
 
-    /** 產生一組測試用 P-256 金鑰對，`signVipSerial` 用它簽出符合 vipSerial 格式的序號字串。 */
     private fun generateTestEcKeyPair() = KeyPairGenerator.getInstance("EC").apply {
         initialize(ECGenParameterSpec("secp256r1"))
     }.generateKeyPair()
@@ -421,7 +381,7 @@ class FitnessRiderAndroidTest {
             serialIdHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
         }
         val buf = java.nio.ByteBuffer.allocate(7)
-        buf.put(1) // version
+        buf.put(1)
         buf.put(serialIdBytes)
         buf.putShort(planDays.toShort())
         return buf.array()
@@ -449,32 +409,25 @@ class FitnessRiderAndroidTest {
         fakePrefs.edit().putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunchTime).apply()
         val day35 = firstLaunchTime + (35 * oneDayMs)
 
-        // 1. 滿 35 天已過期
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
         assertEquals(0, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
 
-        // 2. 輸入無效序號 -> 失敗，依然過期
         val invalidRes = manager.activateLicenseCode(fakeContext, "INVALID-CODE-1234")
         org.junit.Assert.assertFalse(invalidRes.first)
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
 
-        // 2b. 舊有寫死序號 / 舊規則（前綴 10 字元、長度 >= 14 就放行）現在必須被拒絕 ——
-        // 這是 spec 項目 B 要修的安全漏洞：RIDER-VIP-0000 這種假序號以前會被放行。
         org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "RIDER-VIP-2026-PASS").first)
         org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "RIDER-VIP-0000").first)
         org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "FITNESS-PRO-ANNUAL-KEY").first)
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
 
-        // 3. 用測試金鑰簽出一組合法序號（365 天），並用同一把測試公鑰驗證 -> 成功開通，立即解鎖！
         val testKeyPair = generateTestEcKeyPair()
         val testPublicKeyB64 = Base64.getEncoder().encodeToString(testKeyPair.public.encoded)
         val validSerial = signVipSerial(testKeyPair.private, "AABBCCDD", 365)
 
-        // 3a. 用「正式」內建公鑰驗證會失敗（測試序號不是正式私鑰簽的，證明無法偽造）。
         org.junit.Assert.assertNull(VipSerialVerifier.verify(validSerial))
         org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, validSerial).first)
 
-        // 3b. 用測試公鑰驗證/開通 -> 成功，解出天數正確、立即解鎖。
         val validRes = manager.activateLicenseCode(fakeContext, validSerial, testVipPublicKeyOverride = testPublicKeyB64)
         org.junit.Assert.assertTrue(validRes.first)
         org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day35))
@@ -490,22 +443,18 @@ class FitnessRiderAndroidTest {
 
         val serial = signVipSerial(keyPairA.private, "01020304", 30)
 
-        // 正確金鑰、原始內容 -> 驗證成功，且天數/序號 ID 解析正確
         val info = VipSerialVerifier.verify(serial, publicKeyA)
         assertEquals("01020304", info?.serialId)
         assertEquals(30, info?.planDays)
 
-        // 用另一把金鑰簽的序號，拿 A 的公鑰驗 -> 必須失敗（偽造序號必須被拒）
         val serialSignedByB = signVipSerial(keyPairB.private, "01020304", 30)
         org.junit.Assert.assertNull(VipSerialVerifier.verify(serialSignedByB, publicKeyA))
 
-        // 竄改 payload（改變天數）但沿用原簽章 -> 必須失敗
-        val tamperedPayloadHex = "0101020304012C" // planDays 改成 0x012C=300，其餘不變
+        val tamperedPayloadHex = "0101020304012C"
         val originalSigHex = serial.substringAfterLast('-')
         val tampered = "FRVIP-$tamperedPayloadHex-$originalSigHex"
         org.junit.Assert.assertNull(VipSerialVerifier.verify(tampered, publicKeyA))
 
-        // 完全不是 vipSerial 格式（例如舊的寫死序號）-> 必須失敗
         org.junit.Assert.assertNull(VipSerialVerifier.verify("RIDER-VIP-2026-PASS", publicKeyA))
         org.junit.Assert.assertNull(VipSerialVerifier.verify("RIDER-VIP-0000000000", publicKeyA))
     }
@@ -521,7 +470,6 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertTrue(VersionLifecycleManager.isPromoCode(currentYearCode))
         org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(pastYearCode))
         org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(futureYearCode))
-        // 這是 spec 項目 G 要修的漏洞：未來年份代碼（如 99FR-NR）以前會被誤判為「永遠不過期」而放行。
         org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(farFutureYearCode))
     }
 
@@ -531,8 +479,6 @@ class FitnessRiderAndroidTest {
         val fakePrefs = FakeSharedPreferences()
         val fakeContext = MockContext(fakePrefs)
 
-        // KEY_VIP_ACTIVE = true 但完全沒有寫入 KEY_VIP_EXPIRES（等同遺失/預設值 0）——
-        // 這是 spec 項目 C 要修的漏洞：expires == 0 以前會被當成「永久有效」。
         fakePrefs.edit().putBoolean(manager.KEY_VIP_ACTIVE, true).apply()
 
         org.junit.Assert.assertFalse(manager.isVipActive(fakeContext))
@@ -541,13 +487,10 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testMustUpdateNeverLocksWhenBackendUnreachableOrDisabled() {
-        // min_supported_version_code <= 0（含拿不到後端資訊時的預設值 0）-> 永不強制更新。
         org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(0, currentVersionCode = 1))
         org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(-1, currentVersionCode = 1))
-        // 目前版本已經 >= 門檻 -> 不強制更新
         org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 5))
         org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 6))
-        // 只有「門檻 > 0 且目前版本確實落後」才會強制更新
         org.junit.Assert.assertTrue(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 4))
     }
 
@@ -621,8 +564,6 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertEquals("VIP expiresMs must be calculated from overrideCurrentTimeMs", expectedExpiresMs, actualExpiresMs)
     }
 
-    // 付費年繳 VIP 生效中時輸入推廣碼，必須被拒絕且不得蓋掉原本的到期日。
-    // 伺服器會回 VIP_ALREADY_ACTIVE，但離線時沒有伺服器可以擋，本機這條防線是唯一保障。
     @Test
     fun testPromoCodeCannotDowngradeActivePaidVip() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
@@ -633,7 +574,6 @@ class FitnessRiderAndroidTest {
         val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
         val serial = signVipSerial(keyPair.private, "0A0B0C0D", 365)
 
-        // 裝置今天首次啟動，並以合法序號開通 365 天付費 VIP
         val mockNow = 1_800_000_000_000L
         manager.getFirstLaunchTimeMs(fakeContext, overrideCurrentTimeMs = mockNow)
         org.junit.Assert.assertTrue(
@@ -647,7 +587,6 @@ class FitnessRiderAndroidTest {
         val paidExpiresMs = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
         org.junit.Assert.assertEquals(mockNow + 365L * 86_400_000L, paidExpiresMs)
 
-        // 此時輸入當年度推廣碼 -> 必須被拒絕
         val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
         val promoCode = String.format("%02dFR-NR", currentYear)
         val (promoOk, promoMsg) = manager.activateLicenseCode(
@@ -658,7 +597,6 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertFalse("Promo code must not override an active paid VIP", promoOk)
         org.junit.Assert.assertTrue(promoMsg.contains("已有生效中的專業年繳版"))
 
-        // 到期日與方案名稱都不能被改動，推廣碼也不得被計入已兌換清單
         org.junit.Assert.assertEquals(paidExpiresMs, fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L))
         org.junit.Assert.assertEquals("專業年繳版 (VIP)", manager.getVipPlanName(fakeContext))
         org.junit.Assert.assertFalse(
@@ -666,9 +604,6 @@ class FitnessRiderAndroidTest {
         )
     }
 
-    // 線上開通（LicenseVerificationService.activateCode 送出請求前）與離線開通共用這支判斷 ——
-    // 付費序號若當初是離線開通的，伺服器查無付費授權就會放行推廣碼並回傳 anchor+30 天，
-    // 所以請求送出之前就得擋下來。同時不得誤擋推廣續領與一般試用中的裝置。
     @Test
     fun testPromoBlockedByPaidVipMessageOnlyBlocksPaidVip() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
@@ -678,10 +613,8 @@ class FitnessRiderAndroidTest {
         val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
         val promoCode = String.format("%02dFR-NR", currentYear)
 
-        // 還沒有任何 VIP（一般試用中）-> 放行
         org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
 
-        // 推廣方案生效中（含跨年的舊代碼、伺服器線上兌換寫入的 promo_verified）-> 放行
         prefs.edit()
             .putBoolean(manager.KEY_VIP_ACTIVE, true)
             .putLong(manager.KEY_VIP_EXPIRES, now + 86_400_000L)
@@ -691,22 +624,17 @@ class FitnessRiderAndroidTest {
         prefs.edit().putString(manager.KEY_VIP_CODE, "promo_verified").apply()
         org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
 
-        // 付費年繳 VIP 生效中 -> 擋下
         prefs.edit().putString(manager.KEY_VIP_CODE, "FRVIP-01020304FFFF-AABB").apply()
         org.junit.Assert.assertTrue(
             manager.promoBlockedByPaidVipMessage(ctx, promoCode, now)?.contains("已有生效中的專業年繳版") == true
         )
 
-        // 付費序號本身不是推廣碼，永遠不該被這支擋下
         org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, "FRVIP-01020304FFFF-AABB", now))
 
-        // VIP 已過期 -> 放行（過期的付費授權不該擋住推廣體驗）
         prefs.edit().putLong(manager.KEY_VIP_EXPIRES, now - 1L).apply()
         org.junit.Assert.assertNull(manager.promoBlockedByPaidVipMessage(ctx, promoCode, now))
     }
 
-    // isPromoVipCode 不看年度：跨年後 26FR-NR 換來、尚未到期的授權仍是推廣方案，
-    // 否則 getVipPlanName 會把它誤標成付費年繳版，且推廣防降級判斷會誤擋隔年的新代碼。
     @Test
     fun testIsPromoVipCodeIsYearAgnostic() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
@@ -737,25 +665,20 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertTrue(redeemed?.contains("26FR-NR") == true)
     }
 
-    // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
     @Test
     fun testResolveUniqueMusicFileNameAppendsSuffixOnCollision() {
-        // 沒有碰撞，原樣傳回
         assertEquals("track.mp3", resolveUniqueMusicFileName("track.mp3", emptySet()))
 
-        // 撞名一次 -> _1
         assertEquals(
             "track_1.mp3",
             resolveUniqueMusicFileName("track.mp3", setOf("track.mp3"))
         )
 
-        // 撞名兩次（_1 也已存在）-> _2
         assertEquals(
             "track_2.mp3",
             resolveUniqueMusicFileName("track.mp3", setOf("track.mp3", "track_1.mp3"))
         )
 
-        // 沒有副檔名的檔案也要能正確加後綴
         assertEquals("track_1", resolveUniqueMusicFileName("track", setOf("track")))
     }
 
@@ -765,7 +688,6 @@ class FitnessRiderAndroidTest {
         assertEquals("no_extension", musicTitleFromFileName("no_extension"))
     }
 
-    // Layer 1 第 3 項：選 N 首歌就要建立 N 個段落，標題＝曲名、長度＝曲長，依序對應不覆蓋。
     @Test
     fun testBuildSegmentsForImportedTracksMapsEachUriToOneSegment() {
         val tracks = listOf(
@@ -780,58 +702,47 @@ class FitnessRiderAndroidTest {
             startOrderIndex = 2
         )
 
-        // N 個檔案 -> N 個段落
         assertEquals(3, segments.size)
 
-        // 依序對應、orderIndex 接續現有段落數量往後排
         assertEquals(2, segments[0].orderIndex)
         assertEquals(3, segments[1].orderIndex)
         assertEquals(4, segments[2].orderIndex)
         segments.forEach { assertEquals("class-1", it.classId) }
 
-        // 標題＝曲名（去副檔名），長度＝曲長
         assertEquals("track_1", segments[0].title)
         assertEquals("曲目二", segments[1].title)
         assertEquals(245_000, segments[1].durationMs)
 
-        // 分析失敗（durationMs/bpm 為 0）時 fallback 回預設值，而不是寫入 0
         assertEquals(300_000, segments[0].durationMs)
         assertEquals(128.0, segments[0].baseBpm, 0.001)
         assertEquals(132.5, segments[1].baseBpm, 0.001)
         assertEquals(180_000, segments[2].durationMs)
         assertEquals(128.0, segments[2].baseBpm, 0.001)
 
-        // 每個新段落都要有預設 cue，維持既有行為
         segments.forEach { assertTrue(it.cues.isNotEmpty()) }
     }
 
-    // Layer 2：音樂庫列表要從檔名 + 波形快取建立，快取命中時直接讀值、不重新分析；
-    // 查無快取（理論上不該發生，但保底）才 fallback 回段落預設值，且一律依曲名排序。
     @Test
     fun testBuildMusicLibraryTracksReadsCacheAndSortsByTitle() {
         val cache = mapOf(
             "b_track.mp3" to (210_000 to 118.0),
             "a_track.mp3" to (190_000 to 126.0)
-            // "c_no_cache.mp3" 故意沒有快取
         )
         val tracks = buildMusicLibraryTracks(
             fileNames = listOf("b_track.mp3", "c_no_cache.mp3", "a_track.mp3")
         ) { cache[it] }
 
-        // 依曲名排序：a_track -> b_track -> c_no_cache
         assertEquals(listOf("a_track", "b_track", "c_no_cache"), tracks.map { it.title })
 
         val aTrack = tracks.first { it.fileName == "a_track.mp3" }
         assertEquals(190_000, aTrack.durationMs)
         assertEquals(126.0, aTrack.bpm, 0.001)
 
-        // 沒有快取 -> fallback 回段落預設值，不是 0
         val noCacheTrack = tracks.first { it.fileName == "c_no_cache.mp3" }
         assertEquals(300_000, noCacheTrack.durationMs)
         assertEquals(128.0, noCacheTrack.bpm, 0.001)
     }
 
-    // Layer 2：即時搜尋要比照舊版 FragDialogSelectMusic，不分大小寫比對曲名子字串。
     @Test
     fun testFilterMusicLibraryTracksMatchesTitleCaseInsensitive() {
         val tracks = listOf(
@@ -846,8 +757,6 @@ class FitnessRiderAndroidTest {
         assertEquals(0, filterMusicLibraryTracks(tracks, "不存在的曲名").size)
     }
 
-    // Layer 2 第 3、4 項：從音樂庫多選既有曲目 -> 直接建立 N 個段落，沿用已存在的檔名與快取
-    // 的 duration/BPM，不需要（也不應該）再產生任何檔案複製或重新分析。
     @Test
     fun testBuildSegmentsFromLibrarySelectionReusesExistingFilesWithoutCopying() {
         val selected = listOf(
@@ -864,7 +773,6 @@ class FitnessRiderAndroidTest {
         assertEquals(2, segments.size)
         assertEquals(3, segments[0].orderIndex)
         assertEquals(4, segments[1].orderIndex)
-        // 檔名原封不動沿用（沒有 resolveUniqueMusicFileName 加後綴，因為根本沒有複製動作）
         assertEquals("climb_anthem.mp3", segments[0].musicFileName)
         assertEquals("sprint_fire.mp3", segments[1].musicFileName)
         assertEquals("climb_anthem", segments[0].title)
@@ -874,8 +782,6 @@ class FitnessRiderAndroidTest {
         assertEquals(140.0, segments[1].baseBpm, 0.001)
     }
 
-    // Layer 3 第 1、2 項：外部資料夾曲目一律以 content Uri 字串表示，天然以 "content://" 開頭，
-    // 讓播放/波形分析/匯出等消費端可以用同一個欄位（musicFileName）判斷來源，不必額外加欄位。
     @Test
     fun testMusicSourceIsExternalUriDetectsContentScheme() {
         assertTrue(MusicSource.isExternalUri("content://com.android.externalstorage.documents/tree/1234/document/5678"))
@@ -883,19 +789,15 @@ class FitnessRiderAndroidTest {
         assertFalse(MusicSource.isExternalUri(""))
     }
 
-    // Layer 3：資料夾掃描要能用副檔名或 MIME type 過濾出音樂檔，排除資料夾裡的其他檔案。
     @Test
     fun testIsAudioDocumentMatchesByMimeOrExtension() {
         assertTrue(isAudioDocument("track.mp3", "audio/mpeg"))
-        assertTrue(isAudioDocument("track.MP3", null)) // 沒有 MIME 時退回副檔名比對，且不分大小寫
+        assertTrue(isAudioDocument("track.MP3", null))
         assertTrue(isAudioDocument("track.m4a", null))
         assertFalse(isAudioDocument("cover.jpg", "image/jpeg"))
         assertFalse(isAudioDocument("readme.txt", null))
     }
 
-    // Layer 3：從外部資料夾多選曲目 -> 建立段落時，musicFileName 直接存 content Uri 字串，
-    // 不會（也不能）像 Layer 1 的 resolveUniqueMusicFileName 一樣加後綴，因為根本沒有複製、
-    // 不會有檔名衝突的問題；時長/BPM 先用預設值，等教練實際選到該段落時才由 WaveformAnalyzer 分析。
     @Test
     fun testBuildSegmentsFromExternalSelectionUsesContentUriAsMusicFileName() {
         val entries = listOf(
@@ -921,7 +823,6 @@ class FitnessRiderAndroidTest {
         assertTrue(MusicSource.isExternalUri(segments[0].musicFileName))
     }
 
-    // Layer 3：資料夾列表的即時搜尋跟 Layer 2 音樂庫是同一套邏輯，比對顯示檔名子字串。
     @Test
     fun testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {
         val entries = listOf(
@@ -935,14 +836,12 @@ class FitnessRiderAndroidTest {
         assertEquals(0, filterExternalMusicEntries(entries, "不存在").size)
     }
 
-    // 已知落差修復：匯入失敗時已寫入一半的檔案要清掉，不能在 Music 目錄留下截斷檔佔用檔名。
     @Test
     fun testCopyMusicFileOrCleanupDeletesPartialFileOnMidStreamFailure() {
         val tempDir = kotlin.io.path.createTempDirectory(prefix = "music_import_test").toFile()
         try {
             val destFile = java.io.File(tempDir, "track.mp3")
 
-            // 模擬讀到一半就斷線的來源串流：先吐幾個 byte，再丟例外。
             val flakyInput = object : InputStream() {
                 var bytesServed = 0
                 override fun read(): Int {
@@ -961,7 +860,6 @@ class FitnessRiderAndroidTest {
         }
     }
 
-    // 對照組：完整複製成功時檔案要存在、內容要完整，且回報 true。
     @Test
     fun testCopyMusicFileOrCleanupSucceedsAndWritesFullContent() {
         val tempDir = kotlin.io.path.createTempDirectory(prefix = "music_import_test").toFile()
@@ -979,7 +877,6 @@ class FitnessRiderAndroidTest {
         }
     }
 
-    // 資安加固：匯入 .riderclass 時若包含 ../ 等路徑穿透檔名，必須被阻擋，不能寫入 musicDir 以外目錄。
     @Test
     fun testZipSlipPathTraversalBlocked() {
         val baseDir = kotlin.io.path.createTempDirectory("music_base").toFile()
@@ -1003,26 +900,20 @@ class FitnessRiderAndroidTest {
         }
     }
 
-    // MARK: - M2 Audio Crossfade Tests
-
     @Test
     fun testEqualPowerCrossfadeCalculation() {
-        // 1. Boundary t = 0.0
         val (out0, in0) = CrossfadeCalculator.calculateEqualPowerVolumes(0.0)
         assertEquals(1.0f, out0, 0.0001f)
         assertEquals(0.0f, in0, 0.0001f)
 
-        // 2. Boundary t = 1.0
         val (out1, in1) = CrossfadeCalculator.calculateEqualPowerVolumes(1.0)
         assertEquals(0.0f, out1, 0.0001f)
         assertEquals(1.0f, in1, 0.0001f)
 
-        // 3. Midpoint t = 0.5 -> Equal power ≈ √2 / 2 ≈ 0.7071f
         val (outMid, inMid) = CrossfadeCalculator.calculateEqualPowerVolumes(0.5)
         assertEquals(0.7071f, outMid, 0.001f)
         assertEquals(0.7071f, inMid, 0.001f)
 
-        // 4. Equal-Power acoustic energy conservation: out^2 + in^2 = 1.0f
         val testPoints = listOf(0.0, 0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0)
         for (p in testPoints) {
             val (vOut, vIn) = CrossfadeCalculator.calculateEqualPowerVolumes(p)
@@ -1030,7 +921,6 @@ class FitnessRiderAndroidTest {
             assertEquals("Power should be 1.0 at progress $p", 1.0f, totalPower, 0.001f)
         }
 
-        // 5. Clamping for out-of-bounds progress
         val (outNeg, inNeg) = CrossfadeCalculator.calculateEqualPowerVolumes(-0.5)
         assertEquals(1.0f, outNeg, 0.0001f)
         assertEquals(0.0f, inNeg, 0.0001f)
@@ -1042,7 +932,6 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testEffectiveCrossfadeDuration() {
-        // Auto-pause enabled -> must be 0.0 (strictly mutually exclusive)
         val autoPauseDuration = CrossfadeCalculator.effectiveDuration(
             requestedDuration = 2.0,
             segmentDuration = 60.0,
@@ -1050,7 +939,6 @@ class FitnessRiderAndroidTest {
         )
         assertEquals(0.0, autoPauseDuration, 0.0001)
 
-        // Requested 0.0 -> must be 0.0
         val zeroDuration = CrossfadeCalculator.effectiveDuration(
             requestedDuration = 0.0,
             segmentDuration = 60.0,
@@ -1058,7 +946,6 @@ class FitnessRiderAndroidTest {
         )
         assertEquals(0.0, zeroDuration, 0.0001)
 
-        // Normal track -> returns requested duration
         val normalDuration = CrossfadeCalculator.effectiveDuration(
             requestedDuration = 2.0,
             segmentDuration = 60.0,
@@ -1066,7 +953,6 @@ class FitnessRiderAndroidTest {
         )
         assertEquals(2.0, normalDuration, 0.0001)
 
-        // Short track (1.0s) with 2.0s requested -> clamped to segmentDuration * 0.5 = 0.5s
         val shortDuration = CrossfadeCalculator.effectiveDuration(
             requestedDuration = 2.0,
             segmentDuration = 1.0,
@@ -1081,21 +967,17 @@ class FitnessRiderAndroidTest {
         val mockContext = MockContext(fakePrefs)
         val settings = AppSettings(mockContext)
 
-        // Default value should be 2.0
         assertEquals(2.0, settings.crossfadeDurationSeconds, 0.0001)
 
-        // Update to 3.0
         settings.crossfadeDurationSeconds = 3.0
         assertEquals(3.0, settings.crossfadeDurationSeconds, 0.0001)
 
-        // Update to 0.0 (off)
         settings.crossfadeDurationSeconds = 0.0
         assertEquals(0.0, settings.crossfadeDurationSeconds, 0.0001)
     }
 
     @Test
     fun testCrossfadeOptionsSecondsMatchAcrossPlatforms() {
-        // 客戶回報開發清單 A：選項定案 0/1/2/3/5/8 秒，Android／iOS 必須完全一致，預設仍為 2 秒。
         val options = AppSettings.CROSSFADE_OPTIONS_SECONDS
         assertEquals(listOf(0.0, 1.0, 2.0, 3.0, 5.0, 8.0), options)
         org.junit.Assert.assertTrue("預設值 2 秒必須仍是合法選項之一", options.contains(2.0))
@@ -1108,7 +990,6 @@ class FitnessRiderAndroidTest {
         val settings = AppSettings(mockContext)
         val originalValue = settings.isHapticFeedbackEnabled
 
-        // Default should be true
         assertTrue(settings.isHapticFeedbackEnabled)
 
         settings.isHapticFeedbackEnabled = false
@@ -1116,19 +997,6 @@ class FitnessRiderAndroidTest {
 
         settings.isHapticFeedbackEnabled = originalValue
     }
-
-    // MARK: - Crossfade Finish Reentrancy Guard Tests (code review fix)
-    //
-    // AudioEngineManager.finishCrossfade() used to clear `isCrossfading` and only
-    // flip `activePlayerIndex` AFTER pausing/clearing the outgoing ExoPlayer.
-    // Media3's clearMediaItems() can re-deliver a STATE_ENDED event for that same
-    // (now stale) player index while finishCrossfade() is still running, which
-    // used to satisfy the listener's `playerIndex == activePlayerIndex` guard and
-    // re-enter handleTrackEnded()'s "normal advance" branch — advancing
-    // currentSegmentIndex a second time and silently skipping a whole segment
-    // mid-class. CrossfadeFinishCoordinator is the extracted, ExoPlayer-free
-    // state machine that AudioEngineManager now delegates to; these tests drive
-    // it directly (no Context/ExoPlayer needed) to pin the fix.
 
     @Test
     fun testCrossfadeFinishRejectsReentrantStaleTrackEndedForOldPlayer() {
@@ -1138,16 +1006,7 @@ class FitnessRiderAndroidTest {
 
         var reentrantGuardPassed = false
         val finished = coordinator.finishCrossfade {
-            // Simulates Media3 re-delivering STATE_ENDED for the OLD player
-            // (index 0) from inside pause()/clearMediaItems() on it, exactly
-            // like AudioEngineManager's real teardown lambda does. At this point
-            // the coordinator has ALREADY flipped activePlayerIndex to 1, so a
-            // stale event still reporting playerIndex=0 must be rejected.
             if (coordinator.shouldHandleTrackEnded(endedPlayerIndex = 0)) {
-                // This is the regression this test exists to catch: if the guard
-                // ever passes here, the real handleTrackEnded() would advance
-                // currentSegmentIndex a SECOND time on top of finishCrossfade's
-                // own advance below, skipping a segment mid-class.
                 reentrantGuardPassed = true
                 coordinator.setSegmentIndex(coordinator.currentSegmentIndex + 1)
             }
@@ -1159,8 +1018,6 @@ class FitnessRiderAndroidTest {
         assertEquals(1, coordinator.activePlayerIndex)
         assertFalse(coordinator.isCrossfading)
 
-        // The NEW active player (index 1) reporting STATE_ENDED afterwards is a
-        // legitimate future event and must be accepted.
         assertTrue(coordinator.shouldHandleTrackEnded(endedPlayerIndex = 1))
     }
 
@@ -1171,9 +1028,6 @@ class FitnessRiderAndroidTest {
 
         var innerTearDownRan = false
         val outerFinished = coordinator.finishCrossfade {
-            // A second, directly reentrant finishCrossfade() call arriving while
-            // the first one is still committing (e.g. two STATE_ENDED events in
-            // the same event-loop turn) must be a complete no-op.
             val innerFinished = coordinator.finishCrossfade { innerTearDownRan = true }
             assertFalse(innerFinished)
         }
@@ -1196,25 +1050,6 @@ class FitnessRiderAndroidTest {
         assertEquals(0, coordinator.currentSegmentIndex)
         assertEquals(0, coordinator.activePlayerIndex)
     }
-
-    // MARK: - HapticFeedbackManager Context Leak / Thread-Safety Tests (code review fix)
-    //
-    // HapticFeedbackManager is a process-wide `object` that used to cache the
-    // Vibrator obtained from whatever Context the caller passed in. In practice
-    // that caller is AudioEngineManager, constructed with the *Activity*
-    // (MainActivity.kt: `AudioEngineManager(this)`), so caching a Vibrator
-    // resolved from it would pin that Activity for the app process's lifetime.
-    // `resolveVibratorHostContext` now always resolves via applicationContext.
-    //
-    // android.os.Vibrator's constructor is package-private (can't be subclassed
-    // from this module) and there's no Robolectric/Mockito here to mock one, so
-    // the caching itself is verified via SynchronizedOnceCache<T> directly (the
-    // exact class HapticFeedbackManager uses for its Vibrator cache) with a
-    // plain String payload — no Vibrator/Context needed for that part. The
-    // "don't leak the Activity" part is verified separately by checking
-    // resolveVibratorHostContext's actual behaviour with real
-    // android.content.ContextWrapper subclasses (the same technique the
-    // existing MockContext below already relies on).
 
     @Test
     fun testHapticFeedbackManagerResolvesHostFromApplicationContextNotActivityContext() {
@@ -1239,10 +1074,6 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testSynchronizedOnceCacheComputesExactlyOnceUnderConcurrency() {
-        // This is the same cache class HapticFeedbackManager.vibratorCache uses
-        // to memoize the resolved Vibrator; driving it directly with a plain
-        // String payload lets this test exercise real concurrent contention
-        // without needing a real android.os.Vibrator instance.
         val cache = SynchronizedOnceCache<String>()
         val computeCallCount = java.util.concurrent.atomic.AtomicInteger(0)
         val readyCount = java.util.concurrent.atomic.AtomicInteger(0)
@@ -1256,7 +1087,7 @@ class FitnessRiderAndroidTest {
                 startLatch.await()
                 val value = cache.getOrCompute {
                     computeCallCount.incrementAndGet()
-                    Thread.sleep(5) // widen the race window between the null-check and the write
+                    Thread.sleep(5)
                     "resolved"
                 }
                 results.add(value)
@@ -1285,12 +1116,10 @@ class FitnessRiderAndroidTest {
         val third = cache.getOrCompute { computeCallCount.incrementAndGet(); "c" }
 
         assertEquals("a", first)
-        assertEquals("a", second) // cached, compute() not called again
-        assertEquals("c", third) // recomputed after reset()
+        assertEquals("a", second)
+        assertEquals("c", third)
         assertEquals(2, computeCallCount.get())
     }
-
-    // MARK: - M6.3 Device Transfer Tests
 
     @Test
     fun testDeviceTransferResultModel() {
@@ -1320,19 +1149,16 @@ class FitnessRiderAndroidTest {
         val oneDayMs = 86_400_000L
         val lastTransferMs = 1775000000_000L
 
-        // 12 days later -> remaining = 18 days
         val twelveDaysLater = lastTransferMs + (12 * oneDayMs)
         val elapsedDays1 = (twelveDaysLater - lastTransferMs).toDouble() / oneDayMs
         val remaining1 = Math.max(0, Math.ceil(30.0 - elapsedDays1).toInt())
         assertEquals(18, remaining1)
 
-        // 29.2 days later -> remaining = 1 day
         val almostEnd = lastTransferMs + (29.2 * oneDayMs).toLong()
         val elapsedDays2 = (almostEnd - lastTransferMs).toDouble() / oneDayMs
         val remaining2 = Math.max(0, Math.ceil(30.0 - elapsedDays2).toInt())
         assertEquals(1, remaining2)
 
-        // 30.5 days later -> remaining = 0 days (can transfer)
         val afterCooldown = lastTransferMs + (30.5 * oneDayMs).toLong()
         val elapsedDays3 = (afterCooldown - lastTransferMs).toDouble() / oneDayMs
         val remaining3 = Math.max(0, Math.ceil(30.0 - elapsedDays3).toInt())
@@ -1351,9 +1177,6 @@ class FitnessRiderAndroidTest {
         val futureTime = 1800000000_000L
         assertTrue(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
 
-        // 換機成功後，LicenseVerificationService 直接信任伺服器已驗證過身分的結果
-        // （帳號密碼 / 已在伺服器驗過簽章的序號），呼叫 activateVipFromServer 寫入本機狀態 ——
-        // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖（spec 項目 B）。
         val expiresAtIso = java.time.Instant.ofEpochMilli(futureTime + 365L * 86_400_000L).toString()
         manager.activateVipFromServer(mockContext, expiresAtIso)
         assertTrue(manager.isVipActive(mockContext, overrideCurrentTimeMs = futureTime))
@@ -1365,17 +1188,14 @@ class FitnessRiderAndroidTest {
         fun seg(title: String, orderIndex: Int) = WorkoutSegment(title = title, orderIndex = orderIndex)
         val segments = listOf(seg("A", 0), seg("B", 1), seg("C", 2), seg("D", 3))
 
-        // 移動 A（index 0）到 index 2：B、C 應該往前補位，全部 orderIndex 都要重編號，不只是交換的兩個。
         val moved = segmentsAfterMove(segments, 0, 2)
         assertEquals(listOf("B", "C", "A", "D"), moved.map { it.title })
         assertEquals(listOf(0, 1, 2, 3), moved.map { it.orderIndex })
 
-        // 刪除中間一個段落，剩餘段落的 orderIndex 要從 0 連續，不留空隙。
         val removed = segmentsAfterRemoval(segments, 1)
         assertEquals(listOf("A", "C", "D"), removed.map { it.title })
         assertEquals(listOf(0, 1, 2), removed.map { it.orderIndex })
 
-        // reindexedSegments 對任意順序的陣列都應該按目前位置重編號。
         val shuffled = listOf(seg("X", 9), seg("Y", 4))
         val reindexed = reindexedSegments(shuffled)
         assertEquals(listOf(0, 1), reindexed.map { it.orderIndex })
@@ -1386,45 +1206,31 @@ class FitnessRiderAndroidTest {
         fun seg(title: String, orderIndex: Int) = WorkoutSegment(title = title, orderIndex = orderIndex)
         val segments = listOf(seg("A", 0), seg("B", 1), seg("C", 2))
 
-        // 第一個段落再上移、最後一個段落再下移，都超出範圍，應原樣傳回、不崩潰。
         val firstUpNoOp = segmentsAfterMove(segments, 0, -1)
         assertEquals(segments, firstUpNoOp)
         val lastDownNoOp = segmentsAfterMove(segments, segments.lastIndex, 1)
         assertEquals(segments, lastDownNoOp)
 
-        // 刪除超出範圍的 index 也應該原樣傳回。
         assertEquals(segments, segmentsAfterRemoval(segments, 5))
         assertEquals(segments, segmentsAfterRemoval(segments, -1))
     }
 
     @Test
     fun testSelectedSegmentIndexTracksMoveAndRemoval() {
-        // 只驗相鄰對調（offset ±1），也就是 UI 唯一會觸發的情況 —— 見 selectedIndexAfterMove 的註解。
-        // 選到的段落跟著它一起移動。
         assertEquals(1, selectedIndexAfterMove(0, 0, 1))
-        // 被換到另一邊的那一筆（原本站在目標位置）也要跟著換。
         assertEquals(0, selectedIndexAfterMove(1, 0, 1))
-        // 選到的段落跟這次移動無關，索引不變。
         assertEquals(3, selectedIndexAfterMove(3, 0, 1))
 
-        // 刪除排在選取段落之前的段落，選取索引要跟著往前補一格。
         assertEquals(1, selectedIndexAfterRemoval(2, 0, 2))
-        // 刪除排在選取段落之後的段落，選取索引不受影響。
         assertEquals(0, selectedIndexAfterRemoval(0, 2, 2))
-        // 刪掉最後一個段落（newSize = 0）不能產生負數或超出範圍的索引。
         assertEquals(0, selectedIndexAfterRemoval(0, 0, 0))
         assertTrue(selectedIndexAfterRemoval(0, 0, 0) >= 0)
     }
 
-    // HUD 播放中「右滑加速、左滑減速」手勢（客戶回報開發清單 B）：
-    // 位移 → 要不要調速、往哪調的純函式，與 iOS 的 rateStepForSwipe(dx:dy:threshold:) 同名同行為。
     @Test
     fun testRateStepForSwipeHorizontalPastThreshold() {
-        // 右滑超過門檻 → 加速一階 (+1)
         assertEquals(1, rateStepForSwipe(dx = 80f, dy = 0f, threshold = 60f))
-        // 左滑超過門檻 → 減速一階 (-1)
         assertEquals(-1, rateStepForSwipe(dx = -80f, dy = 0f, threshold = 60f))
-        // 滑得比門檻還遠，仍然只前進一階，不是「滑越遠調越多」
         assertEquals(1, rateStepForSwipe(dx = 500f, dy = 0f, threshold = 60f))
     }
 
@@ -1432,47 +1238,38 @@ class FitnessRiderAndroidTest {
     fun testRateStepForSwipeBelowThresholdIsIgnored() {
         assertEquals(0, rateStepForSwipe(dx = 40f, dy = 0f, threshold = 60f))
         assertEquals(0, rateStepForSwipe(dx = -59f, dy = 0f, threshold = 60f))
-        // 剛好等於門檻，未「超過」不算數
         assertEquals(0, rateStepForSwipe(dx = 60f, dy = 0f, threshold = 60f))
     }
 
     @Test
     fun testRateStepForSwipeVerticalDominantIsIgnored() {
-        // 垂直位移大於水平位移時一律忽略，避免誤觸
         assertEquals(0, rateStepForSwipe(dx = 70f, dy = 90f, threshold = 60f))
         assertEquals(0, rateStepForSwipe(dx = -70f, dy = 100f, threshold = 60f))
-        // 水平仍然略大於垂直（且過門檻）才算數
         assertEquals(1, rateStepForSwipe(dx = 90f, dy = 70f, threshold = 60f))
     }
 
-
     @Test
     fun testSegmentStepForSwipeVerticalPastThreshold() {
-        // 螢幕座標 y 向下為正：上滑（dy 負）＝下一首，下滑＝上一首
         assertEquals(1, segmentStepForSwipe(dx = 0f, dy = -100f, threshold = 80f))
         assertEquals(-1, segmentStepForSwipe(dx = 0f, dy = 100f, threshold = 80f))
-        // 未達門檻不動作；剛好等於門檻也不算（與變速手勢同一條規則）
         assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -60f, threshold = 80f))
         assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -80f, threshold = 80f))
-        // 水平為主一律忽略，交給變速手勢
         assertEquals(0, segmentStepForSwipe(dx = 200f, dy = -100f, threshold = 80f))
     }
 
-    // 變速與換曲靠「方向」分家，同一次滑動絕不能兩個都成立 ——
-    // 課堂中同時變速又跳掉一首歌是最糟的失敗模式。
     @Test
     fun testRateAndSegmentSwipesAreMutuallyExclusive() {
         val rateThreshold = 60f
         val segmentThreshold = 80f
         val swipes = listOf(
-            200f to 0f,      // 純水平
+            200f to 0f,
             -200f to 0f,
-            0f to 200f,      // 純垂直
+            0f to 200f,
             0f to -200f,
-            100f to 120f,    // 斜向死區：垂直略大但不到 1.5 倍，兩邊都不成立
+            100f to 120f,
             -100f to 120f,
-            100f to -160f,   // 垂直為主
-            160f to -100f    // 水平為主
+            100f to -160f,
+            160f to -100f
         )
         swipes.forEach { (dx, dy) ->
             val rate = rateStepForSwipe(dx, dy, rateThreshold)
@@ -1482,7 +1279,6 @@ class FitnessRiderAndroidTest {
                 rate != 0 && segment != 0
             )
         }
-        // 斜向安全死區：垂直大於水平、但還不到 1.5 倍時，兩個都不觸發
         assertEquals(0, rateStepForSwipe(100f, 120f, rateThreshold))
         assertEquals(0, segmentStepForSwipe(100f, 120f, segmentThreshold))
     }
@@ -1522,6 +1318,4 @@ class FitnessRiderAndroidTest {
         override fun getApplicationContext(): android.content.Context = this
     }
 }
-
-
 

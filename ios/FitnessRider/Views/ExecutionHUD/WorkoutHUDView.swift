@@ -1,15 +1,10 @@
 import SwiftUI
 import UIKit
 
-// HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
 private let rateSwipeThreshold: CGFloat = 60
 
-// 「上滑下一首、下滑上一首」：換曲在課堂中代價高，門檻抓得比變速大一些，要滑得果斷一點
 private let segmentSwipeThreshold: CGFloat = 80
 
-/// 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
-/// 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
-/// 一次滑動只前進一階，不做「滑越遠調越多」——與 Android 同名同行為。
 func rateStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     let absDx = abs(dx)
     let absDy = abs(dy)
@@ -18,18 +13,11 @@ func rateStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     return dx > 0 ? 1 : -1
 }
 
-/// 手勢位移 → 要不要換曲、換哪一首。回傳 +1（上滑，下一首）、-1（下滑，上一首）、0（忽略）。
-///
-/// 用「方向」而不是「位置」跟變速手勢分家：變速要求水平位移較大，換曲要求垂直位移大於
-/// 水平的 1.5 倍，兩者不可能同時成立，中間的斜向區間兩個都不觸發（刻意留的安全死區）。
-/// 課堂中教練目視前方、車上流汗，靠瞄準特定區塊區分手勢誤觸代價太高——滑錯方向頂多沒反應，
-/// 滑錯位置卻會跳掉一整首歌。與 Android 同名同行為。
 func segmentStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     let absDx = abs(dx)
     let absDy = abs(dy)
     if absDy <= absDx * 1.5 { return 0 }
     if absDy <= threshold { return 0 }
-    // 螢幕座標 y 軸向下為正：上滑（dy < 0）＝下一首，與清單往下捲動推進的直覺一致
     return dy < 0 ? 1 : -1
 }
 
@@ -96,7 +84,6 @@ public struct WorkoutHUDView: View {
 
     private var remainingCueSeconds: Int {
         guard let next = nextCue else {
-            // If no next cue, show remaining segment seconds
             return max(0, Int(audioManager.currentDurationSeconds - audioManager.currentOffsetSeconds))
         }
         let currentMs = Int(audioManager.currentOffsetSeconds * 1000)
@@ -144,13 +131,10 @@ public struct WorkoutHUDView: View {
             let isLandscape = geo.size.width > geo.size.height
 
             VStack(spacing: 0) {
-                // Signature #84BF09 Cockpit Header
                 cockpitHeader
 
-                // Main Stage
                 if isLandscape {
                     HStack(spacing: 0) {
-                        // Left Track Drawer
                         if isPlaylistDrawerOpen {
                             playlistDrawer
                                 .frame(width: geo.size.width * 0.28)
@@ -158,12 +142,10 @@ public struct WorkoutHUDView: View {
                             Divider()
                         }
 
-                        // Right Cockpit Core (Circle + Next Cue)
                         cockpitCore(isLandscape: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
-                    // Portrait Adaptive Layout (for phone handlebar mount)
                     VStack(spacing: 0) {
                         cockpitCore(isLandscape: false)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -173,7 +155,6 @@ public struct WorkoutHUDView: View {
             .background(FitnessRiderTheme.canvasWhite)
             .ignoresSafeArea(.keyboard)
             .onAppear {
-                // Keep screen awake during workout execution
                 if AppSettings.shared.keepScreenAwakeInHUD {
                     UIApplication.shared.isIdleTimerDisabled = true
                 }
@@ -184,7 +165,6 @@ public struct WorkoutHUDView: View {
                 audioManager.play()
             }
             .onDisappear {
-                // Restore normal screen sleep behavior
                 UIApplication.shared.isIdleTimerDisabled = false
                 audioManager.pause()
             }
@@ -200,11 +180,8 @@ public struct WorkoutHUDView: View {
         }
     }
 
-    // MARK: - Cockpit Header
-
     private var cockpitHeader: some View {
         HStack(spacing: 16) {
-            // Exit Button
             Button {
                 isShowingExitAlert = true
             } label: {
@@ -213,7 +190,6 @@ public struct WorkoutHUDView: View {
                     .foregroundColor(.white)
             }
 
-            // Playlist Drawer Toggle
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isPlaylistDrawerOpen.toggle()
@@ -224,7 +200,6 @@ public struct WorkoutHUDView: View {
                     .foregroundColor(.white)
             }
 
-            // Title & Real-time Calorie Accumulator
             VStack(alignment: .leading, spacing: 2) {
                 Text(workoutClass.title)
                     .font(.system(size: 18, weight: .bold))
@@ -238,9 +213,7 @@ public struct WorkoutHUDView: View {
 
             Spacer()
 
-            // Playback Seek Bar & Controls
             HStack(spacing: 12) {
-                // Previous Track
                 Button {
                     audioManager.previousSegment()
                 } label: {
@@ -249,7 +222,6 @@ public struct WorkoutHUDView: View {
                         .foregroundColor(.white)
                 }
 
-                // Seek -10s
                 Button {
                     audioManager.seekBy(deltaSeconds: -10.0)
                 } label: {
@@ -258,7 +230,6 @@ public struct WorkoutHUDView: View {
                         .foregroundColor(.white)
                 }
 
-                // Play / Pause Giant Button
                 Button {
                     audioManager.togglePlayPause()
                 } label: {
@@ -271,7 +242,6 @@ public struct WorkoutHUDView: View {
                         .shadow(radius: 3)
                 }
 
-                // Seek +10s
                 Button {
                     audioManager.seekBy(deltaSeconds: 10.0)
                 } label: {
@@ -280,7 +250,6 @@ public struct WorkoutHUDView: View {
                         .foregroundColor(.white)
                 }
 
-                // Next Track
                 Button {
                     audioManager.nextSegment()
                 } label: {
@@ -295,8 +264,6 @@ public struct WorkoutHUDView: View {
         .background(FitnessRiderTheme.topBarGreen)
         .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
     }
-
-    // MARK: - Playlist Drawer
 
     private var playlistDrawer: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -368,8 +335,6 @@ public struct WorkoutHUDView: View {
         .background(FitnessRiderTheme.cardBackground)
     }
 
-    // MARK: - Cockpit Core (3-Column Layout: Hand Position Card | Circle Gauge | Posture Card)
-
     private func cockpitCore(isLandscape: Bool) -> some View {
         VStack(spacing: 16) {
             Spacer()
@@ -390,12 +355,9 @@ public struct WorkoutHUDView: View {
                 }
             }
 
-            // Coaching Live Prompt Banner
             coachingPromptBanner
 
-            // Info Strip (Resistance & Tempo Controls)
             HStack(spacing: 20) {
-                // Resistance Badge + Delta Indicator
                 HStack(spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "gauge.with.needle.fill")
@@ -419,7 +381,6 @@ public struct WorkoutHUDView: View {
                     }
                 }
 
-                // Tempo Steppers (-2%, 100%, +2%)
                 HStack(spacing: 6) {
                     Button("-2%") {
                         audioManager.adjustRatePercent(by: -2.0)
@@ -444,14 +405,11 @@ public struct WorkoutHUDView: View {
 
             Spacer()
 
-            // Bottom Next Cue Preview Strip
             nextCueBanner
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .gesture(
-            // 同一支手勢依「方向」分派，而不是靠手指落在哪個子視圖上：
-            // 水平＝變速、垂直＝換曲，兩者互斥（見 rateStepForSwipe／segmentStepForSwipe）。
             DragGesture(minimumDistance: 10)
                 .onEnded { value in
                     let rateStep = rateStepForSwipe(
@@ -492,7 +450,6 @@ public struct WorkoutHUDView: View {
             trackColor: FitnessRiderTheme.cardBorder
         ) {
             VStack(spacing: 4) {
-                // Intensity Zone Badge
                 Text("ZONE \(activeSegment?.intensityZone ?? 2)")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.white)
@@ -505,7 +462,6 @@ public struct WorkoutHUDView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
 
-                // GIANT Target RPM
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(activeCue?.targetRpm ?? 85)")
                         .font(.system(size: 80, weight: .black, design: .rounded))
@@ -516,7 +472,6 @@ public struct WorkoutHUDView: View {
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
 
-                // Music BPM
                 if let segment = activeSegment {
                     HStack(spacing: 4) {
                         Image(systemName: "metronome.fill")
@@ -526,7 +481,6 @@ public struct WorkoutHUDView: View {
                     .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
 
-                // Interval Countdown Timer
                 let minutes = remainingCueSeconds / 60
                 let seconds = remainingCueSeconds % 60
                 Text(String(format: "%02d:%02d", minutes, seconds))
@@ -666,8 +620,6 @@ public struct WorkoutHUDView: View {
         .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
     }
 
-    // MARK: - Coaching Prompt Banner
-
     private var coachingPromptBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "quote.bubble.fill")
@@ -684,8 +636,6 @@ public struct WorkoutHUDView: View {
         .background(FitnessRiderTheme.topBarGreen.opacity(0.12))
         .cornerRadius(20)
     }
-
-    // MARK: - Posture Info Sheet
 
     private var postureInfoSheet: some View {
         NavigationView {
@@ -759,8 +709,6 @@ public struct WorkoutHUDView: View {
         }
     }
 
-    // MARK: - Next Cue Preview Banner
-
     private var nextCueBanner: some View {
         let isWarning = remainingCueSeconds <= 5 && nextCue != nil
         return HStack(spacing: 12) {
@@ -807,7 +755,6 @@ public struct WorkoutHUDView: View {
     }
 }
 
-// HUD Button Style
 struct HUDTempoButtonStyle: ButtonStyle {
     var isPrimary: Bool = false
 

@@ -47,17 +47,10 @@ import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
 import kotlinx.coroutines.delay
 
-// HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
 private val RATE_SWIPE_THRESHOLD_DP = 60.dp
 
-// 「上滑下一首、下滑上一首」：換曲在課堂中代價高，門檻抓得比變速大一些，要滑得果斷一點
 private val SEGMENT_SWIPE_THRESHOLD_DP = 80.dp
 
-/**
- * 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
- * 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
- * 一次滑動只前進一階，不做「滑越遠調越多」——與 iOS 同名同行為。
- */
 fun rateStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     val absDx = kotlin.math.abs(dx)
     val absDy = kotlin.math.abs(dy)
@@ -66,20 +59,11 @@ fun rateStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     return if (dx > 0) 1 else -1
 }
 
-/**
- * 手勢位移 → 要不要換曲、換哪一首。回傳 +1（上滑，下一首）、-1（下滑，上一首）、0（忽略）。
- *
- * 用「方向」而不是「位置」跟變速手勢分家：變速要求水平位移較大，換曲要求垂直位移大於
- * 水平的 1.5 倍，兩者不可能同時成立，中間的斜向區間兩個都不觸發（刻意留的安全死區）。
- * 課堂中教練目視前方、車上流汗，靠瞄準特定區塊區分手勢誤觸代價太高——滑錯方向頂多沒反應，
- * 滑錯位置卻會跳掉一整首歌。與 iOS 同名同行為。
- */
 fun segmentStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     val absDx = kotlin.math.abs(dx)
     val absDy = kotlin.math.abs(dy)
     if (absDy <= absDx * 1.5f) return 0
     if (absDy <= threshold) return 0
-    // 螢幕座標 y 軸向下為正：上滑（dy < 0）＝下一首，與清單往下捲動推進的直覺一致
     return if (dy < 0) 1 else -1
 }
 
@@ -92,7 +76,6 @@ fun WorkoutHUDScreen(
     val context = LocalContext.current
     val settings = remember { AppSettings.getInstance(context) }
 
-    // Screen Keep Awake effect
     DisposableEffect(Unit) {
         val activity = context as? Activity
         if (settings.keepScreenAwakeInHUD) {
@@ -123,12 +106,10 @@ fun WorkoutHUDScreen(
     val rateSwipeThresholdPx = remember(density) { with(density) { RATE_SWIPE_THRESHOLD_DP.toPx() } }
     val segmentSwipeThresholdPx = remember(density) { with(density) { SEGMENT_SWIPE_THRESHOLD_DP.toPx() } }
 
-    // Intercept hardware/gesture back press to prevent accidental class exit
     BackHandler(enabled = true) {
         isShowingExitConfirmDialog = true
     }
 
-    // 5-second Next Cue warning pulse animation
     val infiniteTransition = rememberInfiniteTransition(label = "nextCuePulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.35f,
@@ -145,7 +126,6 @@ fun WorkoutHUDScreen(
     val activeCue = activeSegment?.cues?.lastOrNull { it.offsetMs <= currentMs } ?: activeSegment?.cues?.firstOrNull()
     val nextCue = activeSegment?.cues?.firstOrNull { it.offsetMs > currentMs }
 
-    // Auto-cycle coaching reminders every 4 seconds
     LaunchedEffect(activeCue?.id) {
         while (true) {
             delay(4000L)
@@ -199,7 +179,6 @@ fun WorkoutHUDScreen(
     val formattedTotalElapsed = String.format("%02d:%02d", totalElapsedSec / 60, totalElapsedSec % 60)
     val formattedTotalDuration = String.format("%02d:%02d", totalClassSec / 60, totalClassSec % 60)
 
-    // Dynamic real-time calorie calculation
     val realtimeCalories = remember(totalElapsedSec, totalClassSec, workoutClass.estimatedCalories) {
         if (totalClassSec > 0) {
             val ratio = (totalElapsedSec.toDouble() / totalClassSec.toDouble()).coerceIn(0.0, 1.0)
@@ -212,7 +191,6 @@ fun WorkoutHUDScreen(
             .fillMaxSize()
             .background(CanvasWhite)
     ) {
-        // Cockpit Header (#84BF09)
         TopNavBar(
             title = "",
             leading = {
@@ -266,9 +244,7 @@ fun WorkoutHUDScreen(
             }
         )
 
-        // Cockpit Stage
         Row(modifier = Modifier.fillMaxSize()) {
-            // Track Drawer (Left)
             if (isDrawerOpen) {
                 Column(
                     modifier = Modifier
@@ -348,7 +324,6 @@ fun WorkoutHUDScreen(
                 }
             }
 
-            // Cockpit Center (3-Column Layout: Hand Position Card | RPM Gauge | Posture Figure Card + Controls)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -358,7 +333,6 @@ fun WorkoutHUDScreen(
             ) {
                 Spacer(modifier = Modifier.weight(1f))
 
-                // 3-Column Telemetry Row (Hand Position, Giant Gauge, Riding Posture with Elapsed Time on top)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -374,8 +348,6 @@ fun WorkoutHUDScreen(
                                     totalDragY += dragAmount.y
                                 },
                                 onDragEnd = {
-                                    // 同一支 handler 依「方向」分派，而不是靠手指落在哪個子元件上：
-                                    // 水平＝變速、垂直＝換曲，兩者互斥（見 rateStepForSwipe／segmentStepForSwipe）。
                                     val rateStep = rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
                                     if (rateStep != 0) {
                                         audioManager.adjustRatePercent(rateStep * 2.0)
@@ -394,12 +366,10 @@ fun WorkoutHUDScreen(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    // Left: Hand Position Card (Large Graphic)
                     HandPositionCockpitCard(cue = activeCue)
 
                     Spacer(modifier = Modifier.width(28.dp))
 
-                    // Center: Giant Circle Progress Bar (300dp)
                     val currentZoneColor = colorForZone(activeSegment?.intensityZone ?: 2)
                     CircleProgressBar(
                         progress = progressRatio,
@@ -439,7 +409,6 @@ fun WorkoutHUDScreen(
                                 color = TextSecondary
                             )
 
-                            // GIANT RPM
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text(
                                     text = "${activeCue?.targetRpm ?: 85}",
@@ -457,7 +426,6 @@ fun WorkoutHUDScreen(
                                 )
                             }
 
-                            // BPM
                             if (activeSegment != null) {
                                 Text(
                                     text = "♫ ${activeSegment.effectiveBpm.toInt()} BPM",
@@ -469,7 +437,6 @@ fun WorkoutHUDScreen(
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            // Countdown
                             val min = remainingCueSec / 60
                             val sec = remainingCueSec % 60
                             Text(
@@ -484,11 +451,9 @@ fun WorkoutHUDScreen(
 
                     Spacer(modifier = Modifier.width(28.dp))
 
-                    // Right: Posture Figure Card with Total Workout Elapsed Time Badge directly on top
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Total Workout Elapsed Time Badge (課程進行時間)
                         Surface(
                             modifier = Modifier
                                 .width(170.dp)
@@ -546,7 +511,6 @@ fun WorkoutHUDScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Right: Posture Figure Card (Rider Illustration + Benefits info)
                         PostureFigureCockpitCard(
                             cue = activeCue,
                             onInfoClick = { isShowingPostureInfo = true }
@@ -556,7 +520,6 @@ fun WorkoutHUDScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Coaching Prompt Live Banner
                 Surface(
                     color = TopBarGreen.copy(alpha = 0.12f),
                     shape = RoundedCornerShape(20.dp),
@@ -584,12 +547,10 @@ fun WorkoutHUDScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Info Strip: Resistance Badge & Playback Speed Steppers
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    // Resistance Badge + Delta Indicator
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -624,7 +585,6 @@ fun WorkoutHUDScreen(
                         }
                     }
 
-                    // Steppers (-2%, 100%, +2%)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = { audioManager.adjustRatePercent(-2.0) },
@@ -668,7 +628,6 @@ fun WorkoutHUDScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Bottom Next Cue Preview Banner with <= 5s pulsing warning
                 val isNextCueWarning = remainingCueSec <= 5 && nextCue != null
                 Surface(
                     modifier = Modifier
@@ -722,7 +681,6 @@ fun WorkoutHUDScreen(
             }
         }
 
-        // Posture Purpose Dialog
         if (isShowingPostureInfo && activeCue != null) {
             AlertDialog(
                 onDismissRequest = { isShowingPostureInfo = false },
@@ -769,7 +727,6 @@ fun WorkoutHUDScreen(
             )
         }
 
-        // Exit Confirmation Dialog
         if (isShowingExitConfirmDialog) {
             AlertDialog(
                 onDismissRequest = { isShowingExitConfirmDialog = false },
@@ -847,7 +804,6 @@ private fun HandPositionCockpitCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Circular Hand Position Icon (105dp)
             if (cue != null) {
                 Image(
                     painter = painterResource(id = getHandPositionDrawableRes(cue.handPosition)),
@@ -944,7 +900,6 @@ private fun PostureFigureCockpitCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Circular Posture Icon (105dp)
             if (cue != null) {
                 Image(
                     painter = painterResource(id = getPostureDrawableRes(cue.posture)),

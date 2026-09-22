@@ -40,8 +40,6 @@ public struct WorkoutClass: Identifiable, Codable, Equatable, Sendable {
 
     public mutating func recalculateTotals() {
         self.totalDurationMs = segments.reduce(0) { $0 + $1.durationMs }
-        // Simple accurate estimation: based on average intensity zones
-        // ~10 kcal per minute in Zone 3, scaling 7 to 15 kcal/min
         var cals: Double = 0
         for seg in segments {
             let minutes = Double(seg.durationMs) / 60_000.0

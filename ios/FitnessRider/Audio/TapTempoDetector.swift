@@ -14,8 +14,6 @@ public final class TapTempoDetector: @unchecked Sendable {
         return tapTimestamps.count
     }
 
-    /// Record a tap at the given timestamp (defaults to current time).
-    /// Returns the calculated BPM if at least 2 taps are recorded, or nil if insufficient taps.
     @discardableResult
     public func recordTap(at time: TimeInterval = Date().timeIntervalSince1970) -> Double? {
         if let last = tapTimestamps.last {
@@ -33,14 +31,13 @@ public final class TapTempoDetector: @unchecked Sendable {
         return calculateCurrentBpm()
     }
 
-    /// Calculates the rolling average BPM from the recorded timestamps.
     public func calculateCurrentBpm() -> Double? {
         guard tapTimestamps.count >= 2 else { return nil }
 
         var intervals: [TimeInterval] = []
         for i in 1..<tapTimestamps.count {
             let delta = tapTimestamps[i] - tapTimestamps[i - 1]
-            if delta >= 0.2 && delta <= 2.0 { // 30 ~ 300 BPM
+            if delta >= 0.2 && delta <= 2.0 {
                 intervals.append(delta)
             }
         }

@@ -15,7 +15,10 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - **Android 與 iOS 必須維持功能對等**。任一平台的行為改動，另一平台同一份工作要一起改完，不得只做一邊。
 - 顏色用 `theme/Color.kt`（Android）與 `FitnessRiderTheme`（iOS）既有 token，不要寫死色碼。
 - 非顯而易見的邏輯要留一個可執行的檢查：Android 加進 `android/app/src/test/java/com/fitnessrider/FitnessRiderAndroidTest.kt`，iOS 加進 `ios/FitnessRiderTests/FitnessRiderTests.swift`。不要引入新測試框架。
-- 刻意的簡化用 `ponytail:` 註解標註，並寫明上限與升級路徑。
+- **程式碼裡不要寫任何註解。** 不寫行內註解、不寫 KDoc／Swift doc comment、不寫檔頭說明，
+  既有註解也已全部移除。理由：註解會和程式碼脫節，然後把讀的人（和 AI）帶往錯誤的方向；
+  唯一的事實來源是程式架構與程式碼本身。要讓意圖清楚就改名字、拆函式、加測試，不是加註解。
+  需要保留的「為什麼」寫在這份 CLAUDE.md 或 commit message，那兩個地方會跟著決策一起維護。
 - 不要為了「以後可能需要」而加抽象層、介面、設定項。最短可行的 diff 優先。
 
 ## 已知落差（已修復對齊）
@@ -24,6 +27,23 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 - **雙平台曲目切換平滑轉場 (Crossfade)（已對齊）**：雙端均採用雙軌／雙 Deck 架構（iOS `AVAudioEngine` 雙 `AudioDeck`；Android 雙 `ExoPlayer`），實現 1~8 秒等能量（Equal-Power: $\cos$ fade-out, $\sin$ fade-in）平滑交錯淡入淡出，並與「段落結束自動暫停 (Auto-Pause)」嚴格互斥，雙端設定提供 0s / 1s / 2s / 3s / 5s / 8s 設定。
 
 ## 產品決策（不要當成 bug 修掉）
+
+- **以下這幾條原本寫在程式註解裡，移除註解時搬到這裡** —— 都是從程式碼看不出來、
+  猜錯就會產生真 bug 的事實：
+  1. iOS HUD 的手勢必須用 `.gesture`，**不可以用 `.simultaneousGesture`**。後者的語意是
+     「允許與其他手勢同時辨識」，父層 `cockpitCore` 的換曲手勢會跟著一起成立，變成
+     一次滑動同時變速又跳首歌。
+  2. `CrossfadeCalculator.effectiveDuration` 兩端都會把實際淡入淡出時間 clamp 在
+     「段落長度的一半」，所以 Crossfade 選項要加長不必動音訊引擎。
+  3. 段落的 `orderIndex` 必須在移動／刪除後從 0 連續重編號再存：兩端持久化存的是
+     `orderIndex` 欄位本身、載入時 `ORDER BY`，只換陣列位置不重編號會「畫面對、重開打回原形」。
+  4. `selectedIndexAfterMove` 只算得對相鄰對調（offset ±1，即 UI 的上移／下移）。
+     要支援拖過多格時，得改成依新舊陣列比對 id 找位置。
+  5. `VipSerialVerifier` 的測試用公鑰參數（`testVipPublicKeyOverride` /
+     `publicKeySPKIBase64Override`）只給測試用，正式呼叫端一律不傳。
+  6. Android 的 `device_secret` 存在 SharedPreferences，解除安裝或清除資料就會遺失；
+     領過推廣碼後重灌的裝置會因此無法再被轉入授權（已知取捨，見 commit 3f779b7）。
+
 
 - **`playbackRate` 不計入總時長與預估消耗。** 總時長一律是各段落 `durationMs` 的總和，卡路里一律依 `durationMs` × `intensityZone` 費率推算，兩者都忽略播放速率。所以 5 分鐘的曲子設成 0.85x 時，實際騎乘約 5:53，但編輯器頂端仍顯示 05:00 —— 這是刻意的，舊版與新版、Android 與 iOS 行為一致。不要「修正」成用有效播放時間計算。
 

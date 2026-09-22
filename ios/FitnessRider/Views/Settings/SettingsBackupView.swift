@@ -26,7 +26,6 @@ public struct SettingsBackupView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                // Section 1: Audio & Class Execution Settings
                 Section("課堂與音訊體驗") {
                     Toggle("動作切換 3-2-1 倒數提示音", isOn: $settings.isCountdownBeepEnabled)
 
@@ -52,7 +51,6 @@ public struct SettingsBackupView: View {
                     Toggle("課堂進行中螢幕強制常亮", isOn: $settings.keepScreenAwakeInHUD)
                 }
 
-                // Section 2: SQLite Backup & Restore
                 Section("資料庫備份與還原 (SQLite)") {
                     Button {
                         exportDatabaseBackup()
@@ -76,7 +74,6 @@ public struct SettingsBackupView: View {
                     }
                 }
 
-                // Section 3: Device Binding & License
                 Section("授權狀態與單機綁定") {
                     HStack {
                         Text("授權方案")
@@ -134,7 +131,6 @@ public struct SettingsBackupView: View {
                     }
                 }
 
-                // Section 4: Music Folder Path
                 Section("本機音樂庫目錄") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("支援透過 Mac Finder / iTunes 檔案共享直接將 MP3/M4A 拖曳至以下專屬資料夾：")
@@ -203,8 +199,6 @@ public struct SettingsBackupView: View {
         }
     }
 
-    // MARK: - Helpers
-
     private static func crossfadeOptionLabel(_ seconds: Double) -> String {
         switch seconds {
         case 0.0: return "關閉 (0 秒)"
@@ -212,8 +206,6 @@ public struct SettingsBackupView: View {
         default: return "\(Int(seconds)) 秒"
         }
     }
-
-    // MARK: - Actions
 
     private func exportDatabaseBackup() {
         if let exportURL = SQLiteBackupService.shared.exportBackupFile() {

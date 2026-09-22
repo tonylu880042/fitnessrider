@@ -1,21 +1,13 @@
 import SwiftUI
 import AVFoundation
 
-/// 匯入單一音樂檔後、建立段落前所需的資料（檔名、實際曲長、偵測 BPM）。
-/// 拆成獨立型別與純函式是為了讓「檔名碰撞後綴」與「N 個檔案 -> N 個段落」
-/// 這兩段非顯而易見的邏輯可以脫離 View/FileManager 被單元測試覆蓋。
 struct ImportedTrackInfo {
     let fileName: String
     let durationMs: Int
     let bpm: Double
-    // Layer 3：外部資料夾曲目的 fileName 是 "extfolder://" + 相對路徑（見 MusicSource.isExternal），
-    // 從它去副檔名得到的不會是人看得懂的曲名，所以另外帶一個顯示用標題；
-    // Layer 1/2 的呼叫端沿用預設 nil，行為完全不變（title 一樣從 fileName 去副檔名取得）。
     var displayTitle: String? = nil
 }
 
-/// 檔名碰撞處理：若 `desiredName` 已存在於 `existingNames`，在副檔名前加上 `_1`、`_2`... 直到唯一。
-/// 對應 CLAUDE.md Layer 1 第 6 項：避免不同曲目的同名檔案互相覆寫。
 func resolveUniqueMusicFileName(_ desiredName: String, existingNames: Set<String>) -> String {
     guard existingNames.contains(desiredName) else { return desiredName }
     let ext = (desiredName as NSString).pathExtension
@@ -29,13 +21,10 @@ func resolveUniqueMusicFileName(_ desiredName: String, existingNames: Set<String
     return candidate
 }
 
-/// 段落標題帶入曲名：去除副檔名。對應 Layer 1 第 2 項。
 func musicTitleFromFileName(_ fileName: String) -> String {
     (fileName as NSString).deletingPathExtension
 }
 
-/// 多選匯入 -> 逐一建立段落。對應 Layer 1 第 3 項（沿用舊版 ActivityClassEditor.java:1188 的行為）：
-/// 選 N 首歌就建立 N 個段落，段落標題＝曲名、長度＝曲長。
 func buildSegmentsForImportedTracks(
     tracks: [ImportedTrackInfo],
     classId: UUID,
@@ -59,7 +48,6 @@ func buildSegmentsForImportedTracks(
     }
 }
 
-/// 依陣列位置把 orderIndex 從 0 連續重編號。對應 CLAUDE.md「編輯器段落清單」開發清單。
 func reindexedSegments(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
     segments.enumerated().map { index, seg in
         var s = seg
@@ -68,8 +56,6 @@ func reindexedSegments(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
     }
 }
 
-/// 把 index 位置的段落移動 offset 格（-1 上移／+1 下移），並重新編號 orderIndex。
-/// index 或 index+offset 超出範圍時原樣傳回。
 func segmentsAfterMove(_ segments: [WorkoutSegment], index: Int, offset: Int) -> [WorkoutSegment] {
     let target = index + offset
     guard segments.indices.contains(index), segments.indices.contains(target) else { return segments }
@@ -79,7 +65,6 @@ func segmentsAfterMove(_ segments: [WorkoutSegment], index: Int, offset: Int) ->
     return reindexedSegments(mutable)
 }
 
-/// 刪除 index 位置的段落，並重新編號 orderIndex。index 超出範圍時原樣傳回。
 func segmentsAfterRemoval(_ segments: [WorkoutSegment], index: Int) -> [WorkoutSegment] {
     guard segments.indices.contains(index) else { return segments }
     var mutable = segments
@@ -87,18 +72,12 @@ func segmentsAfterRemoval(_ segments: [WorkoutSegment], index: Int) -> [WorkoutS
     return reindexedSegments(mutable)
 }
 
-/// 段落移動後，跟著調整 selectedSegmentIndex 讓它繼續指向同一個邏輯段落。
-///
-/// ponytail: 只算得對「相鄰對調」（UI 的上移／下移，offset ±1）。offset 絕對值大於 1 時
-/// `segmentsAfterMove` 是整段位移而不是對調，夾在中間的段落索引也會變，這裡不會跟著算 ——
-/// 真要支援 drag & drop 拖過多格時，這支要改成依新舊陣列比對 id 找位置。
 func selectedIndexAfterMove(_ selectedIndex: Int, movedFromIndex: Int, movedToIndex: Int) -> Int {
     if selectedIndex == movedFromIndex { return movedToIndex }
     if selectedIndex == movedToIndex { return movedFromIndex }
     return selectedIndex
 }
 
-/// 段落刪除後，跟著調整 selectedSegmentIndex，並 clamp 進新陣列的有效範圍（newSize 可能是 0）。
 func selectedIndexAfterRemoval(_ selectedIndex: Int, removedIndex: Int, newSize: Int) -> Int {
     let adjusted = selectedIndex > removedIndex ? selectedIndex - 1 : selectedIndex
     return min(max(adjusted, 0), max(newSize - 1, 0))
@@ -116,15 +95,12 @@ public struct ClassEditorView: View {
     @State private var isShowingCueSheet: Bool = false
     @State private var isShowingBpmSheet: Bool = false
     @State private var editingCue: WorkoutCue?
-    // Layer 2：段落指定音樂一律先開 app 內音樂庫，不再直接開系統檔案選擇器；
-    // .fileImporter 只留在 MusicLibraryView 內「＋匯入新檔」一個入口。
     @State private var isShowingMusicLibrary: Bool = false
     @State private var previewPlayheadMs: Int = 0
     @State private var isPreviewPlaying: Bool = false
     @State private var previewPlayer: AVAudioPlayer?
     @State private var previewTimer: Timer?
     @State private var importErrorMessage: String?
-    // 段落刪除確認（spec M1.2 補完）：跳確認對話框，段落含 cue，誤刪成本高，不做 undo。
     @State private var segmentPendingDeleteIndex: Int?
     @State private var isShowingDeleteSegmentAlert: Bool = false
 
@@ -141,7 +117,6 @@ public struct ClassEditorView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Top Bar
             TopNavBar(
                 title: "",
                 leading: {
@@ -160,7 +135,6 @@ public struct ClassEditorView: View {
                 }
             )
             .overlay(
-                // Editable Title Field in Center
                 TextField("課表名稱", text: $workoutClass.title)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
@@ -168,7 +142,6 @@ public struct ClassEditorView: View {
                     .padding(.horizontal, 80)
             )
 
-            // Sub-info Bar
             HStack(spacing: 24) {
                 Label("總時長: \(workoutClass.formattedDuration)", systemImage: "clock")
                 Label("預估消耗: \(Int(workoutClass.estimatedCalories)) kcal", systemImage: "flame")
@@ -195,15 +168,12 @@ public struct ClassEditorView: View {
 
             Divider()
 
-            // Horizontal Segment Cards List
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(Array(workoutClass.segments.enumerated()), id: \.element.id) { index, segment in
                         segmentCard(segment, index: index)
                     }
 
-                    // Add Segment Button
-                    // 空段落對教練沒有意義，直接開音樂庫，選好曲目才建立段落（Layer 1 第 4 項、Layer 2 音樂庫）。
                     Button {
                         isShowingMusicLibrary = true
                     } label: {
@@ -231,7 +201,6 @@ public struct ClassEditorView: View {
 
             Divider()
 
-            // Waveform & Cue Editor Section
             if let segment = activeSegment {
                 waveformEditorSection(for: segment)
             } else {
@@ -283,7 +252,6 @@ public struct ClassEditorView: View {
                 }
             )
         }
-        // 匯入失敗要看得見：改用 Alert 取代原本只有 print 的無聲失敗（Layer 1 第 5 項）。
         .alert(
             "匯入失敗",
             isPresented: Binding(
@@ -295,7 +263,6 @@ public struct ClassEditorView: View {
         } message: {
             Text(importErrorMessage ?? "")
         }
-        // 段落刪除確認，樣式沿用 ClassListView 的刪除課表 Alert（spec M1.2 補完）。
         .alert("刪除段落", isPresented: $isShowingDeleteSegmentAlert) {
             Button("取消", role: .cancel) {}
             Button("刪除", role: .destructive) {
@@ -310,8 +277,6 @@ public struct ClassEditorView: View {
             Text("確定要刪除「\(title)」嗎？段落內的動作提示會一併刪除，此動作無法復原。")
         }
     }
-
-    // MARK: - Subviews
 
     private func segmentCard(_ segment: WorkoutSegment, index: Int) -> some View {
         let isSelected = index == selectedSegmentIndex
@@ -348,7 +313,6 @@ public struct ClassEditorView: View {
 
             Spacer(minLength: 0)
 
-            // 排序／刪除（spec M1.2 補完）：上移／下移／刪除，不做 drag & drop、不做 undo。
             HStack(spacing: 12) {
                 Button {
                     moveSegmentInEditor(at: index, offset: -1)
@@ -396,7 +360,6 @@ public struct ClassEditorView: View {
 
     private func waveformEditorSection(for segment: WorkoutSegment) -> some View {
         VStack(spacing: 12) {
-            // Waveform Canvas
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(segment.title)
@@ -405,7 +368,6 @@ public struct ClassEditorView: View {
 
                     Spacer()
 
-                    // Time Code
                     let currentSec = previewPlayheadMs / 1000
                     let totalSec = segment.durationMs / 1000
                     Text(String(format: "%02d:%02d / %02d:%02d", currentSec / 60, currentSec % 60, totalSec / 60, totalSec % 60))
@@ -432,9 +394,7 @@ public struct ClassEditorView: View {
             }
             .padding(.horizontal, 20)
 
-            // Audio Controls & Speed Shifting (-2%, 100%, +2%)
             HStack(spacing: 16) {
-                // Play / Pause Preview Button
                 Button {
                     togglePreview(for: segment)
                 } label: {
@@ -446,7 +406,6 @@ public struct ClassEditorView: View {
                         .clipShape(Circle())
                 }
 
-                // Speed Buttons
                 HStack(spacing: 8) {
                     Button("-2%") {
                         adjustRate(for: segment, delta: -0.02)
@@ -464,7 +423,6 @@ public struct ClassEditorView: View {
                     .buttonStyle(SpeedButtonStyle())
                 }
 
-                // Live BPM readout & Tap-Tempo Calibration button
                 Button {
                     isShowingBpmSheet = true
                 } label: {
@@ -496,7 +454,6 @@ public struct ClassEditorView: View {
 
                 Spacer()
 
-                // Add Cue Button
                 Button {
                     let newCue = WorkoutCue(
                         id: UUID(),
@@ -522,7 +479,6 @@ public struct ClassEditorView: View {
 
             Divider()
 
-            // Cues List Table
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(segment.cues) { cue in
@@ -537,7 +493,6 @@ public struct ClassEditorView: View {
 
     private func cueRow(_ cue: WorkoutCue, segment: WorkoutSegment) -> some View {
         HStack(spacing: 12) {
-            // Posture Icon
             Image(systemName: cue.posture.sfSymbol)
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(FitnessRiderTheme.topBarGreenDark)
@@ -580,13 +535,11 @@ public struct ClassEditorView: View {
 
             Spacer()
 
-            // Time Offset
             let sec = cue.offsetMs / 1000
             Text(String(format: "%02d:%02d", sec / 60, sec % 60))
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
                 .foregroundColor(FitnessRiderTheme.textSecondary)
 
-            // Edit Cue
             Button {
                 editingCue = cue
             } label: {
@@ -595,7 +548,6 @@ public struct ClassEditorView: View {
                     .foregroundColor(FitnessRiderTheme.textSecondary)
             }
 
-            // Delete Cue
             Button {
                 deleteCue(cue)
             } label: {
@@ -612,8 +564,6 @@ public struct ClassEditorView: View {
                 .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
         )
     }
-
-    // MARK: - Actions
 
     private func saveCue(_ cue: WorkoutCue) {
         guard selectedSegmentIndex < workoutClass.segments.count else { return }
@@ -656,7 +606,6 @@ public struct ClassEditorView: View {
                     self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
                     didChange = true
                 }
-                // 寫回時長：WaveformAnalyzer 算出的 durationMs 之前完全沒有回傳，段落永遠停在預設 300_000（Layer 1 第 1 項）。
                 if durationMs > 0 && durationMs != segment.durationMs {
                     self.workoutClass.segments[self.selectedSegmentIndex].durationMs = durationMs
                     didChange = true
@@ -680,7 +629,6 @@ public struct ClassEditorView: View {
         isPreviewPlaying = true
         previewTimer?.invalidate()
 
-        // 嘗試建立或沿用真實音訊播放（本機檔案或外部資料夾），支援變速與 Seeking（對齊 Android）
         let player: AVAudioPlayer?
         if let existing = previewPlayer {
             player = existing
@@ -713,7 +661,6 @@ public struct ClassEditorView: View {
                         self.previewPlayheadMs = currentMs
                     }
                 } else {
-                    // 若音檔不存在則跑模擬進度（與 Android 容錯行為一致）
                     self.previewPlayheadMs += Int(50 * segment.playbackRate)
                     if self.previewPlayheadMs >= segment.durationMs {
                         self.stopPreview(resetPlayhead: true)
@@ -735,8 +682,6 @@ public struct ClassEditorView: View {
         }
     }
 
-    // Layer 2：音樂庫（新建立或既有曲目多選）回傳的段落一律經這裡併入課表並重算總時長，
-    // 對應 Android ClassEditorScreen.appendSegmentsFromLibrary()。
     private func appendSegments(_ newSegments: [WorkoutSegment]) {
         guard !newSegments.isEmpty else { return }
         workoutClass.segments.append(contentsOf: newSegments)
@@ -744,7 +689,6 @@ public struct ClassEditorView: View {
         workoutClass.recalculateTotals()
     }
 
-    // 上移／下移（spec M1.2 補完）：orderIndex 一定要重編號再存，只換陣列位置重新載入會打回原形。
     private func moveSegmentInEditor(at index: Int, offset: Int) {
         let target = index + offset
         guard workoutClass.segments.indices.contains(target) else { return }
@@ -752,7 +696,6 @@ public struct ClassEditorView: View {
         selectedSegmentIndex = selectedIndexAfterMove(selectedSegmentIndex, movedFromIndex: index, movedToIndex: target)
     }
 
-    // 刪除段落（spec M1.2 補完）：刪除後也一律從 0 連續重編 orderIndex，並重算總時長。
     private func deleteSegmentInEditor(at index: Int) {
         guard workoutClass.segments.indices.contains(index) else { return }
         let newSegments = segmentsAfterRemoval(workoutClass.segments, index: index)
@@ -762,7 +705,6 @@ public struct ClassEditorView: View {
     }
 }
 
-// Button Style for Speed Steppers
 struct SpeedButtonStyle: ButtonStyle {
     var isPrimary: Bool = false
 

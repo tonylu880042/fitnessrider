@@ -31,7 +31,6 @@ public final class LicenseVerificationService: ObservableObject {
     @Published public private(set) var planType: String = "全功能免費試用版"
     @Published public private(set) var expirationDate: Date = Date().addingTimeInterval(Double(VersionLifecycleManager.lifecycleDays) * 86400)
     @Published public private(set) var remainingDays: Int = VersionLifecycleManager.lifecycleDays
-    /// 有新版可拿、且目前這支建置版本已低於伺服器門檻時才會是 true；離線時永遠不會被設成 true。
     @Published public private(set) var mustUpdate: Bool = false
 
     private let serverURL = "https://fitnessrider.vercel.app"
@@ -46,7 +45,6 @@ public final class LicenseVerificationService: ObservableObject {
         let days = VersionLifecycleManager.shared.remainingDays()
 
         if isVIP {
-            // 推廣方案也是 VIP，但方案名不是「專業年繳版」—— 交給 vipPlanName 判斷。
             self.planType = VersionLifecycleManager.shared.vipPlanName
             self.isLicensed = true
             self.remainingDays = days
@@ -60,23 +58,16 @@ public final class LicenseVerificationService: ObservableObject {
     }
 
     public func activateCode(code: String) async -> (Bool, String) {
-        // 0. 付費年繳 VIP 生效中時，推廣碼連送都不要送：伺服器查不到「離線開通的」付費授權，
-        //    會放行推廣碼並回傳 firstLaunchDate+30 天，成功分支會直接用它蓋掉本機的 365 天。
         if let blocked = VersionLifecycleManager.shared.promoBlockedByPaidVipMessage(code) {
             return (false, blocked)
         }
 
-        // 1. Try online activation first to respect single-device limit & database audit
         let (onlineSuccess, onlineMsg, errorCode) = await activateLicenseOnline(code: code)
         if onlineSuccess {
             refreshLicenseState()
             return (true, onlineMsg)
         }
 
-        // If the server explicitly rejected the activation with an anti-abuse error_code,
-        // return the rejection immediately to prevent duplicate abuse.
-        // VIP_ALREADY_ACTIVE 一定要在名單內：伺服器拒絕正是為了不讓推廣碼蓋掉付費年繳授權，
-        // 若落到離線 fallback，本機會把 VIP 到期日改寫成推廣碼的 firstLaunchDate+30 天。
         let antiAbuseCodes: Set<String> = [
             "PROMO_EXPIRED",
             "PROMO_ALREADY_REDEEMED",
@@ -88,7 +79,6 @@ public final class LicenseVerificationService: ObservableObject {
             return (false, onlineMsg)
         }
 
-        // 2. Offline algorithmic check fallback (e.g., in basement gym without network)
         let localResult = VersionLifecycleManager.shared.activateLicenseCode(code)
         if localResult.success {
             refreshLicenseState()
@@ -183,8 +173,6 @@ public final class LicenseVerificationService: ObservableObject {
         }
     }
 
-    /// 後端用 `Date().toISOString()` 產生時間字串，帶毫秒（fractional seconds）；
-    /// 標準 `ISO8601DateFormatter()` 預設不解析毫秒，所以要先試帶毫秒的選項，失敗再退回不帶毫秒的。
     private static func parseISO8601(_ raw: String) -> Date? {
         let withFractional = ISO8601DateFormatter()
         withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -192,8 +180,6 @@ public final class LicenseVerificationService: ObservableObject {
         return ISO8601DateFormatter().date(from: raw)
     }
 
-    /// 純函式，抽出來方便單元測試：min_supported_version_code <= 0 代表「永不強制更新」；
-    /// 當伺服器設定了門檻 (> 0) 且用戶端 currentBuildNumber 低於門檻時才需要強制更新（spec 項目 F）。
     public nonisolated static func computeMustUpdate(minSupportedVersionCode: Int, currentBuildNumber: Int) -> Bool {
         return minSupportedVersionCode > 0 && currentBuildNumber < minSupportedVersionCode
     }
@@ -208,12 +194,6 @@ public final class LicenseVerificationService: ObservableObject {
         return Data(mac).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// 啟動時呼叫一次：取得伺服器端試用起算錨點（用較早的一個校正本機，spec 項目 D）、
-    /// 真正的授權狀態（若這台裝置已經開通過、能簽章），以及強制更新門檻
-    /// min_supported_version_code（spec 項目 F）。
-    ///
-    /// 完全離線或連線失敗時，什麼都不做、保留目前的本機快取狀態 —— 絕對不會因為連不上
-    /// 伺服器就把 mustUpdate 設成 true 而把使用者鎖住。
     public func refreshFromServer(currentBuildNumber: Int) async {
         let fingerprint = DeviceIdentifierService.shared.deviceFingerprint
         guard let url = URL(string: "\(serverURL)/api/license/verify") else { return }
@@ -264,9 +244,6 @@ public final class LicenseVerificationService: ObservableObject {
 
             await MainActor.run {
                 self.mustUpdate = newMustUpdate
-                // 這裡刻意「只加不減」：伺服器驗證通過時才升級本機狀態，絕不因為這次呼叫
-                // 就把已經是 VIP 的本機狀態降級 —— 本機活化流程本身已經會呼叫
-                // refreshLicenseState() 反映最新狀態，這裡不重複呼叫覆蓋掉剛設定的值。
                 if let newIsLicensed { self.isLicensed = newIsLicensed }
                 if let newPlanType { self.planType = newPlanType }
                 if let newRemainingDays { self.remainingDays = newRemainingDays }
@@ -280,8 +257,6 @@ public final class LicenseVerificationService: ObservableObject {
         let buildNumber = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0
         await refreshFromServer(currentBuildNumber: buildNumber)
     }
-
-    // MARK: - Device Transfer (M6.3)
 
     public func transferDeviceWithAccount(email: String, password: String) async -> DeviceTransferResult {
         let fingerprint = DeviceIdentifierService.shared.deviceFingerprint
@@ -318,8 +293,6 @@ public final class LicenseVerificationService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // 這台設備若已經開通過就一定有裝置密鑰，簽章證明「轉移的目標設備就是本機」；
-        // 伺服器端對已有密鑰的目標設備一律要求簽章（見 backend device/transfer route）。
         var signedBody = body
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         if let signature = signRequest(timestampMs: timestamp) {
@@ -338,7 +311,6 @@ public final class LicenseVerificationService: ObservableObject {
                 return DeviceTransferResult(success: false, message: "伺服器回應格式異常")
             }
 
-            // Check for 403 TRANSFER_COOLDOWN
             if httpRes.statusCode == 403 {
                 let cooldownDays = json["remaining_cooldown_days"] as? Int
                 let errorMsg = json["error"] as? String ?? "換機次數受限，請等待冷卻期後再試。"
@@ -356,10 +328,6 @@ public final class LicenseVerificationService: ObservableObject {
                 let days = licenseData?["days_remaining"] as? Int ?? 365
                 let expiresAtIso = licenseData?["expires_at"] as? String
 
-                // 直接信任伺服器已驗證過身分（帳號密碼 / 已在伺服器驗過簽章的序號）的結果，
-                // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖。
-                // plan_type 一定要帶進去：少了它，推廣方案換機後會被記成 "server_verified"，
-                // 之後既顯示成「專業年繳版」，也會讓下一年度的推廣碼被防降級檢查誤擋。
                 if let expiresAtIso, let expiresAtDate = Self.parseISO8601(expiresAtIso) {
                     VersionLifecycleManager.shared.activateVipFromServer(
                         expiresAt: expiresAtDate,

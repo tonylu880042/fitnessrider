@@ -43,25 +43,13 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.roundToInt
 
-/**
- * 匯入單一音樂檔後、建立段落前所需的資料（檔名、實際曲長、偵測 BPM）。
- * 拆成獨立資料類別與純函式是為了讓「檔名碰撞後綴」與「N 個檔案 -> N 個段落」
- * 這兩段非顯而易見的邏輯可以脫離 Compose/Context 被單元測試覆蓋。
- */
 internal data class ImportedTrackInfo(
     val fileName: String,
     val durationMs: Int,
     val bpm: Double,
-    // Layer 3：外部資料夾曲目的 fileName 是 content Uri（見 MusicSource.isExternalUri），
-    // 從 Uri 字串尾巴去副檔名得到的不會是人看得懂的曲名，所以另外帶一個顯示用標題；
-    // Layer 1/2 的呼叫端沿用預設 null，行為完全不變（title 一樣從 fileName 去副檔名取得）。
     val displayTitle: String? = null
 )
 
-/**
- * 檔名碰撞處理：若 [desiredName] 已存在於 [existingNames]，在副檔名前加上 `_1`、`_2`... 直到唯一。
- * 對應 CLAUDE.md Layer 1 第 6 項：避免不同曲目的同名檔案互相覆寫。
- */
 internal fun resolveUniqueMusicFileName(desiredName: String, existingNames: Set<String>): String {
     if (!existingNames.contains(desiredName)) return desiredName
     val dotIndex = desiredName.lastIndexOf('.')
@@ -76,16 +64,11 @@ internal fun resolveUniqueMusicFileName(desiredName: String, existingNames: Set<
     return candidate
 }
 
-/** 段落標題帶入曲名：去除副檔名。對應 Layer 1 第 2 項。 */
 internal fun musicTitleFromFileName(fileName: String): String {
     val dotIndex = fileName.lastIndexOf('.')
     return if (dotIndex > 0) fileName.substring(0, dotIndex) else fileName
 }
 
-/**
- * 多選匯入 -> 逐一建立段落。對應 Layer 1 第 3 項（沿用舊版 ActivityClassEditor.java:1188 的行為）：
- * 選 N 首歌就建立 N 個段落，段落標題＝曲名、長度＝曲長。
- */
 internal fun buildSegmentsForImportedTracks(
     tracks: List<ImportedTrackInfo>,
     classId: String,
@@ -114,14 +97,9 @@ internal fun buildSegmentsForImportedTracks(
     }
 }
 
-/** 依陣列位置把 orderIndex 從 0 連續重編號。對應 CLAUDE.md「編輯器段落清單」開發清單。 */
 internal fun reindexedSegments(segments: List<WorkoutSegment>): List<WorkoutSegment> =
     segments.mapIndexed { index, seg -> seg.copy(orderIndex = index) }
 
-/**
- * 把 index 位置的段落移動 offset 格（-1 上移／+1 下移），並重新編號 orderIndex。
- * index 或 index+offset 超出範圍時原樣傳回。
- */
 internal fun segmentsAfterMove(segments: List<WorkoutSegment>, index: Int, offset: Int): List<WorkoutSegment> {
     val target = index + offset
     if (index !in segments.indices || target !in segments.indices) return segments
@@ -131,7 +109,6 @@ internal fun segmentsAfterMove(segments: List<WorkoutSegment>, index: Int, offse
     return reindexedSegments(mutable)
 }
 
-/** 刪除 index 位置的段落，並重新編號 orderIndex。index 超出範圍時原樣傳回。 */
 internal fun segmentsAfterRemoval(segments: List<WorkoutSegment>, index: Int): List<WorkoutSegment> {
     if (index !in segments.indices) return segments
     val mutable = segments.toMutableList()
@@ -139,13 +116,6 @@ internal fun segmentsAfterRemoval(segments: List<WorkoutSegment>, index: Int): L
     return reindexedSegments(mutable)
 }
 
-/**
- * 段落移動後，跟著調整 selectedSegmentIndex 讓它繼續指向同一個邏輯段落。
- *
- * ponytail: 只算得對「相鄰對調」（UI 的上移／下移，offset ±1）。offset 絕對值大於 1 時
- * [segmentsAfterMove] 是整段位移而不是對調，夾在中間的段落索引也會變，這裡不會跟著算 ——
- * 真要支援 drag & drop 拖過多格時，這支要改成依新舊陣列比對 id 找位置。
- */
 internal fun selectedIndexAfterMove(selectedIndex: Int, movedFromIndex: Int, movedToIndex: Int): Int {
     return when (selectedIndex) {
         movedFromIndex -> movedToIndex
@@ -154,7 +124,6 @@ internal fun selectedIndexAfterMove(selectedIndex: Int, movedFromIndex: Int, mov
     }
 }
 
-/** 段落刪除後，跟著調整 selectedSegmentIndex，並 clamp 進新陣列的有效範圍（newSize 可能是 0）。 */
 internal fun selectedIndexAfterRemoval(selectedIndex: Int, removedIndex: Int, newSize: Int): Int {
     val shifted = if (selectedIndex > removedIndex) selectedIndex - 1 else selectedIndex
     return shifted.coerceIn(0, (newSize - 1).coerceAtLeast(0))
@@ -184,7 +153,6 @@ fun ClassEditorScreen(
     var isEditingCueDialogVisible by remember { mutableStateOf(false) }
     var currentEditingCue by remember { mutableStateOf<WorkoutCue?>(null) }
     var isBpmDialogVisible by remember { mutableStateOf(false) }
-    // 段落刪除需二次確認，見 CLAUDE.md「編輯器段落清單」開發清單。
     var segmentPendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
 
     var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
@@ -198,13 +166,10 @@ fun ClassEditorScreen(
         workoutClass.segments[selectedSegmentIndex]
     } else null
 
-    // Layer 2：段落指定音樂一律先開 app 內音樂庫，不再直接開系統檔案選擇器；
-    // SAF／OpenMultipleDocuments 只留在 MusicLibraryScreen 內「＋匯入新檔」一個入口。
     var isMusicLibraryVisible by remember { mutableStateOf(false) }
 
     fun appendSegmentsFromLibrary(newSegments: List<WorkoutSegment>) {
         if (newSegments.isEmpty()) return
-        // 匯入/選曲後立刻重算總時長/預估消耗，不然編輯畫面頂端的「⏱ 總時長」在存檔前都還是舊值（Layer 1 第 1 項）。
         workoutClass = workoutClass.copy(segments = workoutClass.segments + newSegments).withRecalculatedTotals()
         selectedSegmentIndex = workoutClass.segments.size - 1
     }
@@ -214,9 +179,6 @@ fun ClassEditorScreen(
             previewPlayheadMs = 0
             isPreviewPlaying = false
             previewPlayer.pause()
-            // Layer 3：段落音樂可能來自外部資料夾（content Uri），一律交給 MusicSource 判斷
-            // 來源與存在性；資料夾授權失效或檔案被搬走時 exists() 回傳 false，維持原本
-            // 「檔案不存在就不設定 MediaItem」的容錯行為。
             if (activeSegment.musicFileName.isNotBlank() &&
                 MusicSource.exists(context, repository, activeSegment.musicFileName)
             ) {
@@ -227,7 +189,6 @@ fun ClassEditorScreen(
             val result = analyzer.analyzeWaveform(activeSegment.musicFileName)
             waveformSamples = result.samples
             val needsBpmUpdate = activeSegment.baseBpm == 128.0 && result.bpm != 128.0
-            // 寫回時長：WaveformAnalyzer 算出的 durationMs 之前被丟棄，段落永遠停在預設 300_000（Layer 1 第 1 項）。
             val needsDurationUpdate = result.durationMs > 0 && result.durationMs != activeSegment.durationMs
             if (needsBpmUpdate || needsDurationUpdate) {
                 val updatedSeg = activeSegment.copy(
@@ -235,7 +196,6 @@ fun ClassEditorScreen(
                     durationMs = if (needsDurationUpdate) result.durationMs else activeSegment.durationMs
                 )
                 val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
-                // 段落時長變了，總時長/預估消耗也要跟著重算，否則頭部「⏱ 總時長」跟 segments 兜不起來。
                 workoutClass = workoutClass.copy(segments = updatedSegs).withRecalculatedTotals()
             }
         } else {
@@ -274,7 +234,6 @@ fun ClassEditorScreen(
             .fillMaxSize()
             .background(CanvasWhite)
     ) {
-        // TopBar (#84BF09)
         TopNavBar(
             title = "",
             leading = {
@@ -288,8 +247,6 @@ fun ClassEditorScreen(
             trailing = {
                 TextButton(onClick = {
                     previewPlayer.stop()
-                    // 存檔前的最後一道保險：跟 iOS 儲存按鈕一樣，在呼叫 onSave 前重算一次
-                    // （ClassRepository.saveClass 寫入 DB 前也會再算一次，這裡是給呼叫端拿到的 workoutClass 也一致）。
                     onSave(workoutClass.withRecalculatedTotals())
                 }) {
                     Text(text = "儲存", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -316,7 +273,6 @@ fun ClassEditorScreen(
             }
         )
 
-        // Sub Info Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -345,7 +301,6 @@ fun ClassEditorScreen(
 
         HorizontalDivider(color = CardBorder)
 
-        // Horizontal Segment Cards
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -395,8 +350,6 @@ fun ClassEditorScreen(
                         Spacer(modifier = Modifier.weight(1f))
                         Text(text = "${segment.cues.size} Cues", fontSize = 11.sp, color = TextSecondary)
                     }
-                    // 段落排序／刪除，對應 CLAUDE.md「編輯器段落清單」開發清單：
-                    // 每次移動／刪除都要重編號全部段落的 orderIndex，避免只改記憶體順序、DB 重讀後打回原狀。
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -449,7 +402,6 @@ fun ClassEditorScreen(
                 }
             }
 
-            // Add Segment Card
             item {
                 Box(
                     modifier = Modifier
@@ -458,7 +410,6 @@ fun ClassEditorScreen(
                         .clip(RoundedCornerShape(10.dp))
                         .border(1.dp, TopBarGreen, RoundedCornerShape(10.dp))
                         .clickable {
-                            // 空段落對教練沒有意義，直接開音樂庫，選好曲目才建立段落（Layer 1 第 4 項、Layer 2 音樂庫）。
                             isMusicLibraryVisible = true
                         },
                     contentAlignment = Alignment.Center
@@ -473,14 +424,12 @@ fun ClassEditorScreen(
 
         HorizontalDivider(color = CardBorder)
 
-        // Waveform & Cue Section
         if (activeSegment != null) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                // Waveform & Preview Card
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -489,13 +438,11 @@ fun ClassEditorScreen(
                         .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
                         .padding(14.dp)
                 ) {
-                    // Header: Track title & Timecode
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            // 外部資料夾曲目的 musicFileName 是 content Uri，直接顯示對教練沒意義，改顯示標題。
                             text = if (MusicSource.isExternalUri(activeSegment.musicFileName)) {
                                 activeSegment.title
                             } else {
@@ -520,7 +467,6 @@ fun ClassEditorScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Waveform Canvas with interactive drag seeking
                     WaveformCanvas(
                         samples = waveformSamples,
                         cues = activeSegment.cues,
@@ -534,12 +480,10 @@ fun ClassEditorScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Control Bar: Play/Pause, ±2%, BPM Tap-Tempo, Mark Cue
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Play / Pause Button
                         IconButton(
                             onClick = { isPreviewPlaying = !isPreviewPlaying },
                             modifier = Modifier
@@ -556,7 +500,6 @@ fun ClassEditorScreen(
 
                         Spacer(modifier = Modifier.width(12.dp))
 
-                        // Rate buttons: -2%, 100%, +2%
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
                                 onClick = {
@@ -600,7 +543,6 @@ fun ClassEditorScreen(
 
                         Spacer(modifier = Modifier.width(10.dp))
 
-                        // Live BPM readout & Tap-Tempo Calibration button
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = CardBackground,
@@ -631,7 +573,6 @@ fun ClassEditorScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Mark Cue Pin Button
                         Button(
                             onClick = {
                                 val newOffset = previewPlayheadMs
@@ -661,7 +602,6 @@ fun ClassEditorScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Cue Section Title
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -694,7 +634,6 @@ fun ClassEditorScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Hand Position Badge
                             HandPositionBadge(
                                 position = cue.handPosition,
                                 isCompact = true,
@@ -763,7 +702,6 @@ fun ClassEditorScreen(
         }
     }
 
-        // 匯入失敗要看得見：改用 Snackbar 取代原本只有 Log.e 的無聲失敗（Layer 1 第 5 項）。
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -876,7 +814,6 @@ fun CueEditorDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Time code
                 val sec = editingCue.offsetMs / 1000
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -895,7 +832,6 @@ fun CueEditorDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // Posture Selection
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("騎乘姿勢", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     FlowRow(
@@ -938,7 +874,6 @@ fun CueEditorDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // Hand Position Selection
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("握把把位指引", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Row(
@@ -987,7 +922,6 @@ fun CueEditorDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // RPM & Resistance
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1026,7 +960,6 @@ fun CueEditorDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // Coaching Reminders Library Section
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1084,7 +1017,6 @@ fun CueEditorDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // Message
                 OutlinedTextField(
                     value = editingCue.message,
                     onValueChange = { editingCue = editingCue.copy(message = it) },
@@ -1144,7 +1076,6 @@ fun RemindersPickerDialog(
                     .fillMaxWidth()
                     .heightIn(max = 480.dp)
             ) {
-                // Custom input
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

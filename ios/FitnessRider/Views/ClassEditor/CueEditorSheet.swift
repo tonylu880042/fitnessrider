@@ -15,7 +15,6 @@ public struct CueEditorSheet: View {
     public var body: some View {
         NavigationStack {
             Form {
-                // Time Code Section
                 Section("動作開始時間") {
                     HStack {
                         Text("時間點")
@@ -27,7 +26,6 @@ public struct CueEditorSheet: View {
                     }
                 }
 
-                // Posture Selection
                 Section("騎乘姿勢") {
                     Picker("姿勢", selection: $cue.posture) {
                         ForEach(PostureType.allCases) { posture in
@@ -45,7 +43,6 @@ public struct CueEditorSheet: View {
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
 
-                // Hand Position Section
                 Section("握把把位指引") {
                     Picker("把位", selection: $cue.handPosition) {
                         ForEach(HandPosition.allCases) { pos in
@@ -63,7 +60,6 @@ public struct CueEditorSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                // RPM & Resistance
                 Section("目標踏頻與阻力") {
                     Stepper("目標 RPM: \(cue.targetRpm)", value: $cue.targetRpm, in: 40...140, step: 5)
 
@@ -75,7 +71,6 @@ public struct CueEditorSheet: View {
                     }
                 }
 
-                // Coaching Reminders Library Section
                 Section("教練專業口訣提示 (\(cue.reminders.count) 條)") {
                     if cue.reminders.isEmpty {
                         Text("尚未選取口訣，課堂中將預設輪播姿勢訓練目標")
@@ -111,7 +106,6 @@ public struct CueEditorSheet: View {
                     }
                 }
 
-                // Custom Message
                 Section("備註說明 (Message)") {
                     TextField("例如：站姿起立，跟上音樂節拍！", text: $cue.message)
                 }
@@ -144,7 +138,6 @@ public struct CueEditorSheet: View {
     }
 }
 
-// MARK: - Reminders Picker Sheet
 private struct RemindersPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let posture: PostureType

@@ -7,8 +7,6 @@ public final class WaveformAnalyzer: Sendable {
     private init() {}
 
     public func analyzeWaveform(for fileName: String, completion: @escaping @MainActor @Sendable ([Float], Int, Double) -> Void) {
-        // 1. Check SQLite Cache（本地檔名、Layer 3 外部資料夾的 "extfolder://" 字串都用同一張
-        //    快取表，fileName 本身就是 key，不需要另外的快取結構）
         if let cached = ClassRepository.shared.fetchWaveform(for: fileName) {
             DispatchQueue.main.async {
                 completion(cached.samples, cached.durationMs, cached.bpm)
@@ -16,10 +14,7 @@ public final class WaveformAnalyzer: Sendable {
             return
         }
 
-        // 2. Check File Exists（本機 Music/ 目錄或 Layer 3 外部資料夾皆由 MusicSource 判斷，
-        //    資料夾授權失效／檔案被搬走都會落到這裡當作「檔案不存在」處理）
         guard MusicSource.fileExists(for: fileName) else {
-            // Generate synthetic rhythmic waveform for placeholder
             let synthetic = generateSyntheticWaveform(sampleCount: 800)
             DispatchQueue.main.async {
                 completion(synthetic, 300_000, 128.0)
@@ -27,10 +22,7 @@ public final class WaveformAnalyzer: Sendable {
             return
         }
 
-        // 3. Asynchronous Streaming PCM Peak Analysis
         DispatchQueue.global(qos: .userInitiated).async {
-            // 外部資料夾的 security-scoped 存取視窗只在這個閉包執行期間有效；整段解碼是同步的
-            // while 迴圈，讀取都會在閉包回傳前完成，所以把完整解碼流程包在裡面是安全的。
             let didAnalyze: Bool = MusicSource.withResolvedFileURL(for: fileName) { fileURL -> Bool? in
                 let asset = AVURLAsset(url: fileURL)
                 guard let track = asset.tracks(withMediaType: .audio).first else {
@@ -77,7 +69,6 @@ public final class WaveformAnalyzer: Sendable {
                         }
                     }
 
-                    // Downsample to target 800 points
                     let targetPoints = 800
                     var finalPoints: [Float] = []
                     if rawPeaks.count > targetPoints {
@@ -94,18 +85,15 @@ public final class WaveformAnalyzer: Sendable {
                         finalPoints = self.generateSyntheticWaveform(sampleCount: targetPoints)
                     }
 
-                    // Smooth dropouts and normalize
                     let maxAmp = finalPoints.max() ?? 1.0
                     let scale: Float = maxAmp > 0.05 ? 0.95 / maxAmp : 1.0
                     for i in 0..<finalPoints.count {
                         finalPoints[i] = min(1.0, max(0.05, finalPoints[i] * scale))
                     }
 
-                    // Simple peak-rate BPM estimation
                     let durationMs = Int(CMTimeGetSeconds(asset.duration) * 1000)
                     let calculatedBpm = self.estimateBpm(from: finalPoints, durationMs: durationMs)
 
-                    // Cache in SQLite
                     ClassRepository.shared.saveWaveform(for: fileName, samples: finalPoints, durationMs: durationMs, bpm: calculatedBpm)
 
                     DispatchQueue.main.async {
@@ -139,7 +127,6 @@ public final class WaveformAnalyzer: Sendable {
         let maxVal = samples.max() ?? 1.0
         let threshold = maxVal * 0.55
 
-        // Find peaks above threshold
         var peakIndices: [Int] = []
         for i in 1..<(samples.count - 1) {
             if samples[i] > threshold && samples[i] >= samples[i-1] && samples[i] >= samples[i+1] {

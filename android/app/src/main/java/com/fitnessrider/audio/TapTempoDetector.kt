@@ -11,10 +11,6 @@ class TapTempoDetector(
     val tapCount: Int
         get() = tapTimestamps.size
 
-    /**
-     * Record a tap at the given timestamp (defaults to current system time).
-     * Returns the calculated BPM if at least 2 taps are recorded, or null if insufficient taps.
-     */
     fun recordTap(now: Long = System.currentTimeMillis()): Double? {
         if (tapTimestamps.isNotEmpty()) {
             val elapsedSinceLast = now - tapTimestamps.last()
@@ -31,16 +27,13 @@ class TapTempoDetector(
         return calculateCurrentBpm()
     }
 
-    /**
-     * Calculates the rolling average BPM from the recorded timestamps.
-     */
     fun calculateCurrentBpm(): Double? {
         if (tapTimestamps.size < 2) return null
 
         val intervals = mutableListOf<Long>()
         for (i in 1 until tapTimestamps.size) {
             val delta = tapTimestamps[i] - tapTimestamps[i - 1]
-            if (delta in 200..2000) { // Valid interval between 30 BPM and 300 BPM
+            if (delta in 200..2000) {
                 intervals.add(delta)
             }
         }
@@ -51,7 +44,6 @@ class TapTempoDetector(
         if (avgIntervalMs <= 0.0) return null
 
         val rawBpm = 60_000.0 / avgIntervalMs
-        // Round to 1 decimal place
         return ((rawBpm * 10.0).roundToInt() / 10.0).coerceIn(40.0, 240.0)
     }
 

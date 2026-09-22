@@ -53,10 +53,6 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
 
-/**
- * Layer 2「app 內音樂庫」的一筆項目：曲名、時長、BPM 一律來自 [ClassRepository.getWaveform] 的
- * 波形快取，不在這裡重新分析音檔（分析由 Layer 1 的匯入流程或 [WaveformAnalyzer] 快取命中負責）。
- */
 internal data class MusicLibraryTrack(
     val fileName: String,
     val title: String,
@@ -64,10 +60,6 @@ internal data class MusicLibraryTrack(
     val bpm: Double
 )
 
-/**
- * 由 `Music/` 目錄下的檔名 + 波形快取查詢建立音樂庫列表，並依曲名排序。
- * [waveformLookup] 回傳 (durationMs, bpm)；查無快取時 fallback 回段落預設值，不觸發重新分析。
- */
 internal fun buildMusicLibraryTracks(
     fileNames: List<String>,
     waveformLookup: (String) -> Pair<Int, Double>?
@@ -85,7 +77,6 @@ internal fun buildMusicLibraryTracks(
     }.sortedBy { it.title.lowercase(Locale.ROOT) }
 }
 
-/** 即時搜尋 filter，比照舊版 FragDialogSelectMusic：不分大小寫比對曲名子字串。 */
 internal fun filterMusicLibraryTracks(tracks: List<MusicLibraryTrack>, query: String): List<MusicLibraryTrack> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return tracks
@@ -93,7 +84,6 @@ internal fun filterMusicLibraryTracks(tracks: List<MusicLibraryTrack>, query: St
     return tracks.filter { it.title.lowercase(Locale.ROOT).contains(needle) }
 }
 
-/** 同一套即時搜尋邏輯套用在 Layer 3 的外部資料夾項目上，比對檔名子字串。 */
 internal fun filterExternalMusicEntries(entries: List<ExternalMusicEntry>, query: String): List<ExternalMusicEntry> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return entries
@@ -101,10 +91,6 @@ internal fun filterExternalMusicEntries(entries: List<ExternalMusicEntry>, query
     return entries.filter { it.displayName.lowercase(Locale.ROOT).contains(needle) }
 }
 
-/**
- * 從音樂庫多選既有曲目 -> 直接建立 N 個段落，行為對應 Layer 1 的
- * [buildSegmentsForImportedTracks]，唯一差異是曲目已經在 `Music/` 目錄裡，不會再產生檔案複製。
- */
 internal fun buildSegmentsFromLibrarySelection(
     tracks: List<MusicLibraryTrack>,
     classId: String,
@@ -114,12 +100,6 @@ internal fun buildSegmentsFromLibrarySelection(
     return buildSegmentsForImportedTracks(importInfos, classId, startOrderIndex)
 }
 
-/**
- * Layer 3：從外部資料夾多選曲目 -> 直接建立 N 個段落，musicFileName 存的是該檔案的
- * content Uri 字串（[com.fitnessrider.data.MusicSource.isExternalUri] 用來辨識來源）。
- * 時長／BPM 先用預設值，實際數值等教練在編輯畫面選到該段落時，由既有的
- * WaveformAnalyzer 分析並寫回（跟 Layer 1 對新匯入檔案的處理是同一條路徑）。
- */
 internal fun buildSegmentsFromExternalSelection(
     entries: List<ExternalMusicEntry>,
     classId: String,
@@ -130,18 +110,12 @@ internal fun buildSegmentsFromExternalSelection(
             fileName = it.documentUriString,
             durationMs = 300_000,
             bpm = 128.0,
-            // fileName 是 content Uri，去副檔名沒有意義，標題一律用真正的檔名。
             displayTitle = musicTitleFromFileName(it.displayName)
         )
     }
     return buildSegmentsForImportedTracks(importInfos, classId, startOrderIndex)
 }
 
-/**
- * 複製匯入的音樂檔到 [destFile]；[openInput] 由呼叫端提供實際輸入流（正式環境用
- * ContentResolver，測試用假流）。複製中途失敗時刪掉半成品，不在 Music 目錄留下截斷檔
- * 佔用檔名（CLAUDE.md「已知落差」第二項：匯入失敗時已寫入一半的檔案沒有清掉）。
- */
 internal fun copyMusicFileOrCleanup(destFile: File, openInput: () -> InputStream): Boolean {
     return try {
         openInput().use { input ->
@@ -159,15 +133,6 @@ private fun formatDuration(durationMs: Int): String {
     return String.format("%02d:%02d", totalSec / 60, totalSec % 60)
 }
 
-/**
- * Layer 2 + Layer 3：app 內音樂庫，用分頁清楚區分兩種音樂來源，避免教練搞混「哪些檔案在哪」：
- * - 「已匯入音樂庫」：複製進 `filesDir/Music` 的曲目（Layer 2）。
- * - 「音樂資料夾」：教練指定的外部資料夾，直接讀取內容、完全不複製檔案進 App（Layer 3）。
- *
- * @param onSegmentsCreated 有新段落產生時呼叫（兩個分頁的多選、或匯入新檔皆會呼叫這裡），呼叫後畫面即關閉。
- * @param onImportFailed 匯入新檔部分或全部失敗時呼叫，交由呼叫端（ClassEditorScreen 既有的
- *   SnackbarHostState）顯示錯誤，不在音樂庫裡另外疊一個 SnackbarHost。
- */
 @Composable
 fun MusicLibraryScreen(
     classId: String,
@@ -183,13 +148,11 @@ fun MusicLibraryScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Layer 2：已匯入音樂庫狀態
     var allTracks by remember { mutableStateOf<List<MusicLibraryTrack>>(emptyList()) }
     var selectedFileNames by remember { mutableStateOf(setOf<String>()) }
     var isLoading by remember { mutableStateOf(true) }
     var isImporting by remember { mutableStateOf(false) }
 
-    // Layer 3：外部資料夾狀態
     var folderUri by remember { mutableStateOf(ExternalMusicFolderPrefs.getFolderUri(context)) }
     var includeSubdirectories by remember { mutableStateOf(ExternalMusicFolderPrefs.isIncludeSubdirectories(context)) }
     var externalEntries by remember { mutableStateOf<List<ExternalMusicEntry>>(emptyList()) }
@@ -197,8 +160,6 @@ fun MusicLibraryScreen(
     var isLoadingExternal by remember { mutableStateOf(false) }
     var externalFolderError by remember { mutableStateOf<String?>(null) }
 
-    // 兩個分頁共用同一顆試聽 ExoPlayer，用同一個 key 空間避免互相干擾：
-    // "lib:<fileName>" 代表已匯入音樂庫項目，"ext:<uri>" 代表外部資料夾項目。
     var playingKey by remember { mutableStateOf<String?>(null) }
 
     val previewPlayer = remember {
@@ -219,7 +180,6 @@ fun MusicLibraryScreen(
     suspend fun reload() {
         val musicDir = repository.musicDirectory
         val fileNames = musicDir.list()?.toList() ?: emptyList()
-        // 不重新分析：逐一讀波形快取（durationMs/bpm），查無快取才 fallback 給預設值。
         val waveformByFileName = fileNames.associateWith { fileName ->
             repository.getWaveform(fileName)?.let { it.second to it.third }
         }
@@ -229,9 +189,6 @@ fun MusicLibraryScreen(
 
     LaunchedEffect(Unit) { reload() }
 
-    // Layer 3：資料夾或「含子資料夾」開關一變動就重新串流列出內容；資料夾授權被撤銷或
-    // 資料夾本身消失時 listExternalMusicEntries 會丟例外，這裡接住並顯示「資料夾存取已失效」，
-    // 不讓整個音樂庫畫面崩潰。
     LaunchedEffect(folderUri, includeSubdirectories) {
         val uri = folderUri
         if (uri == null) {
@@ -281,7 +238,6 @@ fun MusicLibraryScreen(
             previewPlayer.pause()
             playingKey = null
         } else {
-            // content Uri 直接交給 ExoPlayer 的預設 DataSource 讀取，不需要先複製檔案。
             previewPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(entry.documentUriString)))
             previewPlayer.prepare()
             previewPlayer.play()
@@ -296,7 +252,6 @@ fun MusicLibraryScreen(
             try {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (e: Exception) {
-                // 少數 provider 不支援長期授權；吞掉例外，仍嘗試用這次的 uri 列出內容。
             }
             ExternalMusicFolderPrefs.setFolderUri(context, uri)
             folderUri = uri
@@ -364,7 +319,6 @@ fun MusicLibraryScreen(
             if (failedLabels.isNotEmpty()) {
                 onImportFailed(failedLabels)
             }
-            // 全部成功才自動關閉；有失敗時留在音樂庫讓教練看得到錯誤、也能重新挑選。
             if (importedTracks.isNotEmpty() && failedLabels.isEmpty()) {
                 onDismiss()
             }
@@ -412,7 +366,6 @@ fun MusicLibraryScreen(
                 }
             )
 
-            // 分頁：清楚區分「複製進 App 的曲目」與「外部資料夾曲目」，避免教練搞混哪些檔案在哪。
             TabRow(selectedTabIndex = selectedTabIndex, containerColor = CanvasWhite) {
                 Tab(
                     selected = selectedTabIndex == 0,
@@ -426,7 +379,6 @@ fun MusicLibraryScreen(
                 )
             }
 
-            // 搜尋列：比照舊版 FragDialogSelectMusic 的即時 filter，兩個分頁共用同一個搜尋框。
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -485,7 +437,6 @@ fun MusicLibraryScreen(
 
             HorizontalDivider(color = CardBorder)
 
-            // 底部確認列：兩個分頁都是多選既有曲目 -> 一次建立 N 個段落，都不複製任何檔案。
             val selectionCount = if (selectedTabIndex == 0) selectedFileNames.size else selectedExternalUris.size
             Row(
                 modifier = Modifier
@@ -597,7 +548,6 @@ private fun ExternalFolderTabContent(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (folderUri != null) {
-            // 說明目前列出的是外部資料夾內容，不佔用 App 儲存空間，跟上方分頁的「已匯入音樂庫」是不同來源。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

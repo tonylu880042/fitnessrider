@@ -23,12 +23,6 @@ object VersionLifecycleManager {
     val versionName: String get() = BuildConfig.VERSION_NAME
     val versionCode: Int get() = BuildConfig.VERSION_CODE
 
-    /**
-     * 只接受「當年度」的推廣代碼。過去年度已過期；未來年度雖然格式相符，
-     * 但尚未生效，一律視為無效 —— 否則像 99FR-NR 這種還沒到來的年份代碼會被誤判為
-     * 永遠不過期而永久放行（見 spec 項目 G，backend/src/lib/db.ts 的
-     * checkPromoCodeStatus 有相同修正）。
-     */
     fun isPromoCode(rawCode: String): Boolean {
         val code = rawCode.trim().uppercase()
         val regex = Regex("^(\\d{2})FR-NR$")
@@ -56,11 +50,6 @@ object VersionLifecycleManager {
         return anchor + (lifecycleDays * MS_PER_DAY)
     }
 
-    /**
-     * 用伺服器回傳的試用起算時間校正本機錨點，取「較早」的一個 —— 這樣 Android 重灌
-     * （SharedPreferences 被清空）後，只要伺服器還記得這個 ANDROID_ID 的原始試用起算時間，
-     * 試用就不會被重置（spec 項目 D）。離線時完全不呼叫這個方法，直接沿用本機值即可。
-     */
     fun reconcileFirstLaunchAnchor(context: Context, serverAnchorMs: Long) {
         if (serverAnchorMs <= 0L) return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -70,13 +59,6 @@ object VersionLifecycleManager {
         }
     }
 
-    /**
-     * Check if device has an active VIP license.
-     *
-     * A missing/zero `expires` value must NOT be treated as "no expiry" (that used to let a
-     * license row with a lost/never-set expiry date grant unlimited VIP access forever).
-     * Missing expiry now means "not VIP" (spec 項目 C).
-     */
     fun isVipActive(context: Context? = null, overrideCurrentTimeMs: Long? = null): Boolean {
         if (context == null) return false
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -90,29 +72,22 @@ object VersionLifecycleManager {
         return false
     }
 
-    /**
-     * Check if current version / trial has exceeded its duration or clock has been rolled back.
-     * When expired, persists KEY_IS_EXPIRED = true so subsequent clock rollbacks cannot unlock.
-     */
     fun isExpired(context: Context? = null, overrideCurrentTimeMs: Long? = null): Boolean {
         val now = overrideCurrentTimeMs ?: System.currentTimeMillis()
 
         if (context != null) {
-            // VIP license completely bypasses trial expiration
             if (isVipActive(context, overrideCurrentTimeMs)) {
                 return false
             }
 
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-            // 1. Permanent lock check: once marked expired, stays expired regardless of clock
             if (prefs.getBoolean(KEY_IS_EXPIRED, false)) {
                 return true
             }
 
             val lastRecordedTime = prefs.getLong(KEY_LAST_LAUNCH_TIME, 0L)
 
-            // 2. Anti-clock rollback check (> 1 hour backwards from last launch)
             if (lastRecordedTime > 0L && now < (lastRecordedTime - 3600_000L)) {
                 prefs.edit()
                     .putBoolean(KEY_IS_EXPIRED, true)
@@ -120,7 +95,6 @@ object VersionLifecycleManager {
                 return true
             }
 
-            // 3. Expiration date check (trial duration from first launch)
             val expiration = getExpirationTimeMs(context, overrideCurrentTimeMs)
             if (now >= expiration) {
                 prefs.edit()
@@ -130,21 +104,16 @@ object VersionLifecycleManager {
                 return true
             }
 
-            // 4. Record newest launch time
             if (now > lastRecordedTime) {
                 prefs.edit().putLong(KEY_LAST_LAUNCH_TIME, now).apply()
             }
             return false
         }
 
-        // Fallback for tests without Context (based on buildTimeMs)
         val expiration = buildTimeMs + (lifecycleDays * MS_PER_DAY)
         return now >= expiration
     }
 
-    /**
-     * Remaining days of validity (0 if expired).
-     */
     fun getRemainingDays(context: Context? = null, overrideCurrentTimeMs: Long? = null): Int {
         if (context != null && isVipActive(context, overrideCurrentTimeMs)) {
             return 365
@@ -158,15 +127,6 @@ object VersionLifecycleManager {
         return if (remainingMs <= 0) 0 else Math.ceil(remainingMs.toDouble() / MS_PER_DAY).toInt()
     }
 
-    /**
-     * Activate app via license code or promotional code (Offline algorithmic check + persistence).
-     *
-     * 推廣代碼：延長一次到「總共 [BuildConfig.PROMO_TOTAL_TRIAL_DAYS] 天」，不是在現在的時間
-     * 上再加 30 天，因此到期時間 = 裝置試用起算時間 + PROMO_TOTAL_TRIAL_DAYS（與後端
-     * activateLicenseWithCode 的計算方式一致）。
-     * 付費 VIP：改用 [VipSerialVerifier] 做 P-256 驗簽，天數由序號內容決定，
-     * 不再有任何寫死序號或前綴規則。
-     */
     fun activateLicenseCode(
         context: Context,
         rawCode: String,
@@ -180,8 +140,6 @@ object VersionLifecycleManager {
         }
 
         val isPromo = isPromoCode(code)
-        // testVipPublicKeyOverride 只給測試用（見 FitnessRiderAndroidTest），讓測試可以用自己
-        // 產生的金鑰對走完整條開通流程，不必碰正式私鑰；正式呼叫端一律不傳這個參數。
         val vipSerialInfo = if (!isPromo) {
             if (testVipPublicKeyOverride != null) VipSerialVerifier.verify(code, testVipPublicKeyOverride)
             else VipSerialVerifier.verify(code)
@@ -235,10 +193,6 @@ object VersionLifecycleManager {
         return Pair(false, "無效的授權序號或推廣代碼")
     }
 
-    /**
-     * 信任伺服器已驗證過身分的授權結果，直接寫入本機 VIP 狀態
-     * （帳號密碼換機、線上開通推廣代碼或已在伺服器驗過簽章的序號換機成功後呼叫）。
-     */
     fun activateVipFromServer(
         context: Context,
         expiresAtIso: String,
@@ -260,9 +214,6 @@ object VersionLifecycleManager {
             .apply()
     }
 
-    /**
-     * 將推廣代碼寫入本地已兌換清單，防止單機重複兌換（與 iOS 對齊，spec 項目 5）。
-     */
     fun recordPromoRedemption(context: Context, code: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val redeemedSet = prefs.getStringSet(KEY_REDEEMED_PROMOS, emptySet())?.toMutableSet() ?: mutableSetOf()
@@ -277,14 +228,6 @@ object VersionLifecycleManager {
         return prefs.getString(KEY_VIP_CODE, null)
     }
 
-    /**
-     * 推廣碼是否該被「生效中的付費年繳 VIP」擋下來：要擋就回傳錯誤訊息，不用擋回傳 null。
-     *
-     * 本機與線上開通共用同一條規則（對應後端的 VIP_ALREADY_ACTIVE）。線上流程一定要在送出請求
-     * 「之前」先問過這裡 —— 伺服器只認得它自己記錄過的授權，付費序號當初若是離線開通的，
-     * 伺服器查無付費授權就會放行推廣碼，回傳 anchor + PROMO_TOTAL_TRIAL_DAYS，
-     * 把本機的 365 天蓋成 30 天。
-     */
     fun promoBlockedByPaidVipMessage(context: Context, code: String, overrideCurrentTimeMs: Long? = null): String? {
         if (!isPromoCode(code)) return null
         if (!isVipActive(context, overrideCurrentTimeMs)) return null
@@ -292,19 +235,11 @@ object VersionLifecycleManager {
         return "此設備已有生效中的專業年繳版 VIP 授權，無需使用體驗推廣代碼。"
     }
 
-    /**
-     * 目前這份 VIP 狀態是不是「推廣代碼換來的」。刻意不看年度 ——
-     * [isPromoCode] 只認當年度代碼，但跨年時 26FR-NR 換來的授權可能還沒到期，
-     * 那時它仍然是推廣方案，不是付費年繳版。
-     */
     fun isPromoVipCode(code: String?): Boolean {
         val c = code?.trim()?.uppercase() ?: return false
         return c == "PROMO_VERIFIED" || Regex("^\\d{2}FR-NR$").matches(c)
     }
 
-    /**
-     * 取得目前授權的方案名稱，若為推廣代碼則正確顯示體驗版名稱（spec 項目 4）。
-     */
     fun getVipPlanName(context: Context): String {
         return if (isPromoVipCode(getVipCode(context))) {
             "推廣課程專屬版 (${BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)"

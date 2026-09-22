@@ -68,7 +68,6 @@ fun WaveformCanvas(
             val progress = (currentOffsetMs.toFloat() / safeDuration).coerceIn(0f, 1f)
             val playheadX = width * progress
 
-            // 1. Draw Time Grid Lines & Labels
             val totalSeconds = safeDuration / 1000
             val intervalSeconds = when {
                 totalSeconds <= 120 -> 30
@@ -105,7 +104,6 @@ fun WaveformCanvas(
                 sec += intervalSeconds
             }
 
-            // 2. Draw Waveform Bars
             if (samples.isNotEmpty()) {
                 val barWidth = 2.5.dp.toPx()
                 val spacing = 1.5.dp.toPx()
@@ -130,12 +128,10 @@ fun WaveformCanvas(
                 }
             }
 
-            // 3. Draw Cue Marker Pins
             for (cue in cues) {
                 val cueProgress = (cue.offsetMs.toFloat() / safeDuration).coerceIn(0f, 1f)
                 val cueX = width * cueProgress
 
-                // Vertical Marker Line
                 drawLine(
                     color = TopBarGreenDark,
                     start = Offset(cueX, 0f),
@@ -143,7 +139,6 @@ fun WaveformCanvas(
                     strokeWidth = 2.dp.toPx()
                 )
 
-                // Top Pin Head
                 drawCircle(
                     color = TopBarGreenDark,
                     radius = 6.dp.toPx(),
@@ -155,7 +150,6 @@ fun WaveformCanvas(
                     center = Offset(cueX, 12.dp.toPx())
                 )
 
-                // Bottom RPM Label
                 val rpmText = "${cue.targetRpm}"
                 val rpmStyle = TextStyle(
                     color = TopBarGreenDark,
@@ -171,7 +165,6 @@ fun WaveformCanvas(
                 )
             }
 
-            // 4. Draw Playhead Line & Indicator
             drawLine(
                 color = AccentRed,
                 start = Offset(playheadX, 0f),
@@ -179,7 +172,6 @@ fun WaveformCanvas(
                 strokeWidth = 2.5.dp.toPx()
             )
 
-            // Playhead triangle at top
             val trianglePath = Path().apply {
                 moveTo(playheadX - 6.dp.toPx(), 0f)
                 lineTo(playheadX + 6.dp.toPx(), 0f)

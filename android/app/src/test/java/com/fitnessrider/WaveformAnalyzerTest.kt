@@ -11,7 +11,6 @@ class WaveformAnalyzerTest {
 
     @Test
     fun testSyntheticWaveformGeneration() {
-        // Test repository byte converter round-trip
         val testFloats = floatArrayOf(0.12f, 0.45f, 0.89f, 0.05f)
         val bytes = ClassRepository.floatArrayToByteArray(testFloats)
         assertEquals(testFloats.size * 4, bytes.size)
@@ -21,7 +20,6 @@ class WaveformAnalyzerTest {
             assertEquals(testFloats[i], decoded[i], 0.0001f)
         }
 
-        // Test synthetic waveform generator
         val analyzer = WaveformAnalyzer()
         val sampleWaveform = analyzer.generateSyntheticWaveform(800)
 
@@ -35,14 +33,12 @@ class WaveformAnalyzerTest {
     fun testTapTempoCalculationAccuracy() {
         val detector = TapTempoDetector()
 
-        // 1. Initial state
         assertNull(detector.calculateCurrentBpm())
         assertEquals(0, detector.tapCount)
 
-        // 2. Simulate 120 BPM taps (interval 500ms)
         val startTime = 1000000L
         detector.recordTap(startTime)
-        assertNull(detector.calculateCurrentBpm()) // 1 tap is not enough
+        assertNull(detector.calculateCurrentBpm())
 
         detector.recordTap(startTime + 500)
         assertEquals(120.0, detector.calculateCurrentBpm()!!, 0.5)
@@ -54,7 +50,6 @@ class WaveformAnalyzerTest {
         assertEquals(120.0, detector.calculateCurrentBpm()!!, 0.5)
         assertEquals(4, detector.tapCount)
 
-        // 3. Simulate 140 BPM taps (~428.57ms)
         detector.reset()
         assertEquals(0, detector.tapCount)
         var t = startTime
@@ -67,32 +62,24 @@ class WaveformAnalyzerTest {
         assertNotNull(calculated140)
         assertEquals(140.0, calculated140!!, 1.0)
 
-        // 4. Test auto-reset on gap > 2500ms
-        detector.recordTap(t + 3000) // Huge gap
+        detector.recordTap(t + 3000)
         assertEquals(1, detector.tapCount)
         assertNull(detector.calculateCurrentBpm())
     }
 
     @Test
     fun testTapTempoCompanionCalculation() {
-        // 500ms intervals = 120 BPM
         val bpm120 = TapTempoDetector.calculateBpmFromIntervals(listOf(500L, 500L, 500L))
         assertEquals(120.0, bpm120!!, 0.1)
 
-        // 400ms intervals = 150 BPM
         val bpm150 = TapTempoDetector.calculateBpmFromIntervals(listOf(400L, 400L, 400L))
         assertEquals(150.0, bpm150!!, 0.1)
 
-        // Empty list
         assertNull(TapTempoDetector.calculateBpmFromIntervals(emptyList()))
     }
 
     @Test
     fun testBpmEstimationFromWaveformEnvelope() {
-        // Create an 800-point sample buffer with periodic strong beats at 128 BPM
-        // Duration: 100 seconds (100,000 ms)
-        // 128 BPM = 128 / 60 = 2.133 beats/sec
-        // In 100 seconds -> ~213 beats
         val durationMs = 100_000
         val sampleCount = 800
         val beatsPerSec = 128.0 / 60.0
@@ -107,7 +94,6 @@ class WaveformAnalyzerTest {
             }
         }
 
-        // Test peak extraction logic
         val durationSec = durationMs / 1000.0
         val peakIndices = mutableListOf<Int>()
         for (i in 1 until envelope.size - 1) {
@@ -117,7 +103,6 @@ class WaveformAnalyzerTest {
         }
         assertTrue("Should detect rhythmic beat peaks", peakIndices.size >= 100)
 
-        // Interval estimation
         val intervals = mutableListOf<Double>()
         for (i in 1 until peakIndices.size) {
             val diff = peakIndices[i] - peakIndices[i - 1]

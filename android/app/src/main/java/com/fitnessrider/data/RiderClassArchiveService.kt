@@ -21,14 +21,12 @@ class RiderClassArchiveService(private val context: Context) {
             val zipFile = File(exportDir, "$sanitizedTitle.riderclass")
 
             ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-                // 1. Write workout_class.json
                 val jsonString = serializeClassToJson(workoutClass)
                 val jsonEntry = ZipEntry("workout_class.json")
                 zos.putNextEntry(jsonEntry)
                 zos.write(jsonString.toByteArray(Charsets.UTF_8))
                 zos.closeEntry()
 
-                // 2. Write audio tracks
                 for (seg in workoutClass.segments) {
                     if (seg.musicFileName.isNotBlank()) {
                         val audioFile = File(musicDir, seg.musicFileName)
@@ -62,7 +60,6 @@ class RiderClassArchiveService(private val context: Context) {
                         zis.copyTo(buffer)
                         jsonString = buffer.toString(Charsets.UTF_8.name())
                     } else if (!entry.isDirectory) {
-                        // Extract music file with Zip Slip path traversal protection
                         val destFile = File(musicDir, entry.name)
                         val canonicalDest = destFile.canonicalPath
                         val canonicalDir = musicDir.canonicalPath

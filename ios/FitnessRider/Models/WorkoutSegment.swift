@@ -8,8 +8,8 @@ public struct WorkoutSegment: Identifiable, Codable, Equatable, Sendable {
     public var musicFileName: String
     public var durationMs: Int
     public var baseBpm: Double
-    public var playbackRate: Double // 0.85 ~ 1.15
-    public var intensityZone: Int   // 1 ~ 5
+    public var playbackRate: Double
+    public var intensityZone: Int
     public var cues: [WorkoutCue]
 
     public var effectiveBpm: Double {

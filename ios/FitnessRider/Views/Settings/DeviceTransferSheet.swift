@@ -4,7 +4,7 @@ public struct DeviceTransferSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var licenseService = LicenseVerificationService.shared
 
-    @State private var transferMode: Int = 0 // 0: VIP 序號, 1: 會員帳密
+    @State private var transferMode: Int = 0
     @State private var licenseCodeInput: String = ""
     @State private var emailInput: String = ""
     @State private var passwordInput: String = ""
@@ -20,7 +20,6 @@ public struct DeviceTransferSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Header Policy Banner
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
                             Image(systemName: "shield.lefthalf.filled")
@@ -41,14 +40,12 @@ public struct DeviceTransferSheet: View {
                     .background(FitnessRiderTheme.topBarGreen.opacity(0.08))
                     .cornerRadius(12)
 
-                    // Transfer Mode Picker
                     Picker("轉移方式", selection: $transferMode) {
                         Text("VIP 序號轉移").tag(0)
                         Text("會員帳密轉移").tag(1)
                     }
                     .pickerStyle(.segmented)
 
-                    // Input Form Fields
                     VStack(spacing: 14) {
                         if transferMode == 0 {
                             VStack(alignment: .leading, spacing: 6) {
@@ -93,7 +90,6 @@ public struct DeviceTransferSheet: View {
                     .background(FitnessRiderTheme.cardHeaderBackground)
                     .cornerRadius(12)
 
-                    // Current Device Fingerprint Box
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text("目前本機識別碼 (新設備)")
@@ -114,7 +110,6 @@ public struct DeviceTransferSheet: View {
                     .background(Color.black.opacity(0.03))
                     .cornerRadius(8)
 
-                    // Cooldown & Error Banner
                     if let cooldown = remainingCooldownDays {
                         VStack(spacing: 6) {
                             HStack(spacing: 6) {
@@ -148,7 +143,6 @@ public struct DeviceTransferSheet: View {
                         .cornerRadius(8)
                     }
 
-                    // Success Banner
                     if let success = successMessage {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle.fill")
@@ -163,7 +157,6 @@ public struct DeviceTransferSheet: View {
                         .cornerRadius(10)
                     }
 
-                    // Confirm Action Button
                     Button {
                         executeTransfer()
                     } label: {

@@ -4,7 +4,6 @@ import Foundation
 public final class AppSettings: ObservableObject {
     public static let shared = AppSettings()
 
-    /// 單一來源：Crossfade 秒數選項，Android／iOS 必須完全一致。預設值仍為 2.0 秒。
     public static let crossfadeOptionsSeconds: [Double] = [0.0, 1.0, 2.0, 3.0, 5.0, 8.0]
 
     private enum Keys {

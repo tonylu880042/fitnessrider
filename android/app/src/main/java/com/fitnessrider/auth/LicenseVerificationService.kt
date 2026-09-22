@@ -15,10 +15,6 @@ import javax.crypto.spec.SecretKeySpec
 
 class LicenseVerificationService(private val context: Context) {
     companion object {
-        /**
-         * 純函式，抽出來方便單元測試：min_supported_version_code <= 0 代表「永不強制更新」；
-         * 當伺服器設定了門檻 (> 0) 且用戶端 currentVersionCode 低於門檻時才需要強制更新（spec 項目 F）。
-         */
         fun computeMustUpdate(minSupportedVersionCode: Int, currentVersionCode: Int): Boolean {
             return minSupportedVersionCode > 0 && currentVersionCode < minSupportedVersionCode
         }
@@ -35,7 +31,6 @@ class LicenseVerificationService(private val context: Context) {
     private val _remainingDays = MutableStateFlow(com.fitnessrider.util.VersionLifecycleManager.lifecycleDays)
     val remainingDays: StateFlow<Int> = _remainingDays.asStateFlow()
 
-    /** 有新版可拿、且目前這支建置版本碼已低於伺服器門檻時才會是 true；離線時永遠不會被設成 true。 */
     private val _mustUpdate = MutableStateFlow(false)
     val mustUpdate: StateFlow<Boolean> = _mustUpdate.asStateFlow()
 
@@ -71,13 +66,10 @@ class LicenseVerificationService(private val context: Context) {
     }
 
     suspend fun activateCode(code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        // 0. 付費年繳 VIP 生效中時，推廣碼連送都不要送：伺服器查不到「離線開通的」付費授權，
-        //    會放行推廣碼並回傳 anchor+30 天，成功分支會直接用它蓋掉本機的 365 天。
         com.fitnessrider.util.VersionLifecycleManager
             .promoBlockedByPaidVipMessage(context, code.trim().uppercase())
             ?.let { return@withContext Pair(false, it) }
 
-        // 1. Try online first to respect single-device limit & database audit
         try {
             val url = URL("$serverUrl/api/license/activate")
             val conn = url.openConnection() as HttpURLConnection
@@ -93,8 +85,6 @@ class LicenseVerificationService(private val context: Context) {
             val jsonBody = JSONObject().apply {
                 put("device_fingerprint", deviceService.deviceFingerprint)
                 put("license_code", code)
-                // 讓伺服器端 bindDevice() 能記錄真實 platform/device_model，
-                // 而不是寫死成 iOS/"Coach Device"（見 backend/src/lib/db.ts）。
                 put("platform", "android")
                 put("device_model", deviceService.deviceModel)
                 if (signature != null) {
@@ -136,9 +126,6 @@ class LicenseVerificationService(private val context: Context) {
             } else if (respJson.has("error")) {
                 val errorMsg = respJson.getString("error")
                 val errorCode = respJson.optString("error_code", "")
-                // 若伺服器明確回傳防濫用拒絕（結構化 error_code），直接返回拒絕，避免重複刷碼
-                // VIP_ALREADY_ACTIVE 一定要在名單內：伺服器拒絕正是為了不讓推廣碼蓋掉付費年繳授權，
-                // 若落到離線 fallback，本機會把 VIP 到期日改寫成推廣碼的 anchor+30 天。
                 val antiAbuseCodes = setOf(
                     "PROMO_EXPIRED",
                     "PROMO_ALREADY_REDEEMED",
@@ -149,13 +136,10 @@ class LicenseVerificationService(private val context: Context) {
                 if (errorCode in antiAbuseCodes) {
                     return@withContext Pair(false, errorMsg)
                 }
-                // 非明確防濫用之伺服器錯誤（例如連線問題、DEVICE_SECRET_REQUIRED 允許本地離線或未知異常），允許進入離線驗證 fallback
             }
         } catch (e: Exception) {
-            // Fall back to offline
         }
 
-        // 2. Offline algorithmic check fallback
         val localRes = com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
         if (localRes.first) {
             refreshLicenseState()
@@ -163,14 +147,6 @@ class LicenseVerificationService(private val context: Context) {
         return@withContext localRes
     }
 
-    /**
-     * 啟動時呼叫一次：取得伺服器端試用起算錨點（用較早的一個校正本機，讓 Android 重灌
-     * 也不會重置試用，spec 項目 D）、真正的授權狀態（若這台裝置已經開通過、能簽章）、
-     * 以及強制更新門檻 min_supported_version_code（spec 項目 F）。
-     *
-     * 完全離線或連線失敗時，什麼都不做、保留目前的本機快取狀態 —— 絕對不會因為連不上
-     * 伺服器就把 mustUpdate 設成 true 而把使用者鎖住。
-     */
     suspend fun refreshFromServer(currentVersionCode: Int) = withContext(Dispatchers.IO) {
         try {
             val url = URL("$serverUrl/api/license/verify")
@@ -210,17 +186,12 @@ class LicenseVerificationService(private val context: Context) {
                     val serverAnchorMs = java.time.Instant.parse(trialStartedAtIso).toEpochMilli()
                     com.fitnessrider.util.VersionLifecycleManager.reconcileFirstLaunchAnchor(context, serverAnchorMs)
                 } catch (e: Exception) {
-                    // 忽略格式異常，不影響其餘欄位處理
                 }
             }
 
             val minSupportedVersionCode = respJson.optInt("min_supported_version_code", 0)
             _mustUpdate.value = computeMustUpdate(minSupportedVersionCode, currentVersionCode)
 
-            // 這裡刻意「只加不減」：伺服器驗證通過時才升級本機狀態，不呼叫 refreshLicenseState()
-            // 覆蓋掉剛設定的值 —— 本機活化流程（activateLicenseCode）本身已經會反映最新狀態，
-            // 這個分支存在的目的正是為了在本機快取遺失、但伺服器仍記得這台裝置已開通時，
-            // 能把授權狀態復原回來，若又立刻用純本機狀態覆蓋掉就白做了。
             if (statusCode in 200..299) {
                 val status = respJson.optString("status", "")
                 if (status == "active" || status == "expired") {
@@ -235,15 +206,12 @@ class LicenseVerificationService(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            // Network failure / offline: keep cached state, never lock the user out.
         }
     }
 
     suspend fun verifyLicenseOnline() = withContext(Dispatchers.IO) {
         refreshFromServer(currentVersionCode = com.fitnessrider.util.VersionLifecycleManager.versionCode)
     }
-
-    // MARK: - Device Transfer (M6.3)
 
     suspend fun transferDeviceWithAccount(email: String, password: String): DeviceTransferResult = withContext(Dispatchers.IO) {
         val json = JSONObject().apply {
@@ -269,8 +237,6 @@ class LicenseVerificationService(private val context: Context) {
 
     private suspend fun executeDeviceTransfer(bodyJson: JSONObject): DeviceTransferResult {
         return try {
-            // 這台設備若已經開通過就一定有裝置密鑰，簽章證明「轉移的目標設備就是本機」；
-            // 伺服器端對已有密鑰的目標設備一律要求簽章（見 backend device/transfer route）。
             val timestamp = System.currentTimeMillis()
             signRequest(timestamp)?.let { signature ->
                 bodyJson.put("timestamp", timestamp)
@@ -316,10 +282,6 @@ class LicenseVerificationService(private val context: Context) {
                 val days = licenseData?.optInt("days_remaining", 365) ?: 365
                 val expiresAt = licenseData?.optString("expires_at", "") ?: ""
 
-                // 直接信任伺服器已驗證過身分（帳號密碼 / 已在伺服器驗過簽章的序號）的結果，
-                // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖。
-                // plan_type 一定要帶進去：少了它，推廣方案換機後會被記成 "server_verified"，
-                // 之後既顯示成「專業年繳版」，也會讓下一年度的推廣碼被防降級檢查誤擋。
                 if (expiresAt.isNotEmpty()) {
                     com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(
                         context,

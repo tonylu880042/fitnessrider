@@ -4,7 +4,6 @@ import { db } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
-    // 驗證 RevenueCat Webhook 密鑰（若有設定環境變數）
     const authHeader = req.headers.get('authorization');
     const expectedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
     if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
@@ -20,7 +19,6 @@ export async function POST(req: NextRequest) {
     const { type, app_user_id, product_id, expiration_at_ms, entitlement_id } = event;
     console.log(`[RevenueCat Webhook] Type: ${type}, AppUserID: ${app_user_id}, Product: ${product_id}`);
 
-    // 尋找對應用戶（支援 UUID id 或 email）
     let user = await db.getUserById(app_user_id);
     if (!user && app_user_id.includes('@')) {
       user = await db.getUserByEmail(app_user_id);
@@ -31,7 +29,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'User not found, acknowledged' }, { status: 200 });
     }
 
-    // 判斷方案類型
     let planType: 'monthly' | 'quarterly' | 'yearly' = 'yearly';
     if (product_id?.toLowerCase().includes('month')) {
       planType = 'monthly';
@@ -45,7 +42,6 @@ export async function POST(req: NextRequest) {
     if (expiration_at_ms) {
       expiresAt = new Date(expiration_at_ms).toISOString();
     } else {
-      // 預設計算天數
       const days = planType === 'monthly' ? 30 : planType === 'quarterly' ? 90 : 365;
       expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
     }

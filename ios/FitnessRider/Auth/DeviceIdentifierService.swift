@@ -29,8 +29,6 @@ public final class DeviceIdentifierService: Sendable {
         return UIDevice.current.model
     }
 
-    // MARK: - Trial & VIP Keychain Accessors
-
     public var trialStartTimestamp: TimeInterval? {
         get {
             guard let str = getKeychainString(key: Self.keychainTrialStartKey),
@@ -91,10 +89,6 @@ public final class DeviceIdentifierService: Sendable {
         }
     }
 
-    /// 裝置專屬密鑰：裝置第一次成功開通授權/推廣代碼時，後端 /api/license/activate（或
-    /// /api/device/transfer）回傳的裝置專屬密鑰，之後呼叫 /api/license/verify 時要用它
-    /// 簽章請求，避免任何人只憑猜到的 device_fingerprint（identifierForVendor 並非秘密）
-    /// 就能查詢這台裝置的真實授權狀態（spec 項目 E）。見 LicenseVerificationService。
     public var deviceSecret: String? {
         get {
             return getKeychainString(key: Self.keychainDeviceSecretKey)
@@ -107,8 +101,6 @@ public final class DeviceIdentifierService: Sendable {
             }
         }
     }
-
-    // MARK: - Generic Keychain Operations
 
     public func getKeychainString(key: String) -> String? {
         let query: [String: Any] = [
@@ -131,10 +123,8 @@ public final class DeviceIdentifierService: Sendable {
     public func setKeychainString(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }
 
-        // Remove old
         deleteKeychainString(key: key)
 
-        // Add new
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,

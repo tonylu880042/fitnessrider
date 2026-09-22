@@ -39,7 +39,7 @@ fun DeviceTransferDialog(
     val deviceService = remember { DeviceIdentifierService(context) }
     val coroutineScope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: VIP 序號, 1: 帳號密碼
+    var selectedTab by remember { mutableIntStateOf(0) }
     var licenseCodeInput by remember { mutableStateOf("") }
     var emailInput by remember { mutableStateOf("") }
     var passwordInput by remember { mutableStateOf("") }
@@ -63,7 +63,6 @@ fun DeviceTransferDialog(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Title
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -76,7 +75,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Policy Banner
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -98,7 +96,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Tabs
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = CardHeaderBackground,
@@ -124,7 +121,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Inputs
                 if (selectedTab == 0) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(text = "原 VIP 授權序號：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -167,7 +163,6 @@ fun DeviceTransferDialog(
                     }
                 }
 
-                // Current Device Info
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -186,7 +181,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Cooldown Banner
                 if (remainingCooldownDays != null) {
                     Column(
                         modifier = Modifier
@@ -218,7 +212,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Success message
                 if (successMessage != null) {
                     Text(
                         text = successMessage!!,
@@ -228,7 +221,6 @@ fun DeviceTransferDialog(
                     )
                 }
 
-                // Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,

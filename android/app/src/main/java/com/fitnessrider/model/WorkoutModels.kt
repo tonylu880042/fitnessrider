@@ -23,7 +23,7 @@ data class WorkoutSegment(
     val musicFileName: String = "",
     val durationMs: Int = 300_000,
     val baseBpm: Double = 128.0,
-    val playbackRate: Double = 1.0, // 0.85 ~ 1.15
+    val playbackRate: Double = 1.0,
     val intensityZone: Int = 2,
     val cues: List<WorkoutCue> = emptyList()
 ) {
@@ -55,15 +55,6 @@ data class WorkoutClass(
         }
 }
 
-/**
- * 從 segments 推算 totalDurationMs / estimatedCalories，公式對應 iOS
- * `WorkoutClass.recalculateTotals()`（Models/WorkoutClass.swift:41-59），兩平台務必算出同一個數字。
- *
- * `totalDurationMs`/`estimatedCalories` 是 Room 欄位也是 .riderclass 匯出格式欄位，
- * 沒有改成 computed property 是為了不動 DB schema 與既有存檔的相容性；
- * 改用這個純函式 + `ClassRepository.saveClass()` 在寫入前一律呼叫它，
- * 讓「忘記在某個修改點呼叫 recalculate」不會再讓兩個欄位跟 segments 兜不起來。
- */
 fun WorkoutClass.withRecalculatedTotals(): WorkoutClass {
     val totalMs = segments.sumOf { it.durationMs }
     var calories = 0.0

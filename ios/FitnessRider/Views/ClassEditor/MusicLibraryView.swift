@@ -2,8 +2,6 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-/// Layer 2「app 內音樂庫」的一筆項目：曲名、時長、BPM 一律來自 `ClassRepository.fetchWaveform`
-/// 的波形快取，不在這裡重新分析音檔（分析由 Layer 1 的匯入流程或快取命中負責）。
 struct MusicLibraryTrack: Identifiable, Equatable {
     var id: String { fileName }
     let fileName: String
@@ -12,8 +10,6 @@ struct MusicLibraryTrack: Identifiable, Equatable {
     let bpm: Double
 }
 
-/// 由 `Music/` 目錄下的檔名 + 波形快取查詢建立音樂庫列表，並依曲名排序。
-/// `waveformLookup` 回傳 (durationMs, bpm)；查無快取時 fallback 回段落預設值，不觸發重新分析。
 func buildMusicLibraryTracks(
     fileNames: [String],
     waveformLookup: (String) -> (Int, Double)?
@@ -31,22 +27,18 @@ func buildMusicLibraryTracks(
     }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
 }
 
-/// 即時搜尋 filter，比照舊版 FragDialogSelectMusic：不分大小寫比對曲名子字串。
 func filterMusicLibraryTracks(_ tracks: [MusicLibraryTrack], query: String) -> [MusicLibraryTrack] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return tracks }
     return tracks.filter { $0.title.range(of: trimmed, options: .caseInsensitive) != nil }
 }
 
-/// 同一套即時搜尋邏輯套用在 Layer 3 的外部資料夾項目上，比對顯示檔名子字串。
 func filterExternalMusicEntries(_ entries: [ExternalMusicEntry], query: String) -> [ExternalMusicEntry] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return entries }
     return entries.filter { $0.displayName.range(of: trimmed, options: .caseInsensitive) != nil }
 }
 
-/// 從音樂庫多選既有曲目 -> 直接建立 N 個段落，行為對應 Layer 1 的
-/// `buildSegmentsForImportedTracks`，唯一差異是曲目已經在 `Music/` 目錄裡，不會再產生檔案複製。
 func buildSegmentsFromLibrarySelection(
     tracks: [MusicLibraryTrack],
     classId: UUID,
@@ -56,10 +48,6 @@ func buildSegmentsFromLibrarySelection(
     return buildSegmentsForImportedTracks(tracks: importInfos, classId: classId, startOrderIndex: startOrderIndex)
 }
 
-/// Layer 3：從外部資料夾多選曲目 -> 直接建立 N 個段落，musicFileName 存
-/// `"extfolder://" + 相對路徑`（`MusicSource.isExternal` 用來辨識來源）。時長／BPM 先用預設值，
-/// 實際數值等教練在編輯畫面選到該段落時，由既有的 WaveformAnalyzer 分析並寫回
-/// （跟 Layer 1 對新匯入檔案的處理是同一條路徑）。
 func buildSegmentsFromExternalSelection(
     entries: [ExternalMusicEntry],
     classId: UUID,
@@ -76,8 +64,6 @@ func buildSegmentsFromExternalSelection(
     return buildSegmentsForImportedTracks(tracks: importInfos, classId: classId, startOrderIndex: startOrderIndex)
 }
 
-/// 複製匯入的音樂檔到 [destURL]。中途失敗時清掉半成品，不在 Music 目錄留下截斷檔佔用檔名
-/// （CLAUDE.md「已知落差」第二項：匯入失敗時已寫入一半的檔案沒有清掉）。
 @discardableResult
 func copyMusicFileOrCleanup(from sourceURL: URL, to destURL: URL) -> Bool {
     do {
@@ -95,12 +81,6 @@ private func formatDuration(_ durationMs: Int) -> String {
     return String(format: "%02d:%02d", totalSec / 60, totalSec % 60)
 }
 
-/// Layer 2 + Layer 3：app 內音樂庫，用分頁清楚區分兩種音樂來源，避免教練搞混「哪些檔案在哪」：
-/// - 「已匯入音樂庫」：複製進 `Music/` 目錄的曲目（Layer 2）。
-/// - 「音樂資料夾」：教練指定的外部資料夾，直接讀取內容、完全不複製檔案進 App（Layer 3）。
-///
-/// 試聽沿用 AVFoundation（app 既有的音訊框架，`WaveformAnalyzer`／`AudioEngineManager` 都建構在它上面），
-/// 用內建的 `AVAudioPlayer` 播放單一檔案，沒有引入任何新的播放器套件或依賴。
 final class MusicLibraryAudioDelegate: NSObject, AVAudioPlayerDelegate, @unchecked Sendable {
     var onDidFinish: (@MainActor @Sendable () -> Void)?
 
@@ -121,13 +101,11 @@ struct MusicLibraryView: View {
     @State private var selectedTab: Int = 0
     @State private var searchQuery: String = ""
 
-    // Layer 2：已匯入音樂庫狀態
     @State private var allTracks: [MusicLibraryTrack] = []
     @State private var selectedFileNames: Set<String> = []
     @State private var isImporting: Bool = false
     @State private var isShowingFileImporter: Bool = false
 
-    // Layer 3：外部資料夾狀態
     @State private var folderConfigured: Bool = ExternalMusicFolderStore.shared.isFolderConfigured()
     @State private var includeSubdirectories: Bool = ExternalMusicFolderStore.shared.includeSubdirectories()
     @State private var externalEntries: [ExternalMusicEntry] = []
@@ -136,12 +114,8 @@ struct MusicLibraryView: View {
     @State private var externalFolderError: String?
     @State private var isShowingFolderImporter: Bool = false
 
-    // 兩個分頁共用同一顆試聽 AVAudioPlayer，用同一個 key 空間避免互相干擾：
-    // "lib:<fileName>" 代表已匯入音樂庫項目，"ext:<relativePath>" 代表外部資料夾項目。
     @State private var previewPlayer: AVAudioPlayer?
     @State private var playingKey: String?
-    /// 正在等 iCloud 把檔案下載下來的那一列（同一組 key 空間），用來在列上顯示等待指示，
-    /// 不讓教練按了試聽卻看起來毫無反應。
     @State private var downloadingKey: String?
     @State private var audioDelegate = MusicLibraryAudioDelegate()
 
@@ -186,7 +160,6 @@ struct MusicLibraryView: View {
                     .foregroundColor(.white)
             )
 
-            // 分頁：清楚區分「複製進 App 的曲目」與「外部資料夾曲目」，避免教練搞混哪些檔案在哪。
             Picker("", selection: $selectedTab) {
                 Text("已匯入音樂庫").tag(0)
                 Text("音樂資料夾").tag(1)
@@ -195,7 +168,6 @@ struct MusicLibraryView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            // 搜尋列：比照舊版 FragDialogSelectMusic 的即時 filter，兩個分頁共用同一個搜尋框。
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(FitnessRiderTheme.textSecondary)
@@ -282,8 +254,6 @@ struct MusicLibraryView: View {
             guard !selected.isEmpty else { return }
             stopPreview()
 
-            // iCloud 還沒下載到本機的曲目要先等檔案落地才建立段落，否則段落建好了卻分析不到
-            // 真實時長／BPM，會退回 5:00 / 128 BPM 的預設值 —— 正是 Layer 1 第 1 項要修掉的症狀。
             let pending = selected.filter { $0.isCloudPlaceholder }
             guard !pending.isEmpty else {
                 finishExternalSelection(selected)
@@ -301,7 +271,6 @@ struct MusicLibraryView: View {
                 }
                 isImporting = false
 
-                // 下載失敗的回報出來，其餘照常建立段落 —— 一首失敗不該擋掉另外 29 首。
                 if !failedNames.isEmpty {
                     onImportFailed(failedNames.sorted().map { "\($0)（iCloud 尚未下載完成）" })
                 }
@@ -321,8 +290,6 @@ struct MusicLibraryView: View {
         onSegmentsCreated(newSegments)
         onDismiss()
     }
-
-    // MARK: - Layer 2 分頁
 
     private var libraryTabContent: some View {
         Group {
@@ -361,12 +328,9 @@ struct MusicLibraryView: View {
         }
     }
 
-    // MARK: - Layer 3 分頁
-
     private var folderTabContent: some View {
         VStack(spacing: 0) {
             if folderConfigured {
-                // 說明目前列出的是外部資料夾內容，不佔用 App 儲存空間，跟上方分頁的「已匯入音樂庫」是不同來源。
                 HStack {
                     Text("直接讀取資料夾內容，不會複製進 App")
                         .font(.system(size: 12))
@@ -432,8 +396,6 @@ struct MusicLibraryView: View {
             }
         }
     }
-
-    // MARK: - Shared Rows
 
     private func emptyState(icon: String, message: String, actionLabel: String? = nil, action: (() -> Void)? = nil) -> some View {
         VStack(spacing: 8) {
@@ -505,8 +467,6 @@ struct MusicLibraryView: View {
         .onTapGesture { onToggleSelect() }
     }
 
-    // MARK: - Data (Layer 2)
-
     private func reload() {
         let musicDir = SQLiteDatabase.shared.musicDirectoryURL
         let fileNames = (try? FileManager.default.contentsOfDirectory(atPath: musicDir.path)) ?? []
@@ -515,8 +475,6 @@ struct MusicLibraryView: View {
             return (cached.durationMs, cached.bpm)
         }
     }
-
-    // MARK: - Data (Layer 3)
 
     private func reloadExternalEntries() {
         guard folderConfigured else {
@@ -555,8 +513,6 @@ struct MusicLibraryView: View {
         }
     }
 
-    // MARK: - Preview Playback
-
     private func toggleLibraryPreview(_ track: MusicLibraryTrack) {
         let key = "lib:\(track.fileName)"
         if playingKey == key {
@@ -588,8 +544,6 @@ struct MusicLibraryView: View {
         stopPreview()
         let musicFileName = MusicSource.externalPrefix + entry.relativePath
 
-        // iCloud 還沒下載的曲目直接建 player 只會失敗、畫面上什麼都不會發生。
-        // 先等檔案下載下來（列上顯示等待指示），下載完再照常試聽。
         guard entry.isCloudPlaceholder else {
             startExternalPreview(musicFileName: musicFileName, key: key)
             return
@@ -597,7 +551,6 @@ struct MusicLibraryView: View {
         downloadingKey = key
         Task { @MainActor in
             let available = await MusicSource.ensureAvailable(for: musicFileName)
-            // 等待期間教練可能已經改按別首（或收起畫面），這時就不要再搶著播放。
             guard downloadingKey == key else { return }
             downloadingKey = nil
             guard available else {
@@ -610,8 +563,6 @@ struct MusicLibraryView: View {
     }
 
     private func startExternalPreview(musicFileName: String, key: String) {
-        // AVAudioPlayer 在 security-scoped 存取視窗裡建立好之後，關閉視窗不影響後續播放
-        // （系統的檔案描述子已經開好），所以只需要把 init 包在 withResolvedFileURL 裡。
         let player = MusicSource.withResolvedFileURL(for: musicFileName) { url in
             try? AVAudioPlayer(contentsOf: url)
         }.flatMap { $0 }
@@ -630,10 +581,6 @@ struct MusicLibraryView: View {
         downloadingKey = nil
     }
 
-    // MARK: - Import New File(s)
-
-    // 多選音樂檔 -> 逐一複製、分析曲長/BPM -> 一次建立 N 個段落（Layer 1 第 3、4、7 項，
-    // Layer 2 沿用同一套邏輯，只是把入口移進音樂庫裡的「＋匯入新檔」）。
     private func handleImportedMusic(_ result: Result<[URL], Error>) {
         let urls: [URL]
         do {
@@ -685,7 +632,6 @@ struct MusicLibraryView: View {
             if !failedLabels.isEmpty {
                 onImportFailed(failedLabels)
             }
-            // 全部成功才自動關閉；有失敗時留在音樂庫讓教練看得到錯誤、也能重新挑選。
             if !importedTracks.isEmpty && failedLabels.isEmpty {
                 onDismiss()
             }

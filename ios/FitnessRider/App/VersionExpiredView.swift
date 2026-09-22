@@ -1,10 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// 到期畫面的兩種用途（spec 項目 F）：
-/// - `.trialEnded`：試用期滿，導向輸入推廣碼／購買 VIP。
-/// - `.mustUpdate`：伺服器回報這支建置版本已低於 min_supported_version_code，
-///   導向下載最新版本；跟建置日期到期無關，純粹是「有新版可拿」才會觸發。
 public enum ExpirationReason {
     case trialEnded
     case mustUpdate
@@ -33,7 +29,6 @@ public struct VersionExpiredView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 18) {
-                // Warning Icon
                 ZStack {
                     Circle()
                         .fill(FitnessRiderTheme.accentRed.opacity(0.12))
@@ -59,7 +54,6 @@ public struct VersionExpiredView: View {
                 Divider()
                     .padding(.horizontal, 20)
 
-                // Telemetry & Device Info box
                 VStack(spacing: 8) {
                     HStack {
                         Text("授權狀態")
@@ -128,12 +122,8 @@ public struct VersionExpiredView: View {
                 .cornerRadius(12)
                 .padding(.horizontal, 20)
 
-                // Action Buttons
                 VStack(spacing: 10) {
-                    // 試用結束：主要行動是輸入授權碼／轉移既有授權；必須更新時這兩個按鈕
-                    // 對使用者沒有幫助（版本不支援不是靠代碼解決的），直接隱藏，避免誤導。
                     if reason == .trialEnded {
-                        // Primary: Activate VIP Code
                         Button {
                             isShowingActivationAlert = true
                         } label: {
@@ -151,7 +141,6 @@ public struct VersionExpiredView: View {
                             .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                         }
 
-                        // Secondary: Device Transfer
                         Button {
                             isShowingDeviceTransferSheet = true
                         } label: {
@@ -167,7 +156,6 @@ public struct VersionExpiredView: View {
                         }
                     }
 
-                    // Update App Version — 必須更新時這是唯一、最主要的行動，改用實心主色按鈕。
                     Button {
                         if let customAction = onUpdate {
                             customAction()

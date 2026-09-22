@@ -76,7 +76,6 @@ fun BpmCalibrationDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // BPM Display Card
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -111,7 +110,6 @@ fun BpmCalibrationDialog(
                     }
                 }
 
-                // Big Round TAP Button
                 Box(
                     modifier = Modifier
                         .size(130.dp)
@@ -157,7 +155,6 @@ fun BpmCalibrationDialog(
 
                 HorizontalDivider(color = CardBorder)
 
-                // Stepper Adjusters (-5, -1, +1, +5)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,

@@ -14,7 +14,6 @@ class SQLiteBackupService(private val context: Context) {
             val dbFile = context.getDatabasePath(AppDatabase.DATABASE_NAME)
             if (!dbFile.exists()) return null
 
-            // Force Room checkpoint by closing DB temporarily if needed, or copy current file
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
             val backupFileName = "FitnessRider_Backup_$timestamp.sqlite"
             val exportDir = File(context.cacheDir, "backups")

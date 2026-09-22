@@ -1,7 +1,7 @@
 import SwiftUI
 
 public struct CircleProgressBar<Content: View>: View {
-    public let progress: Double // 0.0 ~ 1.0
+    public let progress: Double
     public let strokeWidth: CGFloat
     public let ringColor: Color
     public let trackColor: Color
@@ -23,11 +23,9 @@ public struct CircleProgressBar<Content: View>: View {
 
     public var body: some View {
         ZStack {
-            // Background Track
             Circle()
                 .stroke(trackColor, lineWidth: strokeWidth)
 
-            // Animated Foreground Progress Ring
             Circle()
                 .trim(from: 0.0, to: CGFloat(progress))
                 .stroke(
@@ -37,7 +35,6 @@ public struct CircleProgressBar<Content: View>: View {
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 0.1), value: progress)
 
-            // Center Content
             content
         }
     }

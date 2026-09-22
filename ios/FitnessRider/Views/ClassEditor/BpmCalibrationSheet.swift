@@ -16,7 +16,6 @@ public struct BpmCalibrationSheet: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                // BPM Display Box
                 VStack(spacing: 4) {
                     Text("當前拍頻 (Tempo)")
                         .font(.system(size: 13, weight: .medium))
@@ -42,7 +41,6 @@ public struct BpmCalibrationSheet: View {
                 )
                 .padding(.horizontal, 24)
 
-                // Large TAP Button
                 Button {
                     withAnimation(.easeOut(duration: 0.08)) {
                         isPulsing = true
@@ -86,7 +84,6 @@ public struct BpmCalibrationSheet: View {
                 Divider()
                     .padding(.horizontal, 24)
 
-                // Steppers: -5, -1, +1, +5
                 HStack(spacing: 12) {
                     stepperButton(title: "-5") { bpm = max(40.0, bpm - 5.0) }
                     stepperButton(title: "-1") { bpm = max(40.0, bpm - 1.0) }
@@ -97,7 +94,6 @@ public struct BpmCalibrationSheet: View {
 
                 Spacer()
 
-                // Confirm Apply Button
                 Button {
                     onSave(bpm)
                     dismiss()

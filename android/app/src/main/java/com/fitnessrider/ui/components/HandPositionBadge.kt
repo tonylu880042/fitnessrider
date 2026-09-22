@@ -40,7 +40,6 @@ fun HandPositionBadge(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 10.dp)
     ) {
-        // Handlebar Canvas
         Canvas(
             modifier = Modifier.size(
                 width = if (isCompact) 36.dp else 48.dp,
@@ -50,11 +49,9 @@ fun HandPositionBadge(
             val w = size.width
             val h = size.height
 
-            // Base outline
             val baseColor = CardBorder
             val baseStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
 
-            // Outer handlebar path
             val path = Path().apply {
                 moveTo(w * 0.1f, h * 0.1f)
                 lineTo(w * 0.1f, h * 0.65f)
@@ -65,13 +62,11 @@ fun HandPositionBadge(
             }
             drawPath(path, color = baseColor, style = baseStroke)
 
-            // Highlight path
             val highlightColor = TopBarGreenDark
             val highlightStroke = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
 
             when (position) {
                 HandPosition.POSITION_1 -> {
-                    // Center horizontal crossbar
                     drawLine(
                         color = highlightColor,
                         start = androidx.compose.ui.geometry.Offset(w * 0.35f, h * 0.85f),
@@ -81,7 +76,6 @@ fun HandPositionBadge(
                     )
                 }
                 HandPosition.POSITION_2 -> {
-                    // Left and right corners
                     drawLine(
                         color = highlightColor,
                         start = androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.55f),
@@ -98,7 +92,6 @@ fun HandPositionBadge(
                     )
                 }
                 HandPosition.POSITION_3 -> {
-                    // Bullhorns
                     drawLine(
                         color = highlightColor,
                         start = androidx.compose.ui.geometry.Offset(w * 0.1f, h * 0.1f),

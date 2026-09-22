@@ -31,8 +31,6 @@ struct FitnessRiderApp: App {
                 }
             }
             .task {
-                // 啟動時連同授權狀態一起向後端取得試用錨點校正與強制更新門檻。
-                // 完全離線／連線失敗時 refreshFromServer 什麼都不做，不會把使用者鎖住（spec 項目 F）。
                 let buildNumber = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0
                 await licenseService.refreshFromServer(currentBuildNumber: buildNumber)
                 lifecycleManager.evaluateExpirationOnLaunch()

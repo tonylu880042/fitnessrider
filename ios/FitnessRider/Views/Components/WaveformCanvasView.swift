@@ -27,9 +27,7 @@ public struct WaveformCanvasView: View {
             let playheadX = geo.size.width * CGFloat(progress)
 
             ZStack(alignment: .leading) {
-                // Background waveform bars & grid
                 Canvas { context, size in
-                    // 1. Time Grid Lines & Labels
                     let totalSeconds = durationMs / 1000
                     let intervalSeconds = totalSeconds <= 120 ? 30 : (totalSeconds <= 300 ? 60 : 120)
                     var sec = intervalSeconds
@@ -50,7 +48,6 @@ public struct WaveformCanvasView: View {
                         sec += intervalSeconds
                     }
 
-                    // 2. Waveform Bars
                     guard !samples.isEmpty else { return }
                     let barWidth: CGFloat = 2.5
                     let spacing: CGFloat = 1.5
@@ -77,7 +74,6 @@ public struct WaveformCanvasView: View {
                     }
                 }
 
-                // Cue Marker Pins
                 ForEach(cues) { cue in
                     let cueProgress = min(1.0, max(0.0, Double(cue.offsetMs) / Double(durationMs)))
                     let cueX = geo.size.width * CGFloat(cueProgress)
@@ -102,7 +98,6 @@ public struct WaveformCanvasView: View {
                     .position(x: cueX, y: geo.size.height / 2.0)
                 }
 
-                // Playhead Line & Indicator
                 VStack(spacing: 0) {
                     Image(systemName: "arrowtriangle.down.fill")
                         .font(.system(size: 10))

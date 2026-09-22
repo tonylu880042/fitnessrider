@@ -40,7 +40,6 @@ class MainActivity : ComponentActivity() {
         audioEngine = AudioEngineManager(this)
         archiveService = RiderClassArchiveService(this)
 
-        // Handle incoming .riderclass intent if launched via file manager or AirDrop
         intent?.data?.let { uri ->
             lifecycleScope.launch {
                 try {
@@ -63,8 +62,6 @@ class MainActivity : ComponentActivity() {
                 var mustUpdate by remember { mutableStateOf(false) }
                 val licenseService = remember { com.fitnessrider.auth.LicenseVerificationService(this@MainActivity) }
 
-                // 啟動時連同授權狀態一起向後端取得試用錨點校正與強制更新門檻。
-                // 完全離線／連線失敗時 refreshFromServer 什麼都不做，不會把使用者鎖住（spec 項目 F）。
                 LaunchedEffect(Unit) {
                     licenseService.refreshFromServer(currentVersionCode = VersionLifecycleManager.versionCode)
                     isExpired = VersionLifecycleManager.isExpired(this@MainActivity)

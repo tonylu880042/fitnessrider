@@ -36,7 +36,6 @@ public final class SQLiteDatabase: @unchecked Sendable {
 
         let path = databaseURL.path
         if sqlite3_open(path, &dbPointer) == SQLITE_OK {
-            // Enable WAL mode and foreign keys for high performance and integrity
             _ = executeRaw("PRAGMA journal_mode=WAL;")
             _ = executeRaw("PRAGMA foreign_keys=ON;")
         } else {
@@ -135,19 +134,16 @@ public final class SQLiteDatabase: @unchecked Sendable {
         """
         _ = executeRaw(schema)
 
-        // Migrations for existing databases
         _ = executeRaw("ALTER TABLE cues ADD COLUMN hand_position INTEGER NOT NULL DEFAULT 1;")
         _ = executeRaw("ALTER TABLE cues ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]';")
     }
 
-    // Hot backup via sqlite3_backup API
     public func createHotBackup(to destinationURL: URL) -> Bool {
         lock.lock()
         defer { lock.unlock() }
 
         guard let sourceDb = dbPointer else { return false }
 
-        // Remove destination if exists
         try? FileManager.default.removeItem(at: destinationURL)
 
         var destDb: OpaquePointer?
@@ -160,18 +156,16 @@ public final class SQLiteDatabase: @unchecked Sendable {
             return false
         }
 
-        let stepResult = sqlite3_backup_step(backup, -1) // -1 copies all pages
+        let stepResult = sqlite3_backup_step(backup, -1)
         sqlite3_backup_finish(backup)
 
         return stepResult == SQLITE_DONE
     }
 
-    // Safe restore
     public func restoreDatabase(from sourceURL: URL) throws {
         lock.lock()
         defer { lock.unlock() }
 
-        // Verify source SQLite header
         let fileHandle = try FileHandle(forReadingFrom: sourceURL)
         let headerData = fileHandle.readData(ofLength: 16)
         try fileHandle.close()
@@ -180,22 +174,18 @@ public final class SQLiteDatabase: @unchecked Sendable {
             throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "選取的檔案不是有效的 SQLite 備份檔"])
         }
 
-        // Close current connection
         if let db = dbPointer {
             sqlite3_close(db)
             dbPointer = nil
         }
 
         let destURL = databaseURL
-        // Remove existing files (including wal and shm)
         try? FileManager.default.removeItem(at: destURL)
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: destURL.path + "-wal"))
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: destURL.path + "-shm"))
 
-        // Copy source to dest
         try FileManager.default.copyItem(at: sourceURL, to: destURL)
 
-        // Reopen
         if sqlite3_open(destURL.path, &dbPointer) == SQLITE_OK {
             _ = executeRaw("PRAGMA journal_mode=WAL;")
             _ = executeRaw("PRAGMA foreign_keys=ON;")

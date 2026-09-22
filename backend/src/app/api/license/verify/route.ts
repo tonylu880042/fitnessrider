@@ -3,25 +3,6 @@ import { db } from '@/lib/db';
 import { verifyJwt } from '@/lib/auth';
 import { minSupportedVersionCodeFor } from '@/lib/licenseConfig';
 
-/**
- * 授權狀態查詢端點。
- *
- * 修正前：任何人只要送一個 device_fingerprint（Android 用的 ANDROID_ID 並不是秘密）
- * 就能查到「那台裝置」綁定的帳號、方案與到期日 —— 是一個未經授權就能查詢的 oracle
- * （spec 項目 E）。修正後，要嘛帶有效的 JWT（Bearer），要嘛帶「裝置簽章」
- * （timestamp + HMAC-SHA256(device_secret, "<fingerprint>.<timestamp>")，
- * device_secret 是裝置第一次成功開通授權/推廣代碼時，/api/license/activate 回傳並
- * 由 App 端保存的密鑰）。兩者都沒有時，一律只回傳「未註冊/一般試用中」的最小資訊，
- * 不查詢、也不揭露任何裝置的真實付費狀態。
- *
- * 不論走哪個分支，都會回傳 `trial_started_at`（伺服器端試用起算錨點，供 App 端與本機
- * 快取取較早者，讓 Android 重灌後試用不會被重置，spec 項目 D）與
- * `min_supported_version_code`（App 啟動時一併帶回的強制更新門檻，spec 項目 F），
- * 這兩個欄位不敏感，可以放心對任何呼叫者回傳。
- */
-// In-memory rate limiter per IP (max 60 requests per minute).
-// 備註：在 Vercel 等 Serverless 架構中，各 Lambda 實例各自擁有獨立記憶體；
-// 此處提供實例內請求頻率防護，並具備逾期條目自動清理機制以防記憶體洩漏（spec 項目 6）。
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const MAX_RATE_LIMIT_ENTRIES = 1000;
 
@@ -66,7 +47,6 @@ export async function POST(req: NextRequest) {
     try {
       body = await req.json();
     } catch {
-      // body 是選填的（例如只帶 Bearer JWT 的情況）
     }
 
     const deviceFingerprint = (body.device_fingerprint || body.deviceFingerprint) as string | undefined;
@@ -80,7 +60,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 若沒有 JWT，嘗試用裝置簽章驗證身分
     if (!authorizedUserId) {
       const timestamp = Number(body.timestamp);
       const signature = typeof body.signature === 'string' ? body.signature : '';
@@ -93,9 +72,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 試用起算錨點（spec 項目 D）：
-    // 若尚未有錨點，初次啟動時為設備建立起算錨點（以伺服器當前時間 Date.now() 為準，絕不接受客戶端傳入過去時間）。
-    // 重灌時透過回傳伺服器初次記錄之首次啟用時間，讓本機校準試用期，杜絕無限重置試用。
     const anchor = await db.getOrCreateDeviceTrialAnchor(deviceFingerprint);
 
     const commonFields = {
@@ -104,7 +80,6 @@ export async function POST(req: NextRequest) {
     };
 
     if (!authorizedUserId) {
-      // 未通過身分驗證：一律只回傳最小、非敏感的資訊，不查詢真實授權狀態。
       return NextResponse.json({
         success: true,
         is_valid: false,
@@ -115,7 +90,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 1. 檢驗設備綁定
     const boundDevice = await db.getDeviceByUserId(authorizedUserId);
     if (!boundDevice || boundDevice.device_fingerprint !== deviceFingerprint) {
       return NextResponse.json(
@@ -130,10 +104,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. 更新最後連線時間
     await db.updateDeviceLastActive(authorizedUserId);
 
-    // 3. 檢驗授權到期日
     const license = await db.getLicenseByUserId(authorizedUserId);
     const now = Date.now();
     const expiresAtMs = license ? new Date(license.expires_at).getTime() : 0;

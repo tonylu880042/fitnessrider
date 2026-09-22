@@ -17,7 +17,7 @@ import com.fitnessrider.theme.TopBarGreen
 
 @Composable
 fun CircleProgressBar(
-    progress: Float, // 0.0f to 1.0f
+    progress: Float,
     modifier: Modifier = Modifier,
     strokeWidth: Dp = 16.dp,
     ringColor: Color = TopBarGreen,
@@ -31,13 +31,11 @@ fun CircleProgressBar(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val strokePx = strokeWidth.toPx()
 
-            // Background Track Circle
             drawCircle(
                 color = trackColor,
                 style = Stroke(width = strokePx)
             )
 
-            // Foreground Progress Arc
             val sweepAngle = (progress.coerceIn(0f, 1f)) * 360f
             drawArc(
                 color = ringColor,

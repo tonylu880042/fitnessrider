@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Visual spinning bike handlebar widget highlighting Hand Position 1, 2, or 3
 public struct HandPositionBadge: View {
     public let position: HandPosition
     public var isCompact: Bool = false
@@ -14,7 +13,6 @@ public struct HandPositionBadge: View {
 
     public var body: some View {
         HStack(spacing: isCompact ? 6 : 10) {
-            // Handlebar Schematic Vector
             HandlebarShape(activePosition: position)
                 .stroke(FitnessRiderTheme.cardBorder, lineWidth: 3)
                 .background(
@@ -59,7 +57,6 @@ public struct HandPositionBadge: View {
     }
 }
 
-// MARK: - Handlebar Schematic Path
 private struct HandlebarShape: Shape {
     let activePosition: HandPosition
 
@@ -68,17 +65,11 @@ private struct HandlebarShape: Shape {
         let w = rect.width
         let h = rect.height
 
-        // Outer bullhorns + crossbar geometry of indoor cycle
-        // Left horn
         path.move(to: CGPoint(x: w * 0.1, y: h * 0.1))
         path.addLine(to: CGPoint(x: w * 0.1, y: h * 0.65))
-        // Left bend to crossbar
         path.addLine(to: CGPoint(x: w * 0.35, y: h * 0.85))
-        // Center crossbar
         path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.85))
-        // Right bend
         path.addLine(to: CGPoint(x: w * 0.9, y: h * 0.65))
-        // Right horn
         path.addLine(to: CGPoint(x: w * 0.9, y: h * 0.1))
 
         return path
@@ -95,17 +86,14 @@ private struct HandlebarHighlight: Shape {
 
         switch activePosition {
         case .position1:
-            // Center flat crossbar (Position 1)
             path.move(to: CGPoint(x: w * 0.35, y: h * 0.85))
             path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.85))
         case .position2:
-            // Corners / transitions (Position 2)
             path.move(to: CGPoint(x: w * 0.12, y: h * 0.55))
             path.addLine(to: CGPoint(x: w * 0.35, y: h * 0.85))
             path.move(to: CGPoint(x: w * 0.88, y: h * 0.55))
             path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.85))
         case .position3:
-            // Upper bullhorns (Position 3)
             path.move(to: CGPoint(x: w * 0.1, y: h * 0.1))
             path.addLine(to: CGPoint(x: w * 0.1, y: h * 0.45))
             path.move(to: CGPoint(x: w * 0.9, y: h * 0.1))

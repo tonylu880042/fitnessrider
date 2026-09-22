@@ -2,12 +2,7 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 
-// MARK: - Crossfade Calculator
-
 public struct CrossfadeCalculator: Sendable {
-    /// Equal-Power Crossfade volumes: fadeOut = cos(t * π / 2), fadeIn = sin(t * π / 2)
-    /// where progress is in [0.0, 1.0].
-    /// Maintains constant acoustic power: (fadeOut^2 + fadeIn^2 = 1.0)
     public static func equalPowerVolumes(progress: Double) -> (fadeOut: Float, fadeIn: Float) {
         let clamped = max(0.0, min(1.0, progress))
         let angle = clamped * (.pi / 2.0)
@@ -16,7 +11,6 @@ public struct CrossfadeCalculator: Sendable {
         return (fadeOut, fadeIn)
     }
 
-    /// Determines effective crossfade duration based on settings, remaining track time, and auto-pause.
     public static func effectiveDuration(
         requestedDuration: Double,
         segmentDuration: Double,
@@ -28,8 +22,6 @@ public struct CrossfadeCalculator: Sendable {
         return min(requestedDuration, segmentDuration * 0.5)
     }
 }
-
-// MARK: - Audio Deck
 
 @MainActor
 private final class AudioDeck {
@@ -82,17 +74,14 @@ private final class AudioDeck {
     }
 }
 
-// MARK: - AudioEngineManager
-
 @MainActor
 public final class AudioEngineManager: ObservableObject {
     public static let shared = AudioEngineManager()
 
-    // AVFoundation Engine & Dual Decks
     private let audioEngine = AVAudioEngine()
     private let deckA = AudioDeck(id: "DeckA")
     private let deckB = AudioDeck(id: "DeckB")
-    private var activeDeckIndex: Int = 0 // 0 = DeckA, 1 = DeckB
+    private var activeDeckIndex: Int = 0
 
     private var activeDeck: AudioDeck {
         activeDeckIndex == 0 ? deckA : deckB
@@ -102,21 +91,18 @@ public final class AudioEngineManager: ObservableObject {
         activeDeckIndex == 0 ? deckB : deckA
     }
 
-    // State properties
     @Published public private(set) var isPlaying: Bool = false
     @Published public private(set) var isCrossfading: Bool = false
-    @Published public private(set) var currentRate: Double = 1.0 // 0.85 ~ 1.15
+    @Published public private(set) var currentRate: Double = 1.0
     @Published public private(set) var currentOffsetSeconds: Double = 0.0
     @Published public private(set) var currentDurationSeconds: Double = 0.0
     @Published public private(set) var currentSegmentIndex: Int = 0
 
-    // Currently playing class & segment
     public private(set) var currentClass: WorkoutClass?
     public private(set) var currentSegment: WorkoutSegment?
 
     private var displayLinkTimer: Timer?
 
-    // Countdown beeps tracker
     private var lastTriggeredCueId: UUID?
     private var lastBeepSecond: Int = -1
 
@@ -125,8 +111,6 @@ public final class AudioEngineManager: ObservableObject {
         setupEngine()
         setupRemoteCommands()
     }
-
-    // MARK: - Setup
 
     private func setupAudioSession() {
         do {
@@ -149,8 +133,6 @@ public final class AudioEngineManager: ObservableObject {
         }
     }
 
-    // MARK: - Load & Playback
-
     public func loadClass(_ workoutClass: WorkoutClass, startSegmentIndex: Int = 0) {
         self.currentClass = workoutClass
         self.currentSegmentIndex = max(0, min(startSegmentIndex, workoutClass.segments.count - 1))
@@ -169,9 +151,6 @@ public final class AudioEngineManager: ObservableObject {
         deck.setVolume(1.0)
         deck.playerNode.stop()
 
-        // Layer 3：segment.musicFileName 可能是 Music/ 目錄下的檔名，也可能是外部資料夾的
-        // "extfolder://" 相對路徑，一律交給 MusicSource 判斷來源與存在性；AVAudioFile 的初始化
-        // 要在 security-scoped 存取視窗裡完成，之後系統的檔案描述子仍可繼續讀取。
         let file: AVAudioFile? = MusicSource.withResolvedFileURL(for: segment.musicFileName) { url in
             try? AVAudioFile(forReading: url)
         }.flatMap { $0 }
@@ -184,7 +163,6 @@ public final class AudioEngineManager: ObservableObject {
             deck.currentOffsetSeconds = 0.0
             scheduleBuffer(on: deck, fromSample: 0)
         } else {
-            // Simulated duration from segment if file not present locally
             deck.currentAudioFile = nil
             deck.currentDurationSeconds = Double(segment.durationMs) / 1000.0
             deck.currentOffsetSeconds = 0.0
@@ -275,20 +253,16 @@ public final class AudioEngineManager: ObservableObject {
         seek(to: currentOffsetSeconds + deltaSeconds)
     }
 
-    // MARK: - Tempo & Pitch Shift (0.85x ~ 1.15x, ±2% steps)
-
     public func adjustRatePercent(by deltaPercent: Double) {
         let newRate = currentRate + (deltaPercent / 100.0)
         setRate(newRate)
     }
 
     public func setRate(_ rate: Double) {
-        // Clamp strictly between 0.85 and 1.15 (±15%)
         let clampedRate = max(0.85, min(1.15, (rate * 100.0).rounded() / 100.0))
         self.currentRate = clampedRate
         activeDeck.setRate(clampedRate)
 
-        // Sync back to current segment
         currentSegment?.playbackRate = clampedRate
         updateNowPlayingInfo()
     }
@@ -296,8 +270,6 @@ public final class AudioEngineManager: ObservableObject {
     public func resetRate() {
         setRate(1.0)
     }
-
-    // MARK: - Next & Previous Segment
 
     public func nextSegment() {
         guard let currentClass = currentClass else { return }
@@ -323,8 +295,6 @@ public final class AudioEngineManager: ObservableObject {
             seek(to: 0)
         }
     }
-
-    // MARK: - Crossfade State Machine
 
     private func startCrossfade(effectiveDuration: Double) {
         guard let currentClass = currentClass,
@@ -361,19 +331,6 @@ public final class AudioEngineManager: ObservableObject {
         incomingDeck.setVolume(fadeIn)
     }
 
-    // Code-review note (Android/iOS parity check): Android's finishCrossfade() had a
-    // reentrancy bug where clearing the ExoPlayer's media items could re-deliver a
-    // stale STATE_ENDED for the outgoing player *before* the active-player index was
-    // flipped, causing a double segment advance (see AudioEngineManager.kt's
-    // CrossfadeFinishCoordinator). This iOS equivalent does NOT have that bug:
-    // oldDeck.playerNode.stop() below can re-invoke the scheduled buffer's completion
-    // handler, but that handler always redispatches via `DispatchQueue.main.async`
-    // (see scheduleBuffer's completion closure), so handleTrackBufferFinished(...)
-    // can only run *after* this entire synchronous function — including the
-    // activeDeckIndex flip and currentSegmentIndex advance below — has returned.
-    // handleTrackBufferFinished also double-checks both `deckId == activeDeck.id`
-    // AND a segmentIndex snapshot against `currentSegmentIndex`, so even a stale
-    // event for the just-stopped deck is rejected. No fix needed here; kept as-is.
     private func finishCrossfade(effectiveDuration: Double) {
         guard isCrossfading else { return }
         isCrossfading = false
@@ -429,7 +386,6 @@ public final class AudioEngineManager: ObservableObject {
                 incomingDeck.stop()
             }
         } else {
-            // Auto advance
             if currentSegmentIndex < currentClass.segments.count - 1 {
                 currentSegmentIndex += 1
                 loadSegment(on: activeDeck, segmentIndex: currentSegmentIndex)
@@ -441,8 +397,6 @@ public final class AudioEngineManager: ObservableObject {
             }
         }
     }
-
-    // MARK: - Timer & Cue Countdown
 
     private func startTimer() {
         stopTimer()
@@ -475,7 +429,6 @@ public final class AudioEngineManager: ObservableObject {
         let hasNextSegment = currentSegmentIndex < currentClass.segments.count - 1
 
         if !isCrossfading {
-            // Check if crossfade should start
             if effectiveCrossfade > 0.0 && hasNextSegment && remaining <= effectiveCrossfade {
                 startCrossfade(effectiveDuration: effectiveCrossfade)
             } else if remaining <= 0.0 {
@@ -486,7 +439,6 @@ public final class AudioEngineManager: ObservableObject {
             updateCrossfade(effectiveDuration: effectiveCrossfade, remaining: remaining)
         }
 
-        // Check next cue for countdown beeps
         checkUpcomingCueCountdown()
     }
 
@@ -502,7 +454,7 @@ public final class AudioEngineManager: ObservableObject {
         for cue in segment.cues {
             let diffMs = cue.offsetMs - currentMs
             if diffMs > 0 && diffMs <= 3100 {
-                let secondsLeft = (diffMs + 500) / 1000 // 3, 2, 1
+                let secondsLeft = (diffMs + 500) / 1000
                 if secondsLeft != lastBeepSecond && secondsLeft >= 1 && secondsLeft <= 3 {
                     lastBeepSecond = secondsLeft
                     if isBeepEnabled {
@@ -526,8 +478,6 @@ public final class AudioEngineManager: ObservableObject {
             }
         }
     }
-
-    // MARK: - Remote Commands & NowPlaying
 
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
