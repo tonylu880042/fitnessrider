@@ -1,6 +1,20 @@
 import SwiftUI
 import UIKit
 
+// HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
+private let rateSwipeThreshold: CGFloat = 60
+
+/// 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
+/// 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
+/// 一次滑動只前進一階，不做「滑越遠調越多」——與 Android 同名同行為。
+func rateStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
+    let absDx = abs(dx)
+    let absDy = abs(dy)
+    if absDy > absDx { return 0 }
+    if absDx <= threshold { return 0 }
+    return dx > 0 ? 1 : -1
+}
+
 public struct WorkoutHUDView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var audioManager = AudioEngineManager.shared
@@ -493,6 +507,28 @@ public struct WorkoutHUDView: View {
         .onTapGesture(count: 2) {
             audioManager.togglePlayPause()
         }
+        // 右滑加速／左滑減速：手勢區限定在中央圓形儀表。
+        //
+        // 這裡一定要用 `.gesture`，不能用 `.simultaneousGesture` —— 後者的語意是
+        // 「允許與其他手勢同時辨識」，父層 cockpitCore 上的曲目切換拖曳
+        // （`DragGesture(minimumDistance: 40)`，水平位移 > 70pt 觸發）會跟著一起成立：
+        // 在圓形儀表上水平滑超過 70pt 會同時變速「並」跳到上/下一首，課堂中直接毀掉一段。
+        // 子視圖的 `.gesture` 對落在子視圖內的觸控本來就優先於祖先的 `.gesture`。
+        // 雙擊播放/暫停不受影響：DragGesture 要位移 10pt 才辨識，雙擊沒有位移。
+        .gesture(
+            DragGesture(minimumDistance: 10)
+                .onEnded { value in
+                    let step = rateStepForSwipe(
+                        dx: value.translation.width,
+                        dy: value.translation.height,
+                        threshold: rateSwipeThreshold
+                    )
+                    if step != 0 {
+                        audioManager.adjustRatePercent(by: Double(step) * 2.0)
+                        HapticFeedbackManager.shared.playCountdownTick()
+                    }
+                }
+        )
     }
 
     private var totalElapsedTimeBadge: some View {

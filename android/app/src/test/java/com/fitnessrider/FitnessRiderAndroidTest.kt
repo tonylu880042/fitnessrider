@@ -18,6 +18,7 @@ import com.fitnessrider.ui.editor.segmentsAfterMove
 import com.fitnessrider.ui.editor.segmentsAfterRemoval
 import com.fitnessrider.ui.editor.selectedIndexAfterMove
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
+import com.fitnessrider.ui.hud.rateStepForSwipe
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
@@ -1412,6 +1413,35 @@ class FitnessRiderAndroidTest {
         // 刪掉最後一個段落（newSize = 0）不能產生負數或超出範圍的索引。
         assertEquals(0, selectedIndexAfterRemoval(0, 0, 0))
         assertTrue(selectedIndexAfterRemoval(0, 0, 0) >= 0)
+    }
+
+    // HUD 播放中「右滑加速、左滑減速」手勢（客戶回報開發清單 B）：
+    // 位移 → 要不要調速、往哪調的純函式，與 iOS 的 rateStepForSwipe(dx:dy:threshold:) 同名同行為。
+    @Test
+    fun testRateStepForSwipeHorizontalPastThreshold() {
+        // 右滑超過門檻 → 加速一階 (+1)
+        assertEquals(1, rateStepForSwipe(dx = 80f, dy = 0f, threshold = 60f))
+        // 左滑超過門檻 → 減速一階 (-1)
+        assertEquals(-1, rateStepForSwipe(dx = -80f, dy = 0f, threshold = 60f))
+        // 滑得比門檻還遠，仍然只前進一階，不是「滑越遠調越多」
+        assertEquals(1, rateStepForSwipe(dx = 500f, dy = 0f, threshold = 60f))
+    }
+
+    @Test
+    fun testRateStepForSwipeBelowThresholdIsIgnored() {
+        assertEquals(0, rateStepForSwipe(dx = 40f, dy = 0f, threshold = 60f))
+        assertEquals(0, rateStepForSwipe(dx = -59f, dy = 0f, threshold = 60f))
+        // 剛好等於門檻，未「超過」不算數
+        assertEquals(0, rateStepForSwipe(dx = 60f, dy = 0f, threshold = 60f))
+    }
+
+    @Test
+    fun testRateStepForSwipeVerticalDominantIsIgnored() {
+        // 垂直位移大於水平位移時一律忽略，避免誤觸
+        assertEquals(0, rateStepForSwipe(dx = 70f, dy = 90f, threshold = 60f))
+        assertEquals(0, rateStepForSwipe(dx = -70f, dy = 100f, threshold = 60f))
+        // 水平仍然略大於垂直（且過門檻）才算數
+        assertEquals(1, rateStepForSwipe(dx = 90f, dy = 70f, threshold = 60f))
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {

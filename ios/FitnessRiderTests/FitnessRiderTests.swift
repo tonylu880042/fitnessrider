@@ -1303,5 +1303,31 @@ final class FitnessRiderTests: XCTestCase {
         // 刪掉目前選到、且是清單最後一筆的段落，selectedIndex 要 clamp 進新的有效範圍
         XCTAssertEqual(selectedIndexAfterRemoval(3, removedIndex: 3, newSize: 3), 2)
     }
+
+    // HUD 播放中「右滑加速、左滑減速」手勢（客戶回報開發清單 B）：
+    // 位移 → 要不要調速、往哪調的純函式，與 Android 的 rateStepForSwipe(dx, dy, threshold) 同名同行為。
+    func testRateStepForSwipeHorizontalPastThreshold() {
+        // 右滑超過門檻 → 加速一階 (+1)
+        XCTAssertEqual(rateStepForSwipe(dx: 80, dy: 0, threshold: 60), 1)
+        // 左滑超過門檻 → 減速一階 (-1)
+        XCTAssertEqual(rateStepForSwipe(dx: -80, dy: 0, threshold: 60), -1)
+        // 滑得比門檻還遠，仍然只前進一階，不是「滑越遠調越多」
+        XCTAssertEqual(rateStepForSwipe(dx: 500, dy: 0, threshold: 60), 1)
+    }
+
+    func testRateStepForSwipeBelowThresholdIsIgnored() {
+        XCTAssertEqual(rateStepForSwipe(dx: 40, dy: 0, threshold: 60), 0)
+        XCTAssertEqual(rateStepForSwipe(dx: -59, dy: 0, threshold: 60), 0)
+        // 剛好等於門檻，未「超過」不算數
+        XCTAssertEqual(rateStepForSwipe(dx: 60, dy: 0, threshold: 60), 0)
+    }
+
+    func testRateStepForSwipeVerticalDominantIsIgnored() {
+        // 垂直位移大於水平位移時一律忽略，避免誤觸
+        XCTAssertEqual(rateStepForSwipe(dx: 70, dy: 90, threshold: 60), 0)
+        XCTAssertEqual(rateStepForSwipe(dx: -70, dy: 100, threshold: 60), 0)
+        // 水平仍然略大於垂直（且過門檻）才算數
+        XCTAssertEqual(rateStepForSwipe(dx: 90, dy: 70, threshold: 60), 1)
+    }
 }
 

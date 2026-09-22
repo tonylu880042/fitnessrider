@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,6 +35,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import com.fitnessrider.R
 import com.fitnessrider.audio.AudioEngineManager
+import com.fitnessrider.audio.HapticFeedbackManager
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.HandPosition
 import com.fitnessrider.model.PostureType
@@ -44,6 +46,22 @@ import com.fitnessrider.ui.components.CircleProgressBar
 import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
 import kotlinx.coroutines.delay
+
+// HUD 播放中「右滑加速、左滑減速」手勢：水平位移須超過此門檻才算數（客戶回報開發清單 B）
+private val RATE_SWIPE_THRESHOLD_DP = 60.dp
+
+/**
+ * 手勢位移 → 要不要調速、往哪調，抽成純函式方便測試。
+ * 回傳 +1（右滑加速一階）、-1（左滑減速一階）、0（未達門檻或垂直位移較大，忽略）。
+ * 一次滑動只前進一階，不做「滑越遠調越多」——與 iOS 同名同行為。
+ */
+fun rateStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
+    val absDx = kotlin.math.abs(dx)
+    val absDy = kotlin.math.abs(dy)
+    if (absDy > absDx) return 0
+    if (absDx <= threshold) return 0
+    return if (dx > 0) 1 else -1
+}
 
 @Composable
 fun WorkoutHUDScreen(
@@ -81,6 +99,10 @@ fun WorkoutHUDScreen(
     var reminderTick by remember { mutableStateOf(0) }
     var totalDragX by remember { mutableFloatStateOf(0f) }
     var totalDragY by remember { mutableFloatStateOf(0f) }
+    var rateSwipeDragX by remember { mutableFloatStateOf(0f) }
+    var rateSwipeDragY by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val rateSwipeThresholdPx = remember(density) { with(density) { RATE_SWIPE_THRESHOLD_DP.toPx() } }
 
     // Intercept hardware/gesture back press to prevent accidental class exit
     BackHandler(enabled = true) {
@@ -365,6 +387,29 @@ fun WorkoutHUDScreen(
                                 detectTapGestures(
                                     onDoubleTap = {
                                         audioManager.togglePlayPause()
+                                    }
+                                )
+                            }
+                            // 右滑加速／左滑減速：手勢區限定在中央圓形儀表（300dp），
+                            // 是子節點，會比外層 Row 的曲目切換拖曳手勢先攔截並消費事件，
+                            // 不會互相打架；亦不影響上面的雙擊播放/暫停（不同手勢類型）。
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        rateSwipeDragX = 0f
+                                        rateSwipeDragY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        rateSwipeDragX += dragAmount.x
+                                        rateSwipeDragY += dragAmount.y
+                                    },
+                                    onDragEnd = {
+                                        val step = rateStepForSwipe(rateSwipeDragX, rateSwipeDragY, rateSwipeThresholdPx)
+                                        if (step != 0) {
+                                            audioManager.adjustRatePercent(step * 2.0)
+                                            HapticFeedbackManager.playCountdownTick(context)
+                                        }
                                     }
                                 )
                             }
