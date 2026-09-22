@@ -331,7 +331,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = enteredLicenseCode,
                         onValueChange = { enteredLicenseCode = it.uppercase() },
-                        placeholder = { Text("例如: 26FR-NR 或 RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        placeholder = { Text("例如: 26FR-NR 或 FRVIP-...", fontSize = 12.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

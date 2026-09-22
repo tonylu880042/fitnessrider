@@ -4,6 +4,11 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     public static let shared = VersionLifecycleManager()
 
     public static let lifecycleDays: Int = 7
+    /// 推廣代碼延長一次到「總共」多少天（不是再加 30 天），對應
+    /// backend/src/lib/licenseConfig.ts 的 PROMO_TOTAL_TRIAL_DAYS 與
+    /// promo.properties 的 TRIAL_DAYS。三邊數字一致性由
+    /// FitnessRiderTests 的 testBusinessConstantsMatchAcrossPlatforms 把關。
+    public static let promoTotalTrialDays: Int = 30
     public static let secondsPerDay: TimeInterval = 86_400.0
     public static let lifecycleDuration: TimeInterval = Double(lifecycleDays) * secondsPerDay
 
@@ -18,7 +23,9 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     public let buildDate: Date
 
     /// The anchor date for the free trial (device first launch date).
-    public let firstLaunchDate: Date
+    /// `private(set)` rather than `let` so [reconcileFirstLaunchAnchor] can correct it in-session
+    /// when the server has an earlier anchor on file (spec 項目 D), not just on next relaunch.
+    public private(set) var firstLaunchDate: Date
 
     /// The calculated expiration date (firstLaunchDate + fixed 30 * 86400s, immune to DST shifts).
     public var expirationDate: Date {
@@ -74,10 +81,14 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     }
 
     /// Check if device has an active VIP license.
+    ///
+    /// A missing/zero `expires` value must NOT be treated as "no expiry" (that used to let a
+    /// license row with a lost/never-set expiry date grant unlimited VIP access forever).
+    /// Missing expiry now means "not VIP" (spec 項目 C).
     public func evaluateVipStatus(currentTime: Date = Date(), defaults: UserDefaults = .standard) -> Bool {
         if defaults.bool(forKey: "fitness_rider_vip_active") {
             let expires = defaults.double(forKey: "fitness_rider_vip_expires")
-            if expires == 0 || expires > currentTime.timeIntervalSince1970 {
+            if expires > currentTime.timeIntervalSince1970 {
                 return true
             }
         }
@@ -159,39 +170,48 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         return Int(ceil(remaining / Self.secondsPerDay))
     }
 
-    /// Check if a code is a valid promotional code (e.g. 26FR-NR or YYFR-NR).
+    /// Check if a code is a valid promotional code for the CURRENT year (e.g. 26FR-NR in 2026).
+    ///
+    /// Only the code for the current year is valid. A future year's code (e.g. entering
+    /// `99FR-NR` today) is format-valid but not yet active, and must be treated as invalid —
+    /// otherwise it would never expire and would grant an unlimited-lifetime promo trial
+    /// (spec 項目 G，backend/src/lib/db.ts 的 checkPromoCodeStatus 有相同修正)。
     public static func isPromoCode(_ rawCode: String) -> Bool {
         let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if code == "26FR-NR" { return true }
 
         let pattern = "^(\\d{2})FR-NR$"
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let range = NSRange(location: 0, length: code.utf16.count)
-            if let match = regex.firstMatch(in: code, options: [], range: range) {
-                if let yearRange = Range(match.range(at: 1), in: code),
-                   let codeYear = Int(code[yearRange]) {
-                    let currentYear = Calendar.current.component(.year, from: Date()) % 100
-                    return codeYear >= currentYear && codeYear <= currentYear + 2
-                }
-            }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let range = NSRange(location: 0, length: code.utf16.count)
+        guard let match = regex.firstMatch(in: code, options: [], range: range),
+              let yearRange = Range(match.range(at: 1), in: code),
+              let codeYear = Int(code[yearRange]) else {
+            return false
         }
-        return false
+        let currentYear = Calendar.current.component(.year, from: Date()) % 100
+        return codeYear == currentYear
     }
 
     /// Activate app via license code or promotional code (Offline algorithmic check + persistence).
+    ///
+    /// 推廣代碼：延長一次到「總共 `promoTotalTrialDays` 天」，不是在現在的時間上再加 30 天，
+    /// 因此到期時間 = 裝置試用起算時間（firstLaunchDate）+ promoTotalTrialDays
+    /// （與後端 activateLicenseWithCode 的計算方式一致）。
+    /// 付費 VIP：改用 [VipSerialVerifier] 做 P-256 驗簽，天數由序號內容決定，
+    /// 不再有任何寫死序號或前綴規則。
+    /// `testVipPublicKeyOverride` 只給測試用（見 FitnessRiderTests），讓測試可以用自己產生的
+    /// 金鑰對走完整條開通流程，不必碰正式私鑰；正式呼叫端一律不傳這個參數。
     @discardableResult
-    public func activateLicenseCode(_ rawCode: String, defaults: UserDefaults = .standard) -> (success: Bool, message: String) {
+    public func activateLicenseCode(_ rawCode: String, defaults: UserDefaults = .standard, testVipPublicKeyOverride: String? = nil, overrideCurrentDate: Date? = nil) -> (success: Bool, message: String) {
+        let now = overrideCurrentDate ?? Date()
         let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !code.isEmpty else {
             return (false, "授權碼不能為空")
         }
 
         let isPromo = Self.isPromoCode(code)
-        let isValidVIP = code == "RIDER-VIP-2026-PASS" ||
-                         code == "FITNESS-PRO-ANNUAL-KEY" ||
-                         (code.hasPrefix("RIDER-VIP-") && code.count >= 14)
+        let vipSerialInfo = isPromo ? nil : VipSerialVerifier.verify(code, publicKeySPKIBase64Override: testVipPublicKeyOverride)
 
-        if !isPromo && !isValidVIP {
+        if !isPromo && vipSerialInfo == nil {
             return (false, "無效的授權序號或推廣代碼")
         }
 
@@ -202,8 +222,10 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
                 return (false, "本設備已兌換過此年度推廣代碼（\(code)），無法重複領取。")
             }
 
-            let thirtyDaysSec: TimeInterval = 30.0 * 86_400.0
-            let expiresTs = Date().addingTimeInterval(thirtyDaysSec).timeIntervalSince1970
+            let expiresTs = firstLaunchDate.addingTimeInterval(Double(Self.promoTotalTrialDays) * Self.secondsPerDay).timeIntervalSince1970
+            if expiresTs <= now.timeIntervalSince1970 {
+                return (false, "此推廣代碼體驗期限為首次啟用起算 \(Self.promoTotalTrialDays) 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。")
+            }
 
             redeemedList.append(code)
             defaults.set(redeemedList, forKey: userDefaultsRedeemedPromosKey)
@@ -220,13 +242,13 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             self.isVIP = true
             self.isExpiredOnLaunch = false
-            self.vipPlanName = "推廣課程專屬版 (30天免費)"
-            return (true, "推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。")
+            self.vipPlanName = "推廣課程專屬版 (\(Self.promoTotalTrialDays)天免費)"
+            return (true, "推廣課程專屬代碼兌換成功！已為此設備啟用 \(Self.promoTotalTrialDays) 天全功能免費 VIP 體驗。")
         }
 
-        if isValidVIP {
-            let oneYearSec: TimeInterval = 365.0 * 86_400.0
-            let expiresTs = Date().addingTimeInterval(oneYearSec).timeIntervalSince1970
+        if let vipSerialInfo {
+            let planSec: TimeInterval = Double(vipSerialInfo.planDays) * 86_400.0
+            let expiresTs = now.addingTimeInterval(planSec).timeIntervalSince1970
 
             // Save to defaults
             defaults.set(true, forKey: "fitness_rider_vip_active")
@@ -234,7 +256,6 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
             defaults.set(code, forKey: "fitness_rider_vip_code")
             defaults.set(false, forKey: userDefaultsExpiredKey)
 
-            // Save to Keychain if standard
             if defaults == UserDefaults.standard {
                 DeviceIdentifierService.shared.vipLicenseKey = code
                 DeviceIdentifierService.shared.vipExpiresTimestamp = expiresTs
@@ -248,6 +269,39 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         }
 
         return (false, "無效的授權序號或推廣代碼")
+    }
+
+    /// 信任伺服器已驗證過身分的授權結果，直接寫入本機 VIP 狀態
+    /// （帳號密碼換機、或已在伺服器驗過簽章的序號換機成功後呼叫），
+    /// 不透過 [VipSerialVerifier] 重新驗證 —— 這條路徑本來就不是靠使用者輸入序號觸發的。
+    public func activateVipFromServer(expiresAt: Date, defaults: UserDefaults = .standard) {
+        let expiresTs = expiresAt.timeIntervalSince1970
+        defaults.set(true, forKey: "fitness_rider_vip_active")
+        defaults.set(expiresTs, forKey: "fitness_rider_vip_expires")
+        defaults.set("server_verified", forKey: "fitness_rider_vip_code")
+        defaults.set(false, forKey: userDefaultsExpiredKey)
+        if defaults == UserDefaults.standard {
+            DeviceIdentifierService.shared.vipLicenseKey = "server_verified"
+            DeviceIdentifierService.shared.vipExpiresTimestamp = expiresTs
+            DeviceIdentifierService.shared.isTrialPermanentlyLocked = false
+        }
+        self.isVIP = true
+        self.isExpiredOnLaunch = false
+        self.vipPlanName = "專業年繳版 (VIP)"
+    }
+
+    /// 用伺服器回傳的試用起算時間校正本機錨點，取「較早」的一個 —— 這樣即使本機
+    /// 快取遺失（理論上 iOS Keychain 通常會存活，但仍以伺服器為最終防線），也不會被重置
+    /// 試用（spec 項目 D，與 Android 的 reconcileFirstLaunchAnchor 對應）。
+    public func reconcileFirstLaunchAnchor(serverAnchor: Date) {
+        let serverTs = serverAnchor.timeIntervalSince1970
+        guard serverTs > 0 else { return }
+        let localTs = firstLaunchDate.timeIntervalSince1970
+        if serverTs < localTs {
+            DeviceIdentifierService.shared.trialStartTimestamp = serverTs
+            UserDefaults.standard.set(serverTs, forKey: userDefaultsFirstLaunchKey)
+            self.firstLaunchDate = serverAnchor
+        }
     }
 
     public var trialStartDateFormatted: String {

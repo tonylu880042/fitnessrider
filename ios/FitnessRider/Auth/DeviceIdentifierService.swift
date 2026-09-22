@@ -11,6 +11,7 @@ public final class DeviceIdentifierService: Sendable {
     public static let keychainTrialLockedKey = "app.fitnessrider.trial_permanently_locked"
     public static let keychainVipLicenseKey = "app.fitnessrider.vip_license_key"
     public static let keychainVipExpiresKey = "app.fitnessrider.vip_expires_timestamp"
+    public static let keychainDeviceSecretKey = "app.fitnessrider.device_secret"
 
     private init() {}
 
@@ -86,6 +87,23 @@ public final class DeviceIdentifierService: Sendable {
                 setKeychainString(key: Self.keychainVipExpiresKey, value: String(val))
             } else {
                 deleteKeychainString(key: Self.keychainVipExpiresKey)
+            }
+        }
+    }
+
+    /// 裝置專屬密鑰：裝置第一次成功開通授權/推廣代碼時，後端 /api/license/activate（或
+    /// /api/device/transfer）回傳的裝置專屬密鑰，之後呼叫 /api/license/verify 時要用它
+    /// 簽章請求，避免任何人只憑猜到的 device_fingerprint（identifierForVendor 並非秘密）
+    /// 就能查詢這台裝置的真實授權狀態（spec 項目 E）。見 LicenseVerificationService。
+    public var deviceSecret: String? {
+        get {
+            return getKeychainString(key: Self.keychainDeviceSecretKey)
+        }
+        set {
+            if let val = newValue {
+                setKeychainString(key: Self.keychainDeviceSecretKey, value: val)
+            } else {
+                deleteKeychainString(key: Self.keychainDeviceSecretKey)
             }
         }
     }

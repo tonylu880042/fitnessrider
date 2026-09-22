@@ -24,7 +24,11 @@ enum MusicSource {
         if isExternal(musicFileName) {
             let relativePath = String(musicFileName.dropFirst(externalPrefix.count))
             return ExternalMusicFolderStore.shared.withFileAccess(relativePath: relativePath) { url in
-                FileManager.default.fileExists(atPath: url.path) ? body(url) : nil
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    startICloudDownloadIfPlaceholder(at: url)
+                    return nil
+                }
+                return body(url)
             }
         } else {
             let url = SQLiteDatabase.shared.musicDirectoryURL.appendingPathComponent(musicFileName)
@@ -35,5 +39,34 @@ enum MusicSource {
 
     static func fileExists(for musicFileName: String) -> Bool {
         withResolvedFileURL(for: musicFileName) { _ in true } ?? false
+    }
+
+    /// iCloud Drive 開著「最佳化儲存空間」時，還沒下載到本機的曲目在邏輯路徑上是不存在的，
+    /// 磁碟上只有一個隱藏的 `.<檔名>.icloud` 預留位置。找不到檔案時順手觸發下載，
+    /// 本次呼叫仍照既有規則回傳 nil，由呼叫端當作「找不到檔案」優雅降級（CLAUDE.md Layer 3）。
+    private static func startICloudDownloadIfPlaceholder(at url: URL) {
+        let placeholder = url
+            .deletingLastPathComponent()
+            .appendingPathComponent("." + url.lastPathComponent + ".icloud")
+        guard FileManager.default.fileExists(atPath: placeholder.path) else { return }
+        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+    }
+
+    /// 觸發 iCloud 下載並等到檔案真的落地（最多 [timeout] 秒）。已經在本機的曲目直接回傳 true。
+    /// 供「教練主動按下去、而且畫面上有等待指示」的路徑使用（選取曲目建立段落、試聽）。
+    ///
+    /// ponytail: 固定間隔輪詢而不是 NSMetadataQuery —— 一次只等選取的那幾首、教練是主動等待的，
+    /// 不需要即時進度回報。要在畫面上顯示下載百分比時再換成 NSMetadataQuery。
+    static func ensureAvailable(for musicFileName: String, timeout: TimeInterval = 60) async -> Bool {
+        // fileExists 走 withResolvedFileURL，找不到檔案時本身就會觸發下載。
+        if fileExists(for: musicFileName) { return true }
+        guard isExternal(musicFileName) else { return false }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if fileExists(for: musicFileName) { return true }
+        }
+        return false
     }
 }

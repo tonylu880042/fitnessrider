@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { Pool } from 'pg';
-import { User, Device, License, DeviceTransferLog, PromoRedemption } from './types';
+import { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
+import { PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
+import { verifyVipSerial } from './vipSerial';
 
 interface InMemoryData {
   users: User[];
@@ -10,6 +12,8 @@ interface InMemoryData {
   licenses: License[];
   device_transfers: DeviceTransferLog[];
   promo_redemptions: PromoRedemption[];
+  device_trials: DeviceTrialAnchor[];
+  vip_serial_redemptions: VipSerialRedemption[];
 }
 
 let pgPool: Pool | null = null;
@@ -28,6 +32,8 @@ let memoryFallback: InMemoryData = {
   licenses: [],
   device_transfers: [],
   promo_redemptions: [],
+  device_trials: [],
+  vip_serial_redemptions: [],
 };
 
 const DATA_DIR = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
@@ -47,6 +53,8 @@ function ensureLocalDb(): InMemoryData {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as InMemoryData;
     if (!parsed.promo_redemptions) parsed.promo_redemptions = [];
+    if (!parsed.device_trials) parsed.device_trials = [];
+    if (!parsed.vip_serial_redemptions) parsed.vip_serial_redemptions = [];
     memoryFallback = parsed;
     return parsed;
   } catch (err) {
@@ -115,6 +123,17 @@ async function initPgTables() {
         trial_days INT DEFAULT 30,
         UNIQUE(device_fingerprint, promo_code)
       );
+      CREATE TABLE IF NOT EXISTS device_trials (
+        device_fingerprint VARCHAR(255) PRIMARY KEY,
+        first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+        device_secret VARCHAR(64)
+      );
+      CREATE TABLE IF NOT EXISTS vip_serial_redemptions (
+        serial_id VARCHAR(16) PRIMARY KEY,
+        device_fingerprint VARCHAR(255) NOT NULL,
+        plan_days INT NOT NULL,
+        redeemed_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
     pgInitialized = true;
   } finally {
@@ -123,30 +142,29 @@ async function initPgTables() {
 }
 
 /**
- * Check if a code matches the yearly promotion format (e.g. 26FR-NR for 2026)
- * or explicit promotional code list, and check for expiration if older than 1 year.
+ * Check if a code matches the yearly promotion format (e.g. 26FR-NR for 2026).
+ *
+ * Only the code for the CURRENT year is valid. A past year's code is reported as
+ * `expired` (clear "please ask for this year's code" messaging). A future year's
+ * code (e.g. entering `99FR-NR` today) is format-valid but not yet active, and is
+ * treated as invalid rather than "not yet expired" — otherwise it would never expire
+ * and would grant an unlimited-lifetime promo trial (see spec item G / fixed bug).
  */
 export function checkPromoCodeStatus(rawCode: string): { valid: boolean; expired: boolean; codeYear?: number } {
   const code = rawCode.trim().toUpperCase();
   const currentYearShort = new Date().getFullYear() % 100;
 
   const match = code.match(/^(\d{2})FR-NR$/);
-  if (match) {
-    const codeYear = parseInt(match[1], 10);
-    if (codeYear < currentYearShort) {
-      return { valid: false, expired: true, codeYear };
-    }
+  if (!match) {
+    return { valid: false, expired: false };
+  }
+
+  const codeYear = parseInt(match[1], 10);
+  if (codeYear === currentYearShort) {
     return { valid: true, expired: false, codeYear };
   }
-
-  if (code === '26FR-NR') {
-    if (currentYearShort > 26) {
-      return { valid: false, expired: true, codeYear: 26 };
-    }
-    return { valid: true, expired: false, codeYear: 26 };
-  }
-
-  return { valid: false, expired: false };
+  // Past year -> expired (surfaced with a dedicated message). Future year -> just invalid.
+  return { valid: false, expired: codeYear < currentYearShort, codeYear };
 }
 
 export function isPromoCode(rawCode: string): boolean {
@@ -260,12 +278,221 @@ export const db = {
     }
   },
 
+  /**
+   * 純查詢該裝置的試用起算錨點，查無紀錄時回傳 null，絕不自動新增紀錄（防止未經授權請求隨意建錨點，spec 項目 D / 項目 10）。
+   */
+  async getDeviceTrialAnchor(deviceFingerprint: string): Promise<DeviceTrialAnchor | null> {
+    if (pgPool) {
+      await initPgTables();
+      const res = await pgPool.query(
+        'SELECT device_fingerprint, first_seen_at, device_secret FROM device_trials WHERE device_fingerprint = $1 LIMIT 1',
+        [deviceFingerprint]
+      );
+      if (res.rows.length === 0) return null;
+      const row = res.rows[0];
+      return {
+        device_fingerprint: row.device_fingerprint,
+        first_seen_at: new Date(row.first_seen_at).toISOString(),
+        device_secret: row.device_secret,
+      };
+    } else {
+      const data = ensureLocalDb();
+      const anchor = data.device_trials?.find(t => t.device_fingerprint === deviceFingerprint);
+      return anchor || null;
+    }
+  },
+
+  /**
+   * 取得（或在合法開通/認證時建立）該裝置的試用起算錨點。
+   * 若提供 clientFirstLaunchAt 且早於伺服器記錄，則校準更新為較早的時間（spec 項目 D / 項目 5）。
+   */
+  async getOrCreateDeviceTrialAnchor(deviceFingerprint: string, clientFirstLaunchAt?: string): Promise<DeviceTrialAnchor> {
+    let candidateFirstSeen = new Date().toISOString();
+    if (clientFirstLaunchAt) {
+      const parsed = new Date(clientFirstLaunchAt).getTime();
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now()) {
+        candidateFirstSeen = new Date(parsed).toISOString();
+      }
+    }
+
+    if (pgPool) {
+      await initPgTables();
+      const existing = await pgPool.query(
+        'SELECT device_fingerprint, first_seen_at, device_secret FROM device_trials WHERE device_fingerprint = $1 LIMIT 1',
+        [deviceFingerprint]
+      );
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        const existingTime = new Date(row.first_seen_at).getTime();
+        const candidateTime = new Date(candidateFirstSeen).getTime();
+        if (candidateTime < existingTime) {
+          await pgPool.query(
+            'UPDATE device_trials SET first_seen_at = $2 WHERE device_fingerprint = $1',
+            [deviceFingerprint, candidateFirstSeen]
+          );
+          row.first_seen_at = candidateFirstSeen;
+        }
+        return {
+          device_fingerprint: row.device_fingerprint,
+          first_seen_at: new Date(row.first_seen_at).toISOString(),
+          device_secret: row.device_secret,
+        };
+      }
+      await pgPool.query(
+        `INSERT INTO device_trials (device_fingerprint, first_seen_at, device_secret)
+         VALUES ($1, $2, NULL)
+         ON CONFLICT (device_fingerprint) DO NOTHING`,
+        [deviceFingerprint, candidateFirstSeen]
+      );
+      // Re-read in case of a concurrent insert race.
+      const res = await pgPool.query(
+        'SELECT device_fingerprint, first_seen_at, device_secret FROM device_trials WHERE device_fingerprint = $1 LIMIT 1',
+        [deviceFingerprint]
+      );
+      const row = res.rows[0];
+      return {
+        device_fingerprint: row.device_fingerprint,
+        first_seen_at: new Date(row.first_seen_at).toISOString(),
+        device_secret: row.device_secret,
+      };
+    } else {
+      const data = ensureLocalDb();
+      if (!data.device_trials) data.device_trials = [];
+      let anchor = data.device_trials.find(t => t.device_fingerprint === deviceFingerprint);
+      if (!anchor) {
+        anchor = { device_fingerprint: deviceFingerprint, first_seen_at: candidateFirstSeen, device_secret: null };
+        data.device_trials.push(anchor);
+        saveLocalDb(data);
+      } else {
+        const existingTime = new Date(anchor.first_seen_at).getTime();
+        const candidateTime = new Date(candidateFirstSeen).getTime();
+        if (candidateTime < existingTime) {
+          anchor.first_seen_at = candidateFirstSeen;
+          saveLocalDb(data);
+        }
+      }
+      return anchor;
+    }
+  },
+
+  /**
+   * 只在該裝置尚未有密鑰時才設定（第一次成功開通授權/推廣代碼時呼叫）。
+   * 成功設定新密鑰時回傳該密鑰；若該裝置已存在密鑰，回傳 null（絕不回傳既有密鑰，避免成為查詢 oracle，spec 項目 1）。
+   */
+  async setDeviceSecretIfAbsent(deviceFingerprint: string, newSecret: string): Promise<string | null> {
+    await this.getOrCreateDeviceTrialAnchor(deviceFingerprint);
+    if (pgPool) {
+      await initPgTables();
+      const updateRes = await pgPool.query(
+        `UPDATE device_trials SET device_secret = $2 WHERE device_fingerprint = $1 AND device_secret IS NULL`,
+        [deviceFingerprint, newSecret]
+      );
+      if ((updateRes.rowCount ?? 0) > 0) {
+        return newSecret;
+      }
+      return null;
+    } else {
+      const data = ensureLocalDb();
+      const anchor = data.device_trials.find(t => t.device_fingerprint === deviceFingerprint);
+      if (anchor && !anchor.device_secret) {
+        anchor.device_secret = newSecret;
+        saveLocalDb(data);
+        return newSecret;
+      }
+      return null;
+    }
+  },
+
+  /**
+   * 驗證 /api/license/verify 的裝置簽章（HMAC-SHA256(device_secret, "<fingerprint>.<timestamp>")）。
+   * 只有先前透過 /api/license/activate 成功開通過授權（含推廣代碼）的裝置才會有 device_secret，
+   * 純試用、尚未開通任何東西的裝置沒有密鑰、也沒有付費授權狀態可以被查詢（見 spec 項目 E）。
+   */
+  async verifyDeviceSignature(deviceFingerprint: string, timestampMs: number, signatureHex: string): Promise<boolean> {
+    if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60 * 1000) {
+      return false; // 逾時 5 分鐘的請求一律拒絕，避免重放
+    }
+    const anchor = pgPool
+      ? await (async () => {
+          await initPgTables();
+          const res = await pgPool!.query('SELECT device_secret FROM device_trials WHERE device_fingerprint = $1', [deviceFingerprint]);
+          return res.rows[0]?.device_secret as string | undefined;
+        })()
+      : ensureLocalDb().device_trials.find(t => t.device_fingerprint === deviceFingerprint)?.device_secret || undefined;
+
+    if (!anchor) return false;
+
+    const expected = crypto
+      .createHmac('sha256', anchor)
+      .update(`${deviceFingerprint}.${timestampMs}`)
+      .digest('hex');
+
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const givenBuf = Buffer.from((signatureHex || '').trim(), 'hex');
+    if (expectedBuf.length !== givenBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, givenBuf);
+  },
+
+  /**
+   * 認領一組付費 VIP 序號：同一組序號只能綁在一台裝置上。
+   *
+   * 刻意讓「INSERT 本身」當閘門，而不是先查再寫 —— 先查再寫有 TOCTOU：同一組外流的序號
+   * 同時在兩台裝置上開通時，兩邊都會讀到「還沒人用過」而各自拿到授權，後寫的那筆
+   * `ON CONFLICT DO NOTHING` 只會靜靜變成 no-op，錯誤完全不會被發現。改由資料庫的
+   * PRIMARY KEY 仲裁之後，同時只有一方插得進去。
+   *
+   * 插不進去時回讀既有紀錄，只有原本就是同一台裝置才放行 —— 讓同一台裝置重裝後重新輸入
+   * 同一組序號仍然可以成功。回傳 true 代表這台裝置可以用這組序號開通。
+   */
+  async claimVipSerial(serialId: string, deviceFingerprint: string, planDays: number): Promise<boolean> {
+    if (pgPool) {
+      await initPgTables();
+      const inserted = await pgPool.query(
+        `INSERT INTO vip_serial_redemptions (serial_id, device_fingerprint, plan_days, redeemed_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (serial_id) DO NOTHING`,
+        [serialId, deviceFingerprint, planDays, new Date().toISOString()]
+      );
+      if (inserted.rowCount && inserted.rowCount > 0) return true;
+
+      const existing = await pgPool.query(
+        'SELECT device_fingerprint FROM vip_serial_redemptions WHERE serial_id = $1 LIMIT 1',
+        [serialId]
+      );
+      return existing.rows[0]?.device_fingerprint === deviceFingerprint;
+    } else {
+      // 記憶體／檔案後備：Node 是單執行緒，find 到 push 之間沒有任何 await，
+      // 這一段本身就是不可分割的，不需要額外的鎖。
+      const data = ensureLocalDb();
+      if (!data.vip_serial_redemptions) data.vip_serial_redemptions = [];
+      const existing = data.vip_serial_redemptions.find(r => r.serial_id === serialId);
+      if (existing) return existing.device_fingerprint === deviceFingerprint;
+
+      data.vip_serial_redemptions.push({
+        serial_id: serialId,
+        device_fingerprint: deviceFingerprint,
+        plan_days: planDays,
+        redeemed_at: new Date().toISOString(),
+      });
+      saveLocalDb(data);
+      return true;
+    }
+  },
+
   async activateLicenseWithCode(
     deviceFingerprint: string,
     rawCode: string,
     platform: 'ios' | 'android' = 'ios',
-    deviceModel: string = 'Coach Device'
-  ): Promise<{ success: boolean; error?: string; license?: License; is_promo?: boolean; trial_days?: number }> {
+    deviceModel: string = 'Coach Device',
+    clientFirstLaunchAt?: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    license?: License;
+    is_promo?: boolean;
+    trial_days?: number;
+    device_secret?: string;
+  }> {
     const code = rawCode.trim().toUpperCase();
     const promoStatus = checkPromoCodeStatus(code);
 
@@ -278,11 +505,31 @@ export const db = {
     }
 
     const isPromo = promoStatus.valid;
-    const validVipCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
-    const isValidVIP = validVipCodes.includes(code) || (code.startsWith('RIDER-VIP-') && code.length >= 14);
+    // 付費 VIP 序號一律用 P-256 簽章驗證，不再有任何寫死序號或前綴長度規則（spec 項目 B）。
+    const vipSerialInfo = !isPromo ? verifyVipSerial(code) : null;
+    const isValidVIP = !!vipSerialInfo;
 
     if (!isPromo && !isValidVIP) {
       return { success: false, error: '無效的授權序號或推廣代碼' };
+    }
+
+    let dev = await this.getDeviceByFingerprint(deviceFingerprint);
+    let userId = dev?.user_id;
+
+    // 若設備已有生效中的付費 VIP，不可被推廣代碼覆蓋
+    if (isPromo && userId) {
+      const existingLicense = await this.getLicenseByUserId(userId);
+      if (
+        existingLicense &&
+        existingLicense.status === 'active' &&
+        new Date(existingLicense.expires_at).getTime() > Date.now() &&
+        existingLicense.plan_type !== 'promo_trial_30d'
+      ) {
+        return {
+          success: false,
+          error: '此設備已有生效中的專業年繳版 VIP 授權，無需使用體驗推廣代碼。',
+        };
+      }
     }
 
     // Single-device anti-abuse for promotional codes: each device can only redeem once per year
@@ -296,8 +543,21 @@ export const db = {
       }
     }
 
-    let dev = await this.getDeviceByFingerprint(deviceFingerprint);
-    let userId = dev?.user_id;
+    // 付費序號限制：同一組序號只能在一台裝置上開通過一次，防止序號外流後被無限次開通。
+    // 認領動作刻意放在建立帳號／裝置／授權之前 —— 認領失敗就直接結束，不會留下半套資料。
+    if (isValidVIP && vipSerialInfo) {
+      const claimed = await this.claimVipSerial(
+        vipSerialInfo.serialId,
+        deviceFingerprint,
+        vipSerialInfo.planDays
+      );
+      if (!claimed) {
+        return {
+          success: false,
+          error: '此授權序號已在其他設備開通過。如需更換設備，請使用「轉移既有授權」功能。',
+        };
+      }
+    }
 
     if (!userId) {
       userId = crypto.randomUUID();
@@ -316,19 +576,39 @@ export const db = {
       });
     }
 
-    const durationDays = isPromo ? 30 : 365;
-    const durationMs = durationDays * 24 * 60 * 60 * 1000;
-    const expiresAt = new Date(Date.now() + durationMs).toISOString();
+    let expiresAt: string;
+    let durationDays: number;
 
     if (isPromo) {
+      // 「延長一次到總共 30 天」，不是在剩餘天數上再加 30 天：以裝置的試用起算錨點
+      // （結合本機回報起算時間與伺服器記錄取較早者）+ PROMO_TOTAL_TRIAL_DAYS 為到期時間。
+      const anchor = await this.getOrCreateDeviceTrialAnchor(deviceFingerprint, clientFirstLaunchAt);
+      const anchorMs = new Date(anchor.first_seen_at).getTime();
+      const promoExpiresMs = anchorMs + PROMO_TOTAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+
+      // 若首次啟動已超過 30 天，推廣體驗期已過，不扣抵次數、明確回報錯誤（spec 項目 3）。
+      if (promoExpiresMs <= Date.now()) {
+        return {
+          success: false,
+          error: `此推廣代碼體驗期限為首次啟用起算 ${PROMO_TOTAL_TRIAL_DAYS} 天。本設備首次啟用已超過 30 天，無法再使用此代碼，請升級專業年繳版。`,
+        };
+      }
+
+      expiresAt = new Date(promoExpiresMs).toISOString();
+      durationDays = PROMO_TOTAL_TRIAL_DAYS;
+
       await this.recordPromoRedemption({
         id: crypto.randomUUID(),
         device_fingerprint: deviceFingerprint,
         promo_code: code,
         redeemed_at: new Date().toISOString(),
         expires_at: expiresAt,
-        trial_days: 30,
+        trial_days: PROMO_TOTAL_TRIAL_DAYS,
       });
+    } else {
+      durationDays = vipSerialInfo!.planDays;
+      expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+      // 序號兌換紀錄已經在上面的 claimVipSerial 一併寫入，這裡不需要再寫一次。
     }
 
     const license = await this.setLicense({
@@ -340,11 +620,16 @@ export const db = {
       revenuecat_entitlement_id: code,
     });
 
+    // 開通成功即建立（若尚未有）裝置密鑰，之後 /api/license/verify 用它簽章請求。
+    // 若該裝置早已設定過密鑰，setDeviceSecretIfAbsent 會回傳 null，避免洩漏既有密鑰（spec 項目 1）。
+    const deviceSecret = await this.setDeviceSecretIfAbsent(deviceFingerprint, crypto.randomBytes(32).toString('hex'));
+
     return {
       success: true,
       license,
       is_promo: isPromo,
       trial_days: durationDays,
+      ...(deviceSecret ? { device_secret: deviceSecret } : {}),
     };
   },
 

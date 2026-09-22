@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { db } from '@/lib/db';
 import { hashPassword, signJwt } from '@/lib/auth';
 import { AuthResponse } from '@/lib/types';
+import { BASE_TRIAL_DAYS } from '@/lib/licenseConfig';
 
 export async function POST(req: NextRequest) {
   try {
@@ -52,8 +53,8 @@ export async function POST(req: NextRequest) {
       device_model: device_model || 'Unknown Device',
     });
 
-    // 3. 發放 30 天全功能免費試用授權
-    const trialDays = 30;
+    // 3. 發放基礎 7 天全功能免費試用授權（推廣代碼可延長一次到總共 30 天，見 /api/license/activate）
+    const trialDays = BASE_TRIAL_DAYS;
     const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
     const license = await db.setLicense({
       id: crypto.randomUUID(),

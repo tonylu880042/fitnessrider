@@ -12,6 +12,7 @@ import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.theme.FitnessRiderTheme
 import com.fitnessrider.ui.classlist.ClassListScreen
 import com.fitnessrider.ui.editor.ClassEditorScreen
+import com.fitnessrider.ui.expiration.ExpirationReason
 import com.fitnessrider.ui.expiration.VersionExpiredScreen
 import com.fitnessrider.ui.hud.WorkoutHUDScreen
 import com.fitnessrider.ui.settings.SettingsScreen
@@ -59,9 +60,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             FitnessRiderTheme {
                 var isExpired by remember { mutableStateOf(VersionLifecycleManager.isExpired(this@MainActivity)) }
+                var mustUpdate by remember { mutableStateOf(false) }
+                val licenseService = remember { com.fitnessrider.auth.LicenseVerificationService(this@MainActivity) }
 
-                if (isExpired) {
+                // 啟動時連同授權狀態一起向後端取得試用錨點校正與強制更新門檻。
+                // 完全離線／連線失敗時 refreshFromServer 什麼都不做，不會把使用者鎖住（spec 項目 F）。
+                LaunchedEffect(Unit) {
+                    licenseService.refreshFromServer(currentVersionCode = VersionLifecycleManager.versionCode)
+                    isExpired = VersionLifecycleManager.isExpired(this@MainActivity)
+                    mustUpdate = licenseService.mustUpdate.value
+                }
+
+                if (mustUpdate) {
+                    VersionExpiredScreen(reason = ExpirationReason.MUST_UPDATE)
+                } else if (isExpired) {
                     VersionExpiredScreen(
+                        reason = ExpirationReason.TRIAL_ENDED,
                         onUnlocked = { isExpired = false }
                     )
                 } else {

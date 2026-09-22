@@ -20,7 +20,9 @@ import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
 import com.fitnessrider.ui.musiclibrary.copyMusicFileOrCleanup
 import com.fitnessrider.ui.musiclibrary.filterExternalMusicEntries
 import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
+import com.fitnessrider.auth.LicenseVerificationService
 import com.fitnessrider.util.VersionLifecycleManager
+import com.fitnessrider.util.VipSerialVerifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -31,6 +33,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.io.InputStream
+import java.security.KeyPairGenerator
+import java.security.Signature
+import java.security.spec.ECGenParameterSpec
+import java.util.Base64
 import kotlin.math.roundToInt
 
 class FitnessRiderAndroidTest {
@@ -386,16 +392,43 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
 
         // 2. 首次輸入 2026 年度推廣代碼 26FR-NR -> 成功兌換 30 天 VIP 試用
-        val promoRes = manager.activateLicenseCode(fakeContext, "26FR-NR")
+        val promoRes = manager.activateLicenseCode(fakeContext, "26FR-NR", overrideCurrentTimeMs = day10)
         org.junit.Assert.assertTrue(promoRes.first)
         org.junit.Assert.assertTrue(promoRes.second.contains("30 天"))
         org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day10))
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day10))
 
         // 3. 同一台設備再次輸入 26FR-NR -> 失敗，防止重複領取（單機防刷）
-        val duplicateRes = manager.activateLicenseCode(fakeContext, "26FR-NR")
+        val duplicateRes = manager.activateLicenseCode(fakeContext, "26FR-NR", overrideCurrentTimeMs = day10)
         org.junit.Assert.assertFalse(duplicateRes.first)
         org.junit.Assert.assertTrue(duplicateRes.second.contains("無法重複領取") || duplicateRes.second.contains("已兌換過"))
+    }
+
+    /** 產生一組測試用 P-256 金鑰對，`signVipSerial` 用它簽出符合 vipSerial 格式的序號字串。 */
+    private fun generateTestEcKeyPair() = KeyPairGenerator.getInstance("EC").apply {
+        initialize(ECGenParameterSpec("secp256r1"))
+    }.generateKeyPair()
+
+    private fun buildVipPayload(serialIdHex: String, planDays: Int): ByteArray {
+        val serialIdBytes = ByteArray(4) { i ->
+            serialIdHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+        val buf = java.nio.ByteBuffer.allocate(7)
+        buf.put(1) // version
+        buf.put(serialIdBytes)
+        buf.putShort(planDays.toShort())
+        return buf.array()
+    }
+
+    private fun signVipSerial(privateKey: java.security.PrivateKey, serialIdHex: String, planDays: Int): String {
+        val payload = buildVipPayload(serialIdHex, planDays)
+        val signer = Signature.getInstance("SHA256withECDSA")
+        signer.initSign(privateKey)
+        signer.update(payload)
+        val sig = signer.sign()
+        val payloadHex = payload.joinToString("") { "%02X".format(it) }
+        val sigHex = sig.joinToString("") { "%02X".format(it) }
+        return "FRVIP-$payloadHex-$sigHex"
     }
 
     @Test
@@ -418,12 +451,143 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertFalse(invalidRes.first)
         org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
 
-        // 3. 輸入合法 VIP 序號 -> 成功開通，立即解鎖！
-        val validRes = manager.activateLicenseCode(fakeContext, "RIDER-VIP-2026-PASS")
+        // 2b. 舊有寫死序號 / 舊規則（前綴 10 字元、長度 >= 14 就放行）現在必須被拒絕 ——
+        // 這是 spec 項目 B 要修的安全漏洞：RIDER-VIP-0000 這種假序號以前會被放行。
+        org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "RIDER-VIP-2026-PASS").first)
+        org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "RIDER-VIP-0000").first)
+        org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, "FITNESS-PRO-ANNUAL-KEY").first)
+        org.junit.Assert.assertTrue(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
+
+        // 3. 用測試金鑰簽出一組合法序號（365 天），並用同一把測試公鑰驗證 -> 成功開通，立即解鎖！
+        val testKeyPair = generateTestEcKeyPair()
+        val testPublicKeyB64 = Base64.getEncoder().encodeToString(testKeyPair.public.encoded)
+        val validSerial = signVipSerial(testKeyPair.private, "AABBCCDD", 365)
+
+        // 3a. 用「正式」內建公鑰驗證會失敗（測試序號不是正式私鑰簽的，證明無法偽造）。
+        org.junit.Assert.assertNull(VipSerialVerifier.verify(validSerial))
+        org.junit.Assert.assertFalse(manager.activateLicenseCode(fakeContext, validSerial).first)
+
+        // 3b. 用測試公鑰驗證/開通 -> 成功，解出天數正確、立即解鎖。
+        val validRes = manager.activateLicenseCode(fakeContext, validSerial, testVipPublicKeyOverride = testPublicKeyB64)
         org.junit.Assert.assertTrue(validRes.first)
         org.junit.Assert.assertTrue(manager.isVipActive(fakeContext, overrideCurrentTimeMs = day35))
         org.junit.Assert.assertFalse(manager.isExpired(fakeContext, overrideCurrentTimeMs = day35))
         assertEquals(365, manager.getRemainingDays(fakeContext, overrideCurrentTimeMs = day35))
+    }
+
+    @Test
+    fun testVipSerialVerifierRejectsTamperedAndWrongKeySerials() {
+        val keyPairA = generateTestEcKeyPair()
+        val keyPairB = generateTestEcKeyPair()
+        val publicKeyA = Base64.getEncoder().encodeToString(keyPairA.public.encoded)
+
+        val serial = signVipSerial(keyPairA.private, "01020304", 30)
+
+        // 正確金鑰、原始內容 -> 驗證成功，且天數/序號 ID 解析正確
+        val info = VipSerialVerifier.verify(serial, publicKeyA)
+        assertEquals("01020304", info?.serialId)
+        assertEquals(30, info?.planDays)
+
+        // 用另一把金鑰簽的序號，拿 A 的公鑰驗 -> 必須失敗（偽造序號必須被拒）
+        val serialSignedByB = signVipSerial(keyPairB.private, "01020304", 30)
+        org.junit.Assert.assertNull(VipSerialVerifier.verify(serialSignedByB, publicKeyA))
+
+        // 竄改 payload（改變天數）但沿用原簽章 -> 必須失敗
+        val tamperedPayloadHex = "0101020304012C" // planDays 改成 0x012C=300，其餘不變
+        val originalSigHex = serial.substringAfterLast('-')
+        val tampered = "FRVIP-$tamperedPayloadHex-$originalSigHex"
+        org.junit.Assert.assertNull(VipSerialVerifier.verify(tampered, publicKeyA))
+
+        // 完全不是 vipSerial 格式（例如舊的寫死序號）-> 必須失敗
+        org.junit.Assert.assertNull(VipSerialVerifier.verify("RIDER-VIP-2026-PASS", publicKeyA))
+        org.junit.Assert.assertNull(VipSerialVerifier.verify("RIDER-VIP-0000000000", publicKeyA))
+    }
+
+    @Test
+    fun testPromoCodeOnlyAcceptsCurrentYear() {
+        val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
+        val currentYearCode = String.format("%02dFR-NR", currentYear)
+        val pastYearCode = String.format("%02dFR-NR", (currentYear - 1 + 100) % 100)
+        val futureYearCode = String.format("%02dFR-NR", (currentYear + 1) % 100)
+        val farFutureYearCode = "99FR-NR"
+
+        org.junit.Assert.assertTrue(VersionLifecycleManager.isPromoCode(currentYearCode))
+        org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(pastYearCode))
+        org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(futureYearCode))
+        // 這是 spec 項目 G 要修的漏洞：未來年份代碼（如 99FR-NR）以前會被誤判為「永遠不過期」而放行。
+        org.junit.Assert.assertFalse(VersionLifecycleManager.isPromoCode(farFutureYearCode))
+    }
+
+    @Test
+    fun testMissingOrZeroVipExpiryIsNotTreatedAsVip() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        // KEY_VIP_ACTIVE = true 但完全沒有寫入 KEY_VIP_EXPIRES（等同遺失/預設值 0）——
+        // 這是 spec 項目 C 要修的漏洞：expires == 0 以前會被當成「永久有效」。
+        fakePrefs.edit().putBoolean(manager.KEY_VIP_ACTIVE, true).apply()
+
+        org.junit.Assert.assertFalse(manager.isVipActive(fakeContext))
+        org.junit.Assert.assertFalse(manager.isVipActive(fakeContext, overrideCurrentTimeMs = Long.MAX_VALUE - 1))
+    }
+
+    @Test
+    fun testMustUpdateNeverLocksWhenBackendUnreachableOrDisabled() {
+        // min_supported_version_code <= 0（含拿不到後端資訊時的預設值 0）-> 永不強制更新。
+        org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(0, currentVersionCode = 1))
+        org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(-1, currentVersionCode = 1))
+        // 目前版本已經 >= 門檻 -> 不強制更新
+        org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 5))
+        org.junit.Assert.assertFalse(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 6))
+        // 只有「門檻 > 0 且目前版本確實落後」才會強制更新
+        org.junit.Assert.assertTrue(LicenseVerificationService.computeMustUpdate(5, currentVersionCode = 4))
+    }
+
+    @Test
+    fun testBusinessConstantsMatchAcrossPlatforms() {
+        val candidates = listOf(
+            java.io.File("../../promo.properties"),
+            java.io.File("../promo.properties"),
+            java.io.File("promo.properties")
+        )
+        val file = candidates.firstOrNull { it.exists() }
+        org.junit.Assert.assertNotNull("promo.properties must exist", file)
+
+        val props = java.util.Properties()
+        file!!.inputStream().use { props.load(it) }
+
+        val baseTrialDays = props.getProperty("BASE_TRIAL_DAYS", "7").trim().toInt()
+        val promoTrialDays = props.getProperty("TRIAL_DAYS", "30").trim().toInt()
+
+        org.junit.Assert.assertEquals(7, baseTrialDays)
+        org.junit.Assert.assertEquals(30, promoTrialDays)
+        org.junit.Assert.assertEquals(baseTrialDays, BuildConfig.LIFECYCLE_DAYS)
+        org.junit.Assert.assertEquals(promoTrialDays, BuildConfig.PROMO_TOTAL_TRIAL_DAYS)
+    }
+
+    @Test
+    fun testPromoCodeRedemptionFailsIfDeviceOlderThan30DaysAndDoesNotBurn() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val now = System.currentTimeMillis()
+        val firstLaunch35DaysAgo = now - 35 * 86_400_000L
+        fakePrefs.edit()
+            .putLong(manager.KEY_FIRST_LAUNCH_TIME, firstLaunch35DaysAgo)
+            .apply()
+
+        val currentYear = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) % 100
+        val promoCode = String.format("%02dFR-NR", currentYear)
+
+        val (success, message) = manager.activateLicenseCode(fakeContext, promoCode)
+        org.junit.Assert.assertFalse("Device older than 30 days must not succeed in redeeming promo", success)
+        org.junit.Assert.assertTrue("Error message should explain 30-day limit exceeded", message.contains("超過 30 天"))
+
+        val redeemedSet = fakePrefs.getStringSet(manager.KEY_REDEEMED_PROMOS, null)
+        org.junit.Assert.assertFalse("Promo code must NOT be burned into redeemed set", redeemedSet?.contains(promoCode) == true)
+        org.junit.Assert.assertFalse("VIP must NOT be active", manager.isVipActive(fakeContext))
     }
 
     // Layer 1 第 6 項：檔名碰撞時要加 _1、_2... 後綴，不能互相覆寫。
@@ -1032,9 +1196,11 @@ class FitnessRiderAndroidTest {
         val futureTime = 1800000000_000L
         assertTrue(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
 
-        // Transfer activates VIP code
-        val res = manager.activateLicenseCode(mockContext, "RIDER-VIP-2026-PASS")
-        assertTrue(res.first)
+        // 換機成功後，LicenseVerificationService 直接信任伺服器已驗證過身分的結果
+        // （帳號密碼 / 已在伺服器驗過簽章的序號），呼叫 activateVipFromServer 寫入本機狀態 ——
+        // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖（spec 項目 B）。
+        val expiresAtIso = java.time.Instant.ofEpochMilli(futureTime + 365L * 86_400_000L).toString()
+        manager.activateVipFromServer(mockContext, expiresAtIso)
         assertTrue(manager.isVipActive(mockContext, overrideCurrentTimeMs = futureTime))
         assertFalse(manager.isExpired(mockContext, overrideCurrentTimeMs = futureTime))
     }

@@ -1,7 +1,30 @@
 import XCTest
+import CryptoKit
 @testable import FitnessRider
 
 final class FitnessRiderTests: XCTestCase {
+
+    /// 產生一組測試用 P-256 金鑰對，`signVipSerial` 用它簽出符合 vipSerial 格式的序號字串。
+    /// 對應後端 backend/src/lib/vipSerial.ts 與 Android 測試的 generateTestEcKeyPair。
+    private func signVipSerial(privateKey: P256.Signing.PrivateKey, serialIdHex: String, planDays: Int) throws -> String {
+        var payload = Data()
+        payload.append(1) // version
+        var serialIdBytes = [UInt8]()
+        var hex = serialIdHex
+        while !hex.isEmpty {
+            let byteStr = String(hex.prefix(2))
+            serialIdBytes.append(UInt8(byteStr, radix: 16)!)
+            hex.removeFirst(min(2, hex.count))
+        }
+        payload.append(contentsOf: serialIdBytes)
+        payload.append(UInt8((planDays >> 8) & 0xFF))
+        payload.append(UInt8(planDays & 0xFF))
+
+        let signature = try privateKey.signature(for: payload)
+        let payloadHex = payload.map { String(format: "%02X", $0) }.joined()
+        let sigHex = signature.derRepresentation.map { String(format: "%02X", $0) }.joined()
+        return "FRVIP-\(payloadHex)-\(sigHex)"
+    }
 
     func testClassCRUDAndPersistence() throws {
         let repo = ClassRepository.shared
@@ -510,6 +533,47 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(nested?.relativePath, "Warmups/nested.m4a")
     }
 
+    // Layer 3 + iCloud：iCloud Drive 開著「最佳化儲存空間」時，還沒下載到本機的歌在磁碟上只是一個
+    // 隱藏的 `.<檔名>.icloud` 預留位置。列表必須把它換算回真實檔名照常列出 —— 否則教練把 iCloud
+    // 雲端硬碟資料夾綁成「音樂資料夾」後，只看得到已經下載過的那幾首（客戶回報的症狀）。
+    func testICloudPlaceholderNameRecognisesPlaceholdersOnly() {
+        XCTAssertEqual(iCloudPlaceholderName(for: ".Sprint Fire.mp3.icloud"), "Sprint Fire.mp3")
+        XCTAssertNil(iCloudPlaceholderName(for: "Sprint Fire.mp3"))   // 已下載的一般檔案
+        XCTAssertNil(iCloudPlaceholderName(for: ".DS_Store"))          // 其他隱藏檔
+        XCTAssertNil(iCloudPlaceholderName(for: ".icloud"))            // 只有副檔名、沒有真實檔名
+    }
+
+    func testListExternalMusicEntriesSurfacesICloudPlaceholders() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("ext_icloud_test_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let subDir = tempDir.appendingPathComponent("Warmups")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+
+        try Data().write(to: tempDir.appendingPathComponent("downloaded.mp3"))
+        try Data().write(to: tempDir.appendingPathComponent(".not_downloaded.mp3.icloud"))
+        try Data().write(to: tempDir.appendingPathComponent(".DS_Store"))          // 一般隱藏檔，仍要排除
+        try Data().write(to: tempDir.appendingPathComponent(".cover.jpg.icloud"))  // 非音樂檔的預留位置，要排除
+        try Data().write(to: subDir.appendingPathComponent(".nested.m4a.icloud"))
+
+        let deep = listExternalMusicEntries(baseURL: tempDir, includeSubdirectories: true)
+        XCTAssertEqual(Set(deep.map { $0.displayName }), ["downloaded.mp3", "not_downloaded.mp3", "nested.m4a"])
+
+        // 相對路徑一律是「下載完成後」的邏輯路徑，段落存下來的 musicFileName 才不會因為
+        // 下載狀態改變而失效。
+        let nested = deep.first { $0.displayName == "nested.m4a" }
+        XCTAssertEqual(nested?.relativePath, "Warmups/nested.m4a")
+        XCTAssertEqual(nested?.isCloudPlaceholder, true)
+        XCTAssertEqual(deep.first { $0.displayName == "downloaded.mp3" }?.isCloudPlaceholder, false)
+
+        // 下載進行中的那幾秒，同一首歌會同時有兩筆，列表要以已經落地的那筆為準、不得出現重複項目。
+        try Data().write(to: tempDir.appendingPathComponent(".downloaded.mp3.icloud"))
+        let racing = listExternalMusicEntries(baseURL: tempDir, includeSubdirectories: false)
+        XCTAssertEqual(racing.filter { $0.displayName == "downloaded.mp3" }.count, 1)
+        XCTAssertEqual(racing.first { $0.displayName == "downloaded.mp3" }?.isCloudPlaceholder, false)
+    }
+
     // Layer 3：從外部資料夾多選曲目 -> 建立段落時，musicFileName 要存 "extfolder://" + 相對路徑，
     // 標題要用真正的顯示檔名（去副檔名），而不是整個 "extfolder://..." 字串去副檔名。
     func testBuildSegmentsFromExternalSelectionUsesExtFolderPrefixAndDisplayTitle() {
@@ -722,7 +786,7 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(manager.isExpired(currentTime: day10, defaults: testDefaults))
 
         // 2. 首次輸入 2026 年度推廣代碼 26FR-NR -> 成功兌換 30 天 VIP 試用
-        let promoRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults)
+        let promoRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults, overrideCurrentDate: day10)
         XCTAssertTrue(promoRes.success)
         XCTAssertTrue(promoRes.message.contains("30 天"))
         XCTAssertTrue(manager.isVIP)
@@ -730,13 +794,13 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertFalse(manager.isExpired(currentTime: day10, defaults: testDefaults))
 
         // 3. 同一台設備再次輸入 26FR-NR -> 失敗，防止重複領取（單機防刷）
-        let duplicateRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults)
+        let duplicateRes = manager.activateLicenseCode("26FR-NR", defaults: testDefaults, overrideCurrentDate: day10)
         XCTAssertFalse(duplicateRes.success)
         XCTAssertTrue(duplicateRes.message.contains("無法重複領取") || duplicateRes.message.contains("已兌換過"))
     }
 
     // VIP 授權碼開通與過期狀態解鎖測試
-    func testVipLicenseCodeActivationUnlocksExpiredState() {
+    func testVipLicenseCodeActivationUnlocksExpiredState() throws {
         let launchDate = Date(timeIntervalSince1970: 1775000000)
         let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
         let testDefaults = UserDefaults(suiteName: "VipTestDefaults_\(UUID().uuidString)")!
@@ -751,12 +815,139 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertFalse(invalidRes.success)
         XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
 
-        // 3. 輸入合法 VIP 序號 -> 成功，立即解鎖！
-        let validRes = manager.activateLicenseCode("RIDER-VIP-2026-PASS", defaults: testDefaults)
+        // 2b. 舊有寫死序號 / 舊規則（前綴 10 字元、長度 >= 14 就放行）現在必須被拒絕 ——
+        // 這是 spec 項目 B 要修的安全漏洞：RIDER-VIP-0000 這種假序號以前會被放行。
+        XCTAssertFalse(manager.activateLicenseCode("RIDER-VIP-2026-PASS", defaults: testDefaults).success)
+        XCTAssertFalse(manager.activateLicenseCode("RIDER-VIP-0000", defaults: testDefaults).success)
+        XCTAssertFalse(manager.activateLicenseCode("FITNESS-PRO-ANNUAL-KEY", defaults: testDefaults).success)
+        XCTAssertTrue(manager.isExpired(currentTime: day35, defaults: testDefaults))
+
+        // 3. 用測試金鑰簽出一組合法序號（365 天）。用「正式」內建公鑰驗證必須失敗
+        // （測試序號不是正式私鑰簽的，證明無法偽造）；用測試公鑰驗證/開通才會成功。
+        let testKey = P256.Signing.PrivateKey()
+        let testPublicKeyB64 = testKey.publicKey.derRepresentation.base64EncodedString()
+        let validSerial = try signVipSerial(privateKey: testKey, serialIdHex: "AABBCCDD", planDays: 365)
+
+        XCTAssertNil(VipSerialVerifier.verify(validSerial))
+        XCTAssertFalse(manager.activateLicenseCode(validSerial, defaults: testDefaults).success)
+
+        let validRes = manager.activateLicenseCode(validSerial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64)
         XCTAssertTrue(validRes.success)
         XCTAssertTrue(manager.evaluateVipStatus(currentTime: day35, defaults: testDefaults))
         XCTAssertFalse(manager.isExpired(currentTime: day35, defaults: testDefaults))
         XCTAssertEqual(manager.remainingDays(currentTime: day35, defaults: testDefaults), 365)
+    }
+
+    // P-256 驗簽正確性、竄改/錯誤金鑰序號必須被拒測試
+    func testVipSerialVerifierRejectsTamperedAndWrongKeySerials() throws {
+        let keyPairA = P256.Signing.PrivateKey()
+        let keyPairB = P256.Signing.PrivateKey()
+        let publicKeyA = keyPairA.publicKey.derRepresentation.base64EncodedString()
+
+        let serial = try signVipSerial(privateKey: keyPairA, serialIdHex: "01020304", planDays: 30)
+
+        // 正確金鑰、原始內容 -> 驗證成功，且天數/序號 ID 解析正確
+        let info = VipSerialVerifier.verify(serial, publicKeySPKIBase64Override: publicKeyA)
+        XCTAssertEqual(info?.serialId, "01020304")
+        XCTAssertEqual(info?.planDays, 30)
+
+        // 用另一把金鑰簽的序號，拿 A 的公鑰驗 -> 必須失敗（偽造序號必須被拒）
+        let serialSignedByB = try signVipSerial(privateKey: keyPairB, serialIdHex: "01020304", planDays: 30)
+        XCTAssertNil(VipSerialVerifier.verify(serialSignedByB, publicKeySPKIBase64Override: publicKeyA))
+
+        // 竄改 payload（改變天數）但沿用原簽章 -> 必須失敗
+        let tamperedPayloadHex = "0101020304012C" // planDays 改成 0x012C=300，其餘不變
+        let originalSigHex = String(serial.split(separator: "-").last!)
+        let tampered = "FRVIP-\(tamperedPayloadHex)-\(originalSigHex)"
+        XCTAssertNil(VipSerialVerifier.verify(tampered, publicKeySPKIBase64Override: publicKeyA))
+
+        // 完全不是 vipSerial 格式（例如舊的寫死序號）-> 必須失敗
+        XCTAssertNil(VipSerialVerifier.verify("RIDER-VIP-2026-PASS", publicKeySPKIBase64Override: publicKeyA))
+        XCTAssertNil(VipSerialVerifier.verify("RIDER-VIP-0000000000", publicKeySPKIBase64Override: publicKeyA))
+    }
+
+    // 推廣代碼只接受當年度測試（spec 項目 G：未來年份代碼以前會被誤判為永遠不過期）
+    func testPromoCodeOnlyAcceptsCurrentYear() {
+        let currentYear = Calendar.current.component(.year, from: Date()) % 100
+        let currentYearCode = String(format: "%02dFR-NR", currentYear)
+        let pastYearCode = String(format: "%02dFR-NR", (currentYear - 1 + 100) % 100)
+        let futureYearCode = String(format: "%02dFR-NR", (currentYear + 1) % 100)
+
+        XCTAssertTrue(VersionLifecycleManager.isPromoCode(currentYearCode))
+        XCTAssertFalse(VersionLifecycleManager.isPromoCode(pastYearCode))
+        XCTAssertFalse(VersionLifecycleManager.isPromoCode(futureYearCode))
+        XCTAssertFalse(VersionLifecycleManager.isPromoCode("99FR-NR"))
+    }
+
+    // expires 遺失/為 0 不得視為 VIP 測試（spec 項目 C）
+    func testMissingOrZeroVipExpiryIsNotTreatedAsVip() {
+        let testDefaults = UserDefaults(suiteName: "MissingExpiryTestDefaults_\(UUID().uuidString)")!
+        // fitness_rider_vip_active = true 但完全沒有寫入 fitness_rider_vip_expires（等同遺失/預設值 0）
+        testDefaults.set(true, forKey: "fitness_rider_vip_active")
+
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: Date(timeIntervalSince1970: 1775000000))
+        XCTAssertFalse(manager.evaluateVipStatus(currentTime: Date(timeIntervalSince1970: 1775000000), defaults: testDefaults))
+        XCTAssertFalse(manager.evaluateVipStatus(currentTime: Date.distantFuture, defaults: testDefaults))
+    }
+
+    // 離線／拿不到 min_supported_version_code 時絕對不能鎖住使用者測試（spec 項目 F）
+    func testMustUpdateNeverLocksWhenBackendUnreachableOrDisabled() {
+        XCTAssertFalse(LicenseVerificationService.computeMustUpdate(minSupportedVersionCode: 0, currentBuildNumber: 1))
+        XCTAssertFalse(LicenseVerificationService.computeMustUpdate(minSupportedVersionCode: -1, currentBuildNumber: 1))
+        XCTAssertFalse(LicenseVerificationService.computeMustUpdate(minSupportedVersionCode: 5, currentBuildNumber: 5))
+        XCTAssertFalse(LicenseVerificationService.computeMustUpdate(minSupportedVersionCode: 5, currentBuildNumber: 6))
+        XCTAssertTrue(LicenseVerificationService.computeMustUpdate(minSupportedVersionCode: 5, currentBuildNumber: 4))
+    }
+
+    // 跨檔案商業常數一致性校驗測試（spec 項目 4 / promo.properties）
+    func testBusinessConstantsMatchAcrossPlatforms() {
+        let thisFilePath = URL(fileURLWithPath: #filePath)
+        let repoRoot = thisFilePath
+            .deletingLastPathComponent() // FitnessRiderTests
+            .deletingLastPathComponent() // ios
+            .deletingLastPathComponent() // fitnessrider root
+        let promoPropsURL = repoRoot.appendingPathComponent("promo.properties")
+
+        guard let content = try? String(contentsOf: promoPropsURL, encoding: .utf8) else {
+            XCTFail("無法讀取 promo.properties: \(promoPropsURL.path)")
+            return
+        }
+
+        var baseTrialDays: Int? = nil
+        var promoTrialDays: Int? = nil
+
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("BASE_TRIAL_DAYS=") {
+                baseTrialDays = Int(trimmed.replacingOccurrences(of: "BASE_TRIAL_DAYS=", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+            } else if trimmed.hasPrefix("TRIAL_DAYS=") {
+                promoTrialDays = Int(trimmed.replacingOccurrences(of: "TRIAL_DAYS=", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+
+        XCTAssertEqual(baseTrialDays, 7, "BASE_TRIAL_DAYS 應為 7")
+        XCTAssertEqual(promoTrialDays, 30, "TRIAL_DAYS 應為 30")
+        XCTAssertEqual(VersionLifecycleManager.lifecycleDays, baseTrialDays, "VersionLifecycleManager.lifecycleDays 必須與 promo.properties 一致")
+        XCTAssertEqual(VersionLifecycleManager.promoTotalTrialDays, promoTrialDays, "VersionLifecycleManager.promoTotalTrialDays 必須與 promo.properties 一致")
+    }
+
+    // 推廣碼兌換在超過 30 天之裝置上應拒絕且不消耗額度（spec 項目 3）
+    func testPromoCodeRedemptionFailsIfDeviceOlderThan30DaysAndDoesNotBurn() {
+        let testDefaults = UserDefaults(suiteName: "PromoOlderThan30Days_\(UUID().uuidString)")!
+        let now = Date()
+        let thirtyFiveDaysAgo = now.addingTimeInterval(-35 * 86_400)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: thirtyFiveDaysAgo)
+
+        let currentYear = Calendar.current.component(.year, from: Date()) % 100
+        let promoCode = String(format: "%02dFR-NR", currentYear)
+
+        let result = manager.activateLicenseCode(promoCode, defaults: testDefaults, overrideCurrentDate: now)
+        XCTAssertFalse(result.success, "首次啟動超過 30 天之設備不可兌換推廣代碼")
+        XCTAssertTrue(result.message.contains("超過 30 天"), "錯誤訊息應清楚告知已超過 30 天")
+
+        let redeemedList = testDefaults.stringArray(forKey: "fitness_rider_redeemed_promos") ?? []
+        XCTAssertFalse(redeemedList.contains(promoCode), "失敗時不可將代碼寫入已兌換清單（不得白燒額度）")
+        XCTAssertFalse(testDefaults.bool(forKey: "fitness_rider_vip_active"), "不可設為 VIP 啟用")
     }
 
     // Keychain 存取方法測試
@@ -950,9 +1141,11 @@ final class FitnessRiderTests: XCTestCase {
         let future = Date(timeIntervalSince1970: 1800000000)
         XCTAssertTrue(manager.isExpired(currentTime: future, defaults: testDefaults))
 
-        // Transfer activates VIP code
-        let result = manager.activateLicenseCode("RIDER-VIP-2026-PASS", defaults: testDefaults)
-        XCTAssertTrue(result.success)
+        // 換機成功後，LicenseVerificationService 直接信任伺服器已驗證過身分的結果
+        // （帳號密碼 / 已在伺服器驗過簽章的序號），呼叫 activateVipFromServer 寫入本機狀態 ——
+        // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖（spec 項目 B）。
+        let expiresAt = future.addingTimeInterval(365 * 86400.0)
+        manager.activateVipFromServer(expiresAt: expiresAt, defaults: testDefaults)
         XCTAssertFalse(manager.isExpired(currentTime: future, defaults: testDefaults))
         XCTAssertTrue(manager.evaluateVipStatus(currentTime: future, defaults: testDefaults))
     }

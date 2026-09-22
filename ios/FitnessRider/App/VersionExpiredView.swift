@@ -1,8 +1,18 @@
 import SwiftUI
 import UIKit
 
+/// 到期畫面的兩種用途（spec 項目 F）：
+/// - `.trialEnded`：試用期滿，導向輸入推廣碼／購買 VIP。
+/// - `.mustUpdate`：伺服器回報這支建置版本已低於 min_supported_version_code，
+///   導向下載最新版本；跟建置日期到期無關，純粹是「有新版可拿」才會觸發。
+public enum ExpirationReason {
+    case trialEnded
+    case mustUpdate
+}
+
 public struct VersionExpiredView: View {
     @ObservedObject private var manager = VersionLifecycleManager.shared
+    public var reason: ExpirationReason
     public var onUpdate: (() -> Void)? = nil
 
     @State private var isShowingActivationAlert: Bool = false
@@ -12,7 +22,8 @@ public struct VersionExpiredView: View {
     @State private var isShowingStatusAlert: Bool = false
     @State private var isCopiedDeviceId: Bool = false
 
-    public init(onUpdate: (() -> Void)? = nil) {
+    public init(reason: ExpirationReason = .trialEnded, onUpdate: (() -> Void)? = nil) {
+        self.reason = reason
         self.onUpdate = onUpdate
     }
 
@@ -32,11 +43,13 @@ public struct VersionExpiredView: View {
                         .foregroundColor(FitnessRiderTheme.accentRed)
                 }
 
-                Text("免費試用已結束")
+                Text(reason == .mustUpdate ? "需要更新版本" : "免費試用已結束")
                     .font(.system(size: 24, weight: .black))
                     .foregroundColor(FitnessRiderTheme.textPrimary)
 
-                Text("感謝體驗 FitnessRider！您的 30 天全功能免費試用期已結束。\n\n如需繼續在課堂中使用專業中控、無損變速與震動回饋，請輸入授權碼開通 VIP，或更新至最新版本。")
+                Text(reason == .mustUpdate
+                     ? "偵測到有新版本可用，這個版本已不再支援使用。\n\n請更新至最新版本後繼續使用；您的授權與課表資料都不會受影響。"
+                     : "感謝體驗 FitnessRider！您的免費試用期已結束。\n\n如需繼續在課堂中使用專業中控、無損變速與震動回饋，請輸入授權碼開通 VIP，或更新至最新版本。")
                     .font(.system(size: 13))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -53,7 +66,7 @@ public struct VersionExpiredView: View {
                             .font(.system(size: 13))
                             .foregroundColor(FitnessRiderTheme.textSecondary)
                         Spacer()
-                        Text("30 天試用期滿")
+                        Text(reason == .mustUpdate ? "版本已不支援" : "試用期滿")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(FitnessRiderTheme.accentRed)
                     }
@@ -117,40 +130,44 @@ public struct VersionExpiredView: View {
 
                 // Action Buttons
                 VStack(spacing: 10) {
-                    // Primary: Activate VIP Code
-                    Button {
-                        isShowingActivationAlert = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "key.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            Text("輸入授權碼開通 VIP")
-                                .font(.system(size: 15, weight: .bold))
+                    // 試用結束：主要行動是輸入授權碼／轉移既有授權；必須更新時這兩個按鈕
+                    // 對使用者沒有幫助（版本不支援不是靠代碼解決的），直接隱藏，避免誤導。
+                    if reason == .trialEnded {
+                        // Primary: Activate VIP Code
+                        Button {
+                            isShowingActivationAlert = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "key.fill")
+                                    .font(.system(size: 16, weight: .bold))
+                                Text("輸入授權碼開通 VIP")
+                                    .font(.system(size: 15, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(FitnessRiderTheme.topBarGreen)
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                         }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(FitnessRiderTheme.topBarGreen)
-                        .cornerRadius(12)
-                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
+
+                        // Secondary: Device Transfer
+                        Button {
+                            isShowingDeviceTransferSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 14))
+                                Text("舊機換新機？轉移既有授權")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                        }
                     }
 
-                    // Secondary: Device Transfer
-                    Button {
-                        isShowingDeviceTransferSheet = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 14))
-                            Text("舊機換新機？轉移既有授權")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                    }
-
-                    // Tertiary: Update App Version
+                    // Update App Version — 必須更新時這是唯一、最主要的行動，改用實心主色按鈕。
                     Button {
                         if let customAction = onUpdate {
                             customAction()
@@ -160,13 +177,15 @@ public struct VersionExpiredView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 15))
+                                .font(.system(size: reason == .mustUpdate ? 16 : 15, weight: reason == .mustUpdate ? .bold : .medium))
                             Text("前往更新最新版本")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: reason == .mustUpdate ? 15 : 14, weight: reason == .mustUpdate ? .bold : .medium))
                         }
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                        .foregroundColor(reason == .mustUpdate ? .white : FitnessRiderTheme.textSecondary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 36)
+                        .frame(height: reason == .mustUpdate ? 48 : 36)
+                        .background(reason == .mustUpdate ? FitnessRiderTheme.topBarGreen : Color.clear)
+                        .cornerRadius(12)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -186,7 +205,7 @@ public struct VersionExpiredView: View {
             DeviceTransferSheet()
         }
         .alert("輸入授權序號或推廣代碼", isPresented: $isShowingActivationAlert) {
-            TextField("如: 26FR-NR 或 RIDER-VIP-2026-PASS", text: $enteredLicenseCode)
+            TextField("如: 26FR-NR 或 FRVIP-...", text: $enteredLicenseCode)
                 .textInputAutocapitalization(.characters)
             Button("開通 / 兌換") {
                 let code = enteredLicenseCode

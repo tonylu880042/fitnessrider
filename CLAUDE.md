@@ -27,6 +27,14 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 
 - **`playbackRate` 不計入總時長與預估消耗。** 總時長一律是各段落 `durationMs` 的總和，卡路里一律依 `durationMs` × `intensityZone` 費率推算，兩者都忽略播放速率。所以 5 分鐘的曲子設成 0.85x 時，實際騎乘約 5:53，但編輯器頂端仍顯示 05:00 —— 這是刻意的，舊版與新版、Android 與 iOS 行為一致。不要「修正」成用有效播放時間計算。
 
+- **商業模型（授權／試用）**：
+  1. **基礎試用 7 天**，從裝置首次啟動起算（`BASE_TRIAL_DAYS`，權威來源 `promo.properties`；Android `build.gradle.kts` 直接讀取注入 `BuildConfig.LIFECYCLE_DAYS`，iOS 用 `VersionLifecycleManager.lifecycleDays` 常數，backend 用 `licenseConfig.ts` 的 `BASE_TRIAL_DAYS`，三邊數字一致性由各自測試檔互相校驗）。
+  2. **推廣代碼（如 `26FR-NR`）可延長一次到「總共 30 天」**（`PROMO_TOTAL_TRIAL_DAYS`），不是在剩餘天數上再加 30 天：到期時間 = 裝置試用起算錨點 + 30 天。每台裝置對每組年度代碼限領一次，且只接受「當年度」代碼——過去年度視為過期，未來年度（如 `99FR-NR`）一律視為無效，不可被誤判為永遠不過期。詳見 `docs/PROMO_CODES.md`。
+  3. **之後必須付費購買 VIP**，否則無法使用。VIP 序號一律是 ECDSA P-256 簽章序號（`FRVIP-<payload hex>-<簽章 hex>`，見 `backend/src/lib/vipSerial.ts`、`android/.../util/VipSerialVerifier.kt`、`ios/.../Auth/VipSerialVerifier.swift`），App 內只放公鑰、驗過簽章才開通；後端另有 `vip_serial_redemptions` 表限制同一組序號只能在一台裝置開通一次。**不要**再用字串前綴/長度規則或寫死序號判斷 VIP，也不要把簽發序號用的私鑰放進 repo 或程式碼常數（只放在簽發工具讀取的環境變數）。
+  4. VIP 到期時間（`expires`）遺失或為 `0` 一律視為「非 VIP」，不是「永久授權」——這是安全修正，不要因為某個裝置的到期時間讀不到就當作已經開通。
+
+- **強制更新只在「有新版可拿」時觸發，不是建置日期到期。** 後端提供 `min_supported_version_code`（`licenseConfig.ts`，預設 0 = 永不強制），App 啟動時透過 `/api/license/verify` 連同授權狀態一起取得；只有目前的 `versionCode`／build number 低於這個門檻才顯示強制更新畫面。**離線或連不上後端時一律不鎖**，直接沿用本機快取狀態正常使用。到期畫面依原因分成「試用結束」（導向輸入推廣碼／購買 VIP）與「必須更新」（導向下載最新版本）兩種文案，不要合併成同一套說法。不要再引入以建置時間（`BUILD_TIME_MS`/`buildDate`）為準的到期或強制更新邏輯，那兩個欄位只保留做顯示與測試用途。
+
 ## 進行中：音樂匯入體驗重build（三層，依序完成）
 
 舊版（`original/`）的「新增段落」＝直接開 app 內建音樂瀏覽器，可記資料夾、搜尋、排序、試聽、**多選**，確認後一次建立 N 個段落，段落標題＝曲名、長度＝曲長

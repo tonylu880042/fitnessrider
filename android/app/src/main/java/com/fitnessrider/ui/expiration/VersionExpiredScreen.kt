@@ -34,8 +34,20 @@ import com.fitnessrider.theme.*
 import com.fitnessrider.util.VersionLifecycleManager
 import kotlinx.coroutines.launch
 
+/**
+ * 到期畫面的兩種用途（spec 項目 F）：
+ * - [TRIAL_ENDED]：試用期滿，導向輸入推廣碼／購買 VIP。
+ * - [MUST_UPDATE]：伺服器回報這支建置版本已低於 min_supported_version_code，
+ *   導向下載最新版本；跟建置日期到期無關，純粹是「有新版可拿」才會觸發。
+ */
+enum class ExpirationReason {
+    TRIAL_ENDED,
+    MUST_UPDATE
+}
+
 @Composable
 fun VersionExpiredScreen(
+    reason: ExpirationReason = ExpirationReason.TRIAL_ENDED,
     onUpdateClick: (() -> Unit)? = null,
     onUnlocked: (() -> Unit)? = null
 ) {
@@ -112,14 +124,17 @@ fun VersionExpiredScreen(
                 }
 
                 Text(
-                    text = "免費試用已結束",
+                    text = if (reason == ExpirationReason.MUST_UPDATE) "需要更新版本" else "免費試用已結束",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
                     color = TextPrimary
                 )
 
                 Text(
-                    text = "感謝體驗 FitnessRider！您的 30 天全功能免費試用期已結束。\n\n如需繼續在課堂中使用專業中控與變速音樂播放，請輸入授權碼開通 VIP，或更新至最新版本。",
+                    text = if (reason == ExpirationReason.MUST_UPDATE)
+                        "偵測到有新版本可用，這個版本已不再支援使用。\n\n請更新至最新版本後繼續使用；您的授權與課表資料都不會受影響。"
+                    else
+                        "感謝體驗 FitnessRider！您的免費試用期已結束。\n\n如需繼續在課堂中使用專業中控與變速音樂播放，請輸入授權碼開通 VIP，或更新至最新版本。",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
@@ -143,7 +158,12 @@ fun VersionExpiredScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(text = "授權狀態", fontSize = 12.sp, color = TextSecondary)
-                            Text(text = "30 天試用期滿", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                            Text(
+                                text = if (reason == ExpirationReason.MUST_UPDATE) "版本已不支援" else "試用期滿",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentRed
+                            )
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -188,71 +208,97 @@ fun VersionExpiredScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Primary Action: Activate VIP Code
-                Button(
-                    onClick = { showActivationDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
-                    Text(
-                        text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天)",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                // 試用結束：主要行動是輸入授權碼／轉移既有授權；必須更新的情況下這兩個按鈕
+                // 對使用者沒有幫助（版本不支援不是靠代碼解決的），直接隱藏，避免誤導。
+                if (reason == ExpirationReason.TRIAL_ENDED) {
+                    // Primary Action: Activate VIP Code
+                    Button(
+                        onClick = { showActivationDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text(
+                            text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天)",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    // Transfer Action: Transfer Existing Device License
+                    TextButton(
+                        onClick = { showDeviceTransferDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                    ) {
+                        Text(
+                            text = "🔄 舊機換新機？轉移既有授權",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TopBarGreenDark
+                        )
+                    }
                 }
 
-                // Transfer Action: Transfer Existing Device License
-                TextButton(
-                    onClick = { showDeviceTransferDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                ) {
-                    Text(
-                        text = "🔄 舊機換新機？轉移既有授權",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TopBarGreenDark
-                    )
-                }
-
-                // Secondary Action: Download Latest Version
-                OutlinedButton(
-                    onClick = {
-                        if (onUpdateClick != null) {
-                            onUpdateClick()
-                        } else {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(VersionLifecycleManager.updateUrl)).apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                context.startActivity(intent)
-                            } catch (e: ActivityNotFoundException) {
-                                copyUpdateUrlToClipboard()
-                                showBrowserlessDialog = true
-                            } catch (e: Exception) {
-                                copyUpdateUrlToClipboard()
-                                showBrowserlessDialog = true
+                // Download Latest Version — 必須更新時這是唯一、最主要的行動，改用實心主色按鈕。
+                val downloadClick: () -> Unit = {
+                    if (onUpdateClick != null) {
+                        onUpdateClick()
+                    } else {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(VersionLifecycleManager.updateUrl)).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                             }
+                            context.startActivity(intent)
+                        } catch (e: ActivityNotFoundException) {
+                            copyUpdateUrlToClipboard()
+                            showBrowserlessDialog = true
+                        } catch (e: Exception) {
+                            copyUpdateUrlToClipboard()
+                            showBrowserlessDialog = true
                         }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp)
-                ) {
-                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextSecondary)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "前往更新最新版本",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextSecondary
-                    )
+                    }
+                }
+
+                if (reason == ExpirationReason.MUST_UPDATE) {
+                    Button(
+                        onClick = downloadClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "前往更新最新版本",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = downloadClick,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp), tint = TextSecondary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "前往更新最新版本",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextSecondary
+                        )
+                    }
                 }
 
                 // Copy URL Action for Kiosk/Restricted Tablets
@@ -299,7 +345,7 @@ fun VersionExpiredScreen(
                     OutlinedTextField(
                         value = enteredLicenseCode,
                         onValueChange = { enteredLicenseCode = it.uppercase() },
-                        placeholder = { Text("例如: 26FR-NR 或 RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                        placeholder = { Text("例如: 26FR-NR 或 FRVIP-...", fontSize = 12.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

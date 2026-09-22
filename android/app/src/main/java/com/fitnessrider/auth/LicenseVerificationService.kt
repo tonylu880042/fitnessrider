@@ -10,8 +10,20 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 class LicenseVerificationService(private val context: Context) {
+    companion object {
+        /**
+         * 純函式，抽出來方便單元測試：min_supported_version_code <= 0 代表「永不強制更新」；
+         * 當伺服器設定了門檻 (> 0) 且用戶端 currentVersionCode 低於門檻時才需要強制更新（spec 項目 F）。
+         */
+        fun computeMustUpdate(minSupportedVersionCode: Int, currentVersionCode: Int): Boolean {
+            return minSupportedVersionCode > 0 && currentVersionCode < minSupportedVersionCode
+        }
+    }
+
     private val deviceService = DeviceIdentifierService(context)
 
     private val _isLicensed = MutableStateFlow(true)
@@ -20,8 +32,12 @@ class LicenseVerificationService(private val context: Context) {
     private val _planType = MutableStateFlow("全功能免費試用版")
     val planType: StateFlow<String> = _planType.asStateFlow()
 
-    private val _remainingDays = MutableStateFlow(30)
+    private val _remainingDays = MutableStateFlow(com.fitnessrider.util.VersionLifecycleManager.lifecycleDays)
     val remainingDays: StateFlow<Int> = _remainingDays.asStateFlow()
+
+    /** 有新版可拿、且目前這支建置版本碼已低於伺服器門檻時才會是 true；離線時永遠不會被設成 true。 */
+    private val _mustUpdate = MutableStateFlow(false)
+    val mustUpdate: StateFlow<Boolean> = _mustUpdate.asStateFlow()
 
     private val serverUrl = "https://fitnessrider.vercel.app"
 
@@ -45,6 +61,15 @@ class LicenseVerificationService(private val context: Context) {
         }
     }
 
+    private fun signRequest(timestampMs: Long): String? {
+        val secret = deviceService.deviceSecret ?: return null
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        val message = "${deviceService.deviceFingerprint}.$timestampMs"
+        val raw = mac.doFinal(message.toByteArray(Charsets.UTF_8))
+        return raw.joinToString("") { "%02x".format(it) }
+    }
+
     suspend fun activateCode(code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         // 1. Try online first to respect single-device limit & database audit
         try {
@@ -56,6 +81,9 @@ class LicenseVerificationService(private val context: Context) {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
 
+            val timestamp = System.currentTimeMillis()
+            val signature = signRequest(timestamp)
+
             val jsonBody = JSONObject().apply {
                 put("device_fingerprint", deviceService.deviceFingerprint)
                 put("license_code", code)
@@ -63,6 +91,14 @@ class LicenseVerificationService(private val context: Context) {
                 // 而不是寫死成 iOS/"Coach Device"（見 backend/src/lib/db.ts）。
                 put("platform", "android")
                 put("device_model", deviceService.deviceModel)
+                if (signature != null) {
+                    put("timestamp", timestamp)
+                    put("signature", signature)
+                }
+                val localFirstLaunch = com.fitnessrider.util.VersionLifecycleManager.getFirstLaunchTimeMs(context)
+                if (localFirstLaunch > 0) {
+                    put("client_first_launch_at", java.time.Instant.ofEpochMilli(localFirstLaunch).toString())
+                }
             }
 
             OutputStreamWriter(conn.outputStream).use { writer ->
@@ -75,15 +111,21 @@ class LicenseVerificationService(private val context: Context) {
             val respJson = if (responseText.isNotEmpty()) JSONObject(responseText) else JSONObject()
 
             if (conn.responseCode == 200 && respJson.optBoolean("success", false)) {
-                com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
+                val expiresAt = respJson.optString("expires_at", "")
+                if (expiresAt.isNotEmpty()) {
+                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(context, expiresAt)
+                } else {
+                    com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, code)
+                }
+                if (respJson.has("device_secret") && !respJson.isNull("device_secret")) {
+                    deviceService.deviceSecret = respJson.getString("device_secret")
+                }
                 refreshLicenseState()
                 val msg = respJson.optString("message", "開通成功！")
                 return@withContext Pair(true, msg)
             } else if (respJson.has("error")) {
                 val errorMsg = respJson.getString("error")
-                if (errorMsg.contains("已兌換") || errorMsg.contains("限領一次")) {
-                    return@withContext Pair(false, errorMsg)
-                }
+                return@withContext Pair(false, errorMsg)
             }
         } catch (e: Exception) {
             // Fall back to offline
@@ -97,7 +139,15 @@ class LicenseVerificationService(private val context: Context) {
         return@withContext localRes
     }
 
-    suspend fun verifyLicenseOnline() = withContext(Dispatchers.IO) {
+    /**
+     * 啟動時呼叫一次：取得伺服器端試用起算錨點（用較早的一個校正本機，讓 Android 重灌
+     * 也不會重置試用，spec 項目 D）、真正的授權狀態（若這台裝置已經開通過、能簽章）、
+     * 以及強制更新門檻 min_supported_version_code（spec 項目 F）。
+     *
+     * 完全離線或連線失敗時，什麼都不做、保留目前的本機快取狀態 —— 絕對不會因為連不上
+     * 伺服器就把 mustUpdate 設成 true 而把使用者鎖住。
+     */
+    suspend fun refreshFromServer(currentVersionCode: Int) = withContext(Dispatchers.IO) {
         try {
             val url = URL("$serverUrl/api/license/verify")
             val conn = url.openConnection() as HttpURLConnection
@@ -107,8 +157,16 @@ class LicenseVerificationService(private val context: Context) {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
 
+            val timestamp = System.currentTimeMillis()
+            val signature = signRequest(timestamp)
+
             val jsonBody = JSONObject().apply {
                 put("device_fingerprint", deviceService.deviceFingerprint)
+                put("platform", "android")
+                if (signature != null) {
+                    put("timestamp", timestamp)
+                    put("signature", signature)
+                }
             }
 
             OutputStreamWriter(conn.outputStream).use { writer ->
@@ -116,21 +174,49 @@ class LicenseVerificationService(private val context: Context) {
                 writer.flush()
             }
 
-            if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val respJson = JSONObject(responseText)
-                val valid = respJson.optBoolean("is_valid", respJson.optBoolean("valid", true))
-                val days = respJson.optInt("days_remaining", respJson.optInt("remaining_days", 365))
-                val plan = respJson.optString("plan_type", "專業年繳版 (VIP)")
+            val statusCode = conn.responseCode
+            if (statusCode !in 200..299 && statusCode != 403) return@withContext
+            val stream = if (statusCode in 200..299) conn.inputStream else conn.errorStream
+            val responseText = stream?.bufferedReader()?.use { it.readText() } ?: return@withContext
+            val respJson = try { JSONObject(responseText) } catch (e: Exception) { return@withContext }
 
-                _isLicensed.value = valid
-                _remainingDays.value = days
-                _planType.value = if (plan == "trial") "全功能免費試用版" else "專業年繳版 (VIP)"
+            val trialStartedAtIso = respJson.optString("trial_started_at", "")
+            if (trialStartedAtIso.isNotEmpty()) {
+                try {
+                    val serverAnchorMs = java.time.Instant.parse(trialStartedAtIso).toEpochMilli()
+                    com.fitnessrider.util.VersionLifecycleManager.reconcileFirstLaunchAnchor(context, serverAnchorMs)
+                } catch (e: Exception) {
+                    // 忽略格式異常，不影響其餘欄位處理
+                }
+            }
+
+            val minSupportedVersionCode = respJson.optInt("min_supported_version_code", 0)
+            _mustUpdate.value = computeMustUpdate(minSupportedVersionCode, currentVersionCode)
+
+            // 這裡刻意「只加不減」：伺服器驗證通過時才升級本機狀態，不呼叫 refreshLicenseState()
+            // 覆蓋掉剛設定的值 —— 本機活化流程（activateLicenseCode）本身已經會反映最新狀態，
+            // 這個分支存在的目的正是為了在本機快取遺失、但伺服器仍記得這台裝置已開通時，
+            // 能把授權狀態復原回來，若又立刻用純本機狀態覆蓋掉就白做了。
+            if (statusCode in 200..299) {
+                val status = respJson.optString("status", "")
+                if (status == "active" || status == "expired") {
+                    val valid = respJson.optBoolean("is_valid", false)
+                    val days = respJson.optInt("days_remaining", 0)
+                    val plan = respJson.optString("plan_type", "")
+                    if (valid && plan != "trial" && plan != "none") {
+                        _isLicensed.value = true
+                        _remainingDays.value = days
+                        _planType.value = "專業年繳版 (VIP)"
+                    }
+                }
             }
         } catch (e: Exception) {
-            // Network failure / offline in studio: keep cached license active
-            e.printStackTrace()
+            // Network failure / offline: keep cached state, never lock the user out.
         }
+    }
+
+    suspend fun verifyLicenseOnline() = withContext(Dispatchers.IO) {
+        refreshFromServer(currentVersionCode = com.fitnessrider.util.VersionLifecycleManager.versionCode)
     }
 
     // MARK: - Device Transfer (M6.3)
@@ -154,10 +240,10 @@ class LicenseVerificationService(private val context: Context) {
             put("device_model", deviceService.deviceModel)
             put("platform", "android")
         }
-        executeDeviceTransfer(json, cleanCode)
+        executeDeviceTransfer(json)
     }
 
-    private suspend fun executeDeviceTransfer(bodyJson: JSONObject, fallbackCode: String? = null): DeviceTransferResult {
+    private suspend fun executeDeviceTransfer(bodyJson: JSONObject): DeviceTransferResult {
         return try {
             val url = URL("$serverUrl/api/device/transfer")
             val conn = url.openConnection() as HttpURLConnection
@@ -196,9 +282,16 @@ class LicenseVerificationService(private val context: Context) {
                 val licenseData = respJson.optJSONObject("license")
                 val plan = licenseData?.optString("plan_type", "yearly") ?: "yearly"
                 val days = licenseData?.optInt("days_remaining", 365) ?: 365
+                val expiresAt = licenseData?.optString("expires_at", "") ?: ""
 
-                val codeToUnlock = fallbackCode ?: "RIDER-VIP-2026-PASS"
-                com.fitnessrider.util.VersionLifecycleManager.activateLicenseCode(context, codeToUnlock)
+                // 直接信任伺服器已驗證過身分（帳號密碼 / 已在伺服器驗過簽章的序號）的結果，
+                // 不再靠寫死的 "RIDER-VIP-2026-PASS" 字串去騙本機的序號驗證邏輯解鎖。
+                if (expiresAt.isNotEmpty()) {
+                    com.fitnessrider.util.VersionLifecycleManager.activateVipFromServer(context, expiresAt)
+                }
+                if (respJson.has("device_secret") && !respJson.isNull("device_secret")) {
+                    deviceService.deviceSecret = respJson.getString("device_secret")
+                }
                 refreshLicenseState()
 
                 DeviceTransferResult(

@@ -56,7 +56,7 @@ public struct DeviceTransferSheet: View {
                                     .font(.system(size: 13, weight: .bold))
                                     .foregroundColor(FitnessRiderTheme.textPrimary)
 
-                                TextField("例如: RIDER-VIP-2026-PASS", text: $licenseCodeInput)
+                                TextField("例如: FRVIP-...", text: $licenseCodeInput)
                                     .textFieldStyle(.roundedBorder)
                                     .autocapitalization(.allCharacters)
                                     .disableAutocorrection(true)

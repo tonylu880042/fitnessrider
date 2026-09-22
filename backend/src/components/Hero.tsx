@@ -1,9 +1,88 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Play, Sparkles, ArrowDown } from 'lucide-react';
+import { 
+  Play, 
+  Pause, 
+  Sparkles, 
+  ArrowDown, 
+  ChevronLeft, 
+  ChevronRight, 
+  Shuffle 
+} from 'lucide-react';
+import { INTRO_COPY_LIST } from '@/lib/introCopyData';
 
 export default function Hero() {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const totalCopies = INTRO_COPY_LIST.length;
+  const currentItem = INTRO_COPY_LIST[currentIndex];
+  const INTERVAL_DURATION = 6000; // 6 seconds per intro set
+  const PROGRESS_STEP = 50; // update progress every 50ms
+
+  const switchIndex = useCallback((newIndex: number) => {
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setCurrentIndex(newIndex);
+      setProgress(0);
+      setIsTransitioning(false);
+    }, 200);
+  }, []);
+
+  const handleNext = useCallback(() => {
+    switchIndex((currentIndex + 1) % totalCopies);
+  }, [currentIndex, totalCopies, switchIndex]);
+
+  const handlePrev = useCallback(() => {
+    switchIndex((currentIndex - 1 + totalCopies) % totalCopies);
+  }, [currentIndex, totalCopies, switchIndex]);
+
+  const handleRandom = useCallback(() => {
+    let nextRand = Math.floor(Math.random() * totalCopies);
+    if (nextRand === currentIndex) {
+      nextRand = (currentIndex + 1) % totalCopies;
+    }
+    switchIndex(nextRand);
+  }, [currentIndex, totalCopies, switchIndex]);
+
+  // Auto-rotation & progress bar effect
+  useEffect(() => {
+    if (!isPlaying || isHovered) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      return;
+    }
+
+    const startTime = Date.now();
+    progressTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const pct = Math.min(100, (elapsed / INTERVAL_DURATION) * 100);
+      setProgress(pct);
+    }, PROGRESS_STEP);
+
+    timerRef.current = setTimeout(() => {
+      handleNext();
+    }, INTERVAL_DURATION);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    };
+  }, [currentIndex, isPlaying, isHovered, handleNext]);
+
   return (
-    <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28">
+    <section 
+      className="relative overflow-hidden pt-10 pb-20 md:pt-16 md:pb-28"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       {/* Background Gradients */}
       <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 -translate-x-1/2 transform-gpu blur-3xl sm:-top-80">
         <div
@@ -16,24 +95,112 @@ export default function Hero() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-400 backdrop-blur-md mb-6">
-          <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-          <span>2026 全新雙原生引擎・專為飛輪教練研發</span>
+        {/* Dynamic Rotation Controls Bar */}
+        <div className="mx-auto max-w-2xl mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800/90 bg-zinc-900/60 p-2 backdrop-blur-xl shadow-lg shadow-black/40">
+          {/* Badge & Category */}
+          <div className="flex items-center gap-2 text-left">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/30">
+              {currentItem.category}
+            </span>
+            <span className="hidden sm:inline text-xs text-zinc-400 truncate max-w-xs">
+              {currentItem.badge}
+            </span>
+          </div>
+
+          {/* Interactive Player Controls */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            {/* Prev Button */}
+            <button
+              onClick={handlePrev}
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+              title="上一則介紹"
+              aria-label="Previous Intro"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {/* Play/Pause Button */}
+            <button
+              onClick={() => setIsPlaying(!isPlaying)}
+              className="flex h-7 px-2 items-center gap-1 rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors text-xs font-mono"
+              title={isPlaying ? "暫停輪播（方便閱讀）" : "繼續自動輪播"}
+              aria-label="Toggle autoplay"
+            >
+              {isPlaying ? (
+                <>
+                  <Pause className="h-3 w-3 text-emerald-400 fill-current" />
+                  <span className="text-[10px] text-zinc-400">輪播中</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-3 w-3 text-amber-400 fill-current" />
+                  <span className="text-[10px] text-amber-400">已暫停</span>
+                </>
+              )}
+            </button>
+
+            {/* Next Button */}
+            <button
+              onClick={handleNext}
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+              title="下一則介紹"
+              aria-label="Next Intro"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+
+            {/* Random Shuffle Button */}
+            <button
+              onClick={handleRandom}
+              className="hidden sm:flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-emerald-400 transition-colors"
+              title="隨機抽取介紹"
+              aria-label="Random Intro"
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Counter */}
+            <span className="ml-1 px-2 py-0.5 rounded bg-zinc-950/80 text-[11px] font-mono text-zinc-400 border border-zinc-800">
+              <strong className="text-emerald-400">{String(currentIndex + 1).padStart(2, '0')}</strong> / {totalCopies}
+            </span>
+          </div>
+
+          {/* Progress Bar (Auto-rotate Timer) */}
+          <div className="w-full h-1 bg-zinc-800/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-75"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
 
-        {/* Title */}
-        <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl font-sans">
-          掌控音樂節奏，
-          <br className="hidden sm:inline" />
-          帶出<span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">熱血沸騰</span>的飛輪課堂
-        </h1>
+        {/* Dynamic Title with smooth transition */}
+        <div className="min-h-[140px] sm:min-h-[180px] lg:min-h-[210px] flex flex-col justify-center">
+          <h1
+            className={`text-4xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl font-sans transition-all duration-200 transform ${
+              isTransitioning ? 'opacity-0 translate-y-3' : 'opacity-100 translate-y-0'
+            }`}
+          >
+            {currentItem.titleLead}
+            <br className="hidden sm:inline" />
+            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+              {currentItem.titleHighlight}
+            </span>
+            {currentItem.titleTail}
+          </h1>
+        </div>
 
-        {/* Subtitle */}
-        <p className="mx-auto mt-6 max-w-2xl text-base sm:text-lg text-zinc-400 leading-relaxed">
-          告別手忙腳亂的紙本小抄與切歌靜音。
-          <strong className="text-zinc-200 font-semibold"> FitnessRider</strong> 整合高音質無損變速、波形 BPM 精準對拍與大字動態倒數 HUD，新用戶享 <strong className="text-emerald-400">7 天全功能免費試用</strong>，讓教練專注於帶動全場踩踏激情。
-        </p>
+        {/* Dynamic Subtitle */}
+        <div className="min-h-[90px] sm:min-h-[75px] flex items-center justify-center">
+          <p
+            className={`mx-auto max-w-3xl text-base sm:text-lg text-zinc-300 leading-relaxed transition-all duration-200 ${
+              isTransitioning ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
+            }`}
+          >
+            {currentItem.subtitle}
+          </p>
+        </div>
 
         {/* CTA Buttons */}
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -54,29 +221,55 @@ export default function Hero() {
         </div>
 
         {/* Promo code badge for courses */}
-        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-400">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-zinc-400">
           <span>🎓 搭配培訓推廣課程？App 內輸入 2026 年度專屬代碼</span>
-          <span className="font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">26FR-NR</span>
+          <span className="font-mono font-black text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/30">
+            26FR-NR
+          </span>
           <span>即享 30 天全功能免費體驗！</span>
         </div>
 
-        {/* Key Points */}
-        <div className="mt-8 flex flex-wrap justify-center gap-x-8 gap-y-3 text-xs sm:text-sm text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            0.7x ~ 1.3x 變速不變調
+        {/* Dynamic Key Feature Points (Syncs with Current Set) */}
+        <div
+          className={`mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs sm:text-sm text-zinc-300 transition-all duration-200 ${
+            isTransitioning ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          {currentItem.tags.map((tag, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-800/80 bg-zinc-900/50 px-3 py-1.5 backdrop-blur-md"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>{tag}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* 20 Topic Quick Nav Pills (Interactive Carousel/Tabs) */}
+        <div className="mt-10 mx-auto max-w-4xl">
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2.5 flex items-center justify-center gap-2">
+            <Sparkles className="h-3 w-3 text-emerald-400" />
+            <span>探索 20 大系統亮點（點擊即刻切換）</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            1~3 秒雙軌等能量 Crossfade
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            支援 iPad & Android 橫向車架
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            100% 離線播音，地下室零延遲
+          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+            {INTRO_COPY_LIST.map((item, idx) => {
+              const isActive = idx === currentIndex;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => switchIndex(idx)}
+                  className={`rounded-lg px-2.5 py-1 text-xs transition-all font-medium ${
+                    isActive
+                      ? 'bg-emerald-500 text-zinc-950 font-bold shadow-md shadow-emerald-500/30 scale-105'
+                      : 'bg-zinc-900/70 border border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                  }`}
+                >
+                  <span className="font-mono text-[10px] opacity-75 mr-1">{String(item.id).padStart(2, '0')}.</span>
+                  {item.category}
+                </button>
+              );
+            })}
           </div>
         </div>
 

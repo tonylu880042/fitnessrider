@@ -140,6 +140,9 @@ struct MusicLibraryView: View {
     // "lib:<fileName>" 代表已匯入音樂庫項目，"ext:<relativePath>" 代表外部資料夾項目。
     @State private var previewPlayer: AVAudioPlayer?
     @State private var playingKey: String?
+    /// 正在等 iCloud 把檔案下載下來的那一列（同一組 key 空間），用來在列上顯示等待指示，
+    /// 不讓教練按了試聽卻看起來毫無反應。
+    @State private var downloadingKey: String?
     @State private var audioDelegate = MusicLibraryAudioDelegate()
 
     private var filteredTracks: [MusicLibraryTrack] {
@@ -277,15 +280,46 @@ struct MusicLibraryView: View {
         } else {
             let selected = externalEntries.filter { selectedExternalPaths.contains($0.relativePath) }
             guard !selected.isEmpty else { return }
-            let newSegments = buildSegmentsFromExternalSelection(
-                entries: selected,
-                classId: classId,
-                startOrderIndex: startOrderIndex
-            )
             stopPreview()
-            onSegmentsCreated(newSegments)
-            onDismiss()
+
+            // iCloud 還沒下載到本機的曲目要先等檔案落地才建立段落，否則段落建好了卻分析不到
+            // 真實時長／BPM，會退回 5:00 / 128 BPM 的預設值 —— 正是 Layer 1 第 1 項要修掉的症狀。
+            let pending = selected.filter { $0.isCloudPlaceholder }
+            guard !pending.isEmpty else {
+                finishExternalSelection(selected)
+                return
+            }
+
+            isImporting = true
+            Task { @MainActor in
+                var failedNames: Set<String> = []
+                for entry in pending {
+                    let available = await MusicSource.ensureAvailable(
+                        for: MusicSource.externalPrefix + entry.relativePath
+                    )
+                    if !available { failedNames.insert(entry.displayName) }
+                }
+                isImporting = false
+
+                // 下載失敗的回報出來，其餘照常建立段落 —— 一首失敗不該擋掉另外 29 首。
+                if !failedNames.isEmpty {
+                    onImportFailed(failedNames.sorted().map { "\($0)（iCloud 尚未下載完成）" })
+                }
+                let usable = selected.filter { !failedNames.contains($0.displayName) }
+                guard !usable.isEmpty else { return }
+                finishExternalSelection(usable)
+            }
         }
+    }
+
+    private func finishExternalSelection(_ entries: [ExternalMusicEntry]) {
+        let newSegments = buildSegmentsFromExternalSelection(
+            entries: entries,
+            classId: classId,
+            startOrderIndex: startOrderIndex
+        )
+        onSegmentsCreated(newSegments)
+        onDismiss()
     }
 
     // MARK: - Layer 2 分頁
@@ -378,9 +412,10 @@ struct MusicLibraryView: View {
                             let isPlaying = playingKey == "ext:\(entry.relativePath)"
                             musicRow(
                                 title: musicTitleFromFileName(entry.displayName),
-                                subtitle: "外部資料夾",
+                                subtitle: entry.isCloudPlaceholder ? "外部資料夾 ・ iCloud 尚未下載" : "外部資料夾",
                                 isSelected: isSelected,
                                 isPlaying: isPlaying,
+                                isDownloading: downloadingKey == "ext:\(entry.relativePath)",
                                 onToggleSelect: {
                                     if isSelected {
                                         selectedExternalPaths.remove(entry.relativePath)
@@ -429,6 +464,7 @@ struct MusicLibraryView: View {
         subtitle: String,
         isSelected: Bool,
         isPlaying: Bool,
+        isDownloading: Bool = false,
         onToggleSelect: @escaping () -> Void,
         onTogglePreview: @escaping () -> Void
     ) -> some View {
@@ -449,14 +485,18 @@ struct MusicLibraryView: View {
 
             Spacer()
 
-            Button {
-                onTogglePreview()
-            } label: {
-                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 26))
-                    .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+            if isDownloading {
+                ProgressView().frame(width: 26, height: 26)
+            } else {
+                Button {
+                    onTogglePreview()
+                } label: {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(12)
         .background(isSelected ? FitnessRiderTheme.topBarGreen.opacity(0.1) : FitnessRiderTheme.cardBackground)
@@ -546,9 +586,33 @@ struct MusicLibraryView: View {
             return
         }
         stopPreview()
+        let musicFileName = MusicSource.externalPrefix + entry.relativePath
+
+        // iCloud 還沒下載的曲目直接建 player 只會失敗、畫面上什麼都不會發生。
+        // 先等檔案下載下來（列上顯示等待指示），下載完再照常試聽。
+        guard entry.isCloudPlaceholder else {
+            startExternalPreview(musicFileName: musicFileName, key: key)
+            return
+        }
+        downloadingKey = key
+        Task { @MainActor in
+            let available = await MusicSource.ensureAvailable(for: musicFileName)
+            // 等待期間教練可能已經改按別首（或收起畫面），這時就不要再搶著播放。
+            guard downloadingKey == key else { return }
+            downloadingKey = nil
+            guard available else {
+                onImportFailed(["\(entry.displayName)（iCloud 尚未下載完成）"])
+                return
+            }
+            reloadExternalEntries()
+            startExternalPreview(musicFileName: musicFileName, key: key)
+        }
+    }
+
+    private func startExternalPreview(musicFileName: String, key: String) {
         // AVAudioPlayer 在 security-scoped 存取視窗裡建立好之後，關閉視窗不影響後續播放
         // （系統的檔案描述子已經開好），所以只需要把 init 包在 withResolvedFileURL 裡。
-        let player = MusicSource.withResolvedFileURL(for: MusicSource.externalPrefix + entry.relativePath) { url in
+        let player = MusicSource.withResolvedFileURL(for: musicFileName) { url in
             try? AVAudioPlayer(contentsOf: url)
         }.flatMap { $0 }
         guard let player = player else { return }
@@ -563,6 +627,7 @@ struct MusicLibraryView: View {
         previewPlayer?.stop()
         previewPlayer = nil
         playingKey = nil
+        downloadingKey = nil
     }
 
     // MARK: - Import New File(s)

@@ -187,7 +187,7 @@ public struct SettingsBackupView: View {
                 Text(alertMessage)
             }
             .alert("輸入授權序號或推廣代碼", isPresented: $isShowingActivationAlert) {
-                TextField("如: 26FR-NR 或 RIDER-VIP-2026-PASS", text: $licenseCodeInput)
+                TextField("如: 26FR-NR 或 FRVIP-...", text: $licenseCodeInput)
                     .textInputAutocapitalization(.characters)
                 Button("開通 / 兌換") {
                     let code = licenseCodeInput

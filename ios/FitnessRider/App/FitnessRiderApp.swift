@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct FitnessRiderApp: App {
     @StateObject private var lifecycleManager = VersionLifecycleManager.shared
+    @StateObject private var licenseService = LicenseVerificationService.shared
     @State private var importedClassNotice: String?
     @State private var isShowingImportNotice: Bool = false
 
@@ -12,18 +13,29 @@ struct FitnessRiderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if lifecycleManager.isExpiredOnLaunch {
-                VersionExpiredView()
-            } else {
-                ClassListView()
-                    .onOpenURL { url in
-                        handleIncomingDocument(url)
-                    }
-                    .alert("匯入成功", isPresented: $isShowingImportNotice) {
-                        Button("確定", role: .cancel) {}
-                    } message: {
-                        Text(importedClassNotice ?? "")
-                    }
+            Group {
+                if licenseService.mustUpdate {
+                    VersionExpiredView(reason: .mustUpdate)
+                } else if lifecycleManager.isExpiredOnLaunch {
+                    VersionExpiredView(reason: .trialEnded)
+                } else {
+                    ClassListView()
+                        .onOpenURL { url in
+                            handleIncomingDocument(url)
+                        }
+                        .alert("匯入成功", isPresented: $isShowingImportNotice) {
+                            Button("確定", role: .cancel) {}
+                        } message: {
+                            Text(importedClassNotice ?? "")
+                        }
+                }
+            }
+            .task {
+                // 啟動時連同授權狀態一起向後端取得試用錨點校正與強制更新門檻。
+                // 完全離線／連線失敗時 refreshFromServer 什麼都不做，不會把使用者鎖住（spec 項目 F）。
+                let buildNumber = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0
+                await licenseService.refreshFromServer(currentBuildNumber: buildNumber)
+                lifecycleManager.evaluateExpirationOnLaunch()
             }
         }
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { verifyJwt } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,10 +15,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 若該裝置先前已開通過且已有 device_secret，未經授權（無 JWT / 無原裝置簽章）的請求一律阻擋，
+    // 防止任何人僅靠 ANDROID_ID + 公開推廣碼篡改受害者授權或取得密鑰（spec 項目 1）。
+    const existingAnchor = await db.getDeviceTrialAnchor(deviceFingerprint);
+    if (existingAnchor?.device_secret) {
+      let authorized = false;
+      const authHeader = req.headers.get('authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const decoded = await verifyJwt(token);
+        if (decoded) {
+          authorized = true;
+        }
+      }
+      if (!authorized) {
+        const timestamp = Number(body.timestamp);
+        const signature = typeof body.signature === 'string' ? body.signature : '';
+        if (timestamp && signature) {
+          authorized = await db.verifyDeviceSignature(deviceFingerprint, timestamp, signature);
+        }
+      }
+      if (!authorized) {
+        return NextResponse.json(
+          { success: false, error: '此設備已完成開通綁定，需透過原設備簽章或帳號登入驗證' },
+          { status: 403 }
+        );
+      }
+    }
+
     const platform = body.platform === 'android' ? 'android' : 'ios';
     const deviceModel = body.device_model || body.deviceModel || (platform === 'android' ? 'Android Device' : 'iPad / iPhone');
+    const clientFirstLaunchAt = (body.client_first_launch_at || body.clientFirstLaunchAt) as string | undefined;
 
-    const result = await db.activateLicenseWithCode(deviceFingerprint, licenseCode, platform, deviceModel);
+    const result = await db.activateLicenseWithCode(deviceFingerprint, licenseCode, platform, deviceModel, clientFirstLaunchAt);
     if (!result.success) {
       return NextResponse.json(
         { success: false, error: result.error || '開通失敗' },
@@ -35,6 +65,8 @@ export async function POST(req: NextRequest) {
       expires_at: result.license?.expires_at,
       days_remaining: result.trial_days || (isPromo ? 30 : 365),
       is_promo: isPromo,
+      // 裝置密鑰：僅在首次為新設備建立時回傳供 App 端保存，已有密鑰者絕不回傳既有值。
+      ...(result.device_secret ? { device_secret: result.device_secret } : {}),
     });
   } catch (error: unknown) {
     console.error('License Activate Error:', error);

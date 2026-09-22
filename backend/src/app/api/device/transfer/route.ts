@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { db } from '@/lib/db';
 import { comparePassword, signJwt } from '@/lib/auth';
+import { verifyVipSerial } from '@/lib/vipSerial';
 
 const TRANSFER_COOLDOWN_DAYS = 30;
 
@@ -98,10 +99,8 @@ export async function POST(req: NextRequest) {
     }
     // 模式 2：以 VIP 授權序號轉移
     else if (license_code) {
-      const validCodes = ['RIDER-VIP-2026-PASS', 'FITNESS-PRO-ANNUAL-KEY'];
-      const isValidFormat = validCodes.includes(license_code) || (license_code.startsWith('RIDER-VIP-') && license_code.length >= 14);
-
-      if (!isValidFormat) {
+      const vipSerialInfo = verifyVipSerial(license_code);
+      if (!vipSerialInfo) {
         return NextResponse.json(
           { success: false, error: '無效的 VIP 授權序號' },
           { status: 400 }
@@ -115,21 +114,22 @@ export async function POST(req: NextRequest) {
         targetEmail = user?.email || `vip_${license_code.slice(-6)}@fitnessrider.local`;
       } else {
         // 全新合法序號轉移（首次直接在該機開通並綁定）
-        const actRes = await db.activateLicenseWithCode(new_device_fingerprint, license_code);
+        const actRes = await db.activateLicenseWithCode(new_device_fingerprint, license_code, platform === 'android' ? 'android' : 'ios', device_model || 'New Device');
         if (actRes.success && actRes.license) {
           return NextResponse.json({
             success: true,
             message: `VIP 授權序號已成功開通並綁定至新設備 [${device_model || 'New Device'}]！`,
             license: {
-              plan_type: 'yearly',
+              plan_type: actRes.license.plan_type,
               expires_at: actRes.license.expires_at,
-              days_remaining: 365,
+              days_remaining: actRes.trial_days || 365,
               is_valid: true,
             },
             device: {
               device_fingerprint: new_device_fingerprint,
               device_model: device_model || 'New Device',
             },
+            device_secret: actRes.device_secret,
           });
         } else {
           return NextResponse.json(
@@ -197,6 +197,13 @@ export async function POST(req: NextRequest) {
     const isValidLicense = expiresAtMs > now && license?.status === 'active';
     const daysRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / (1000 * 60 * 60 * 24)));
 
+    // 新設備也要有自己的裝置密鑰，之後才能用簽章呼叫 /api/license/verify（spec 項目 E）。
+    let deviceSecret = await db.setDeviceSecretIfAbsent(new_device_fingerprint, crypto.randomBytes(32).toString('hex'));
+    if (!deviceSecret) {
+      const existingAnchor = await db.getDeviceTrialAnchor(new_device_fingerprint);
+      deviceSecret = existingAnchor?.device_secret || null;
+    }
+
     return NextResponse.json({
       success: true,
       message: `設備轉移成功！授權已成功遷入新設備 [${newDevice.device_model}]。`,
@@ -212,6 +219,7 @@ export async function POST(req: NextRequest) {
         days_remaining: daysRemaining,
         is_valid: isValidLicense,
       },
+      device_secret: deviceSecret,
     });
   } catch (error) {
     console.error('Device Transfer Error:', error);

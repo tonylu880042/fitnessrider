@@ -22,6 +22,17 @@ android {
     val appVersionCode = versionProps.getProperty("VERSION_CODE", "1").trim().toIntOrNull() ?: 1
     val appVersionName = versionProps.getProperty("VERSION_NAME", "1.0.0").trim()
 
+    // 商業模式權威數字：基礎試用天數／推廣代碼延長後的總天數一律從 promo.properties 讀取，
+    // 不要在這裡另外寫一份魔術數字（見 promo.properties 與 backend/src/lib/licenseConfig.ts）。
+    val promoPropsFile = rootProject.projectDir.parentFile.resolve("promo.properties")
+    val promoProps = Properties().apply {
+        if (promoPropsFile.exists()) {
+            FileInputStream(promoPropsFile).use { load(it) }
+        }
+    }
+    val baseTrialDays = promoProps.getProperty("BASE_TRIAL_DAYS", "7").trim().toIntOrNull() ?: 7
+    val promoTotalTrialDays = promoProps.getProperty("TRIAL_DAYS", "30").trim().toIntOrNull() ?: 30
+
     defaultConfig {
         applicationId = "com.fitnessrider.coach"
         minSdk = 26
@@ -42,7 +53,8 @@ android {
             .get()
 
         buildConfigField("long", "BUILD_TIME_MS", "${resolvedBuildTime}L")
-        buildConfigField("int", "LIFECYCLE_DAYS", "7")
+        buildConfigField("int", "LIFECYCLE_DAYS", "$baseTrialDays")
+        buildConfigField("int", "PROMO_TOTAL_TRIAL_DAYS", "$promoTotalTrialDays")
         buildConfigField("String", "UPDATE_URL", "\"https://appdistribution.firebase.dev/i/d740076f27b77ab0\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

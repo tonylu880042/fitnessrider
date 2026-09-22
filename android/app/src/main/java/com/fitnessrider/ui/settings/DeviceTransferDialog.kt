@@ -131,7 +131,7 @@ fun DeviceTransferDialog(
                         OutlinedTextField(
                             value = licenseCodeInput,
                             onValueChange = { licenseCodeInput = it.uppercase() },
-                            placeholder = { Text("例如: RIDER-VIP-2026-PASS", fontSize = 12.sp) },
+                            placeholder = { Text("例如: FRVIP-...", fontSize = 12.sp) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )

@@ -26,6 +26,27 @@ export interface License {
   updated_at: string;
 }
 
+/**
+ * 每台裝置的試用起算錨點（不需要帳號、也不需要已開通任何授權就會建立）。
+ * 存在的目的是讓 Android 重灌後仍能以 ANDROID_ID 對回同一筆紀錄，試用不會被重置
+ * （見 spec 項目 D）。`device_secret` 只在該裝置第一次成功開通授權/推廣代碼時才會產生，
+ * 用來簽章後續的 /api/license/verify 請求（見 spec 項目 E），純試用中、尚未開通過
+ * 任何東西的裝置沒有這組密鑰，也因此沒有需要保護的授權狀態可以被查詢。
+ */
+export interface DeviceTrialAnchor {
+  device_fingerprint: string;
+  first_seen_at: string;
+  device_secret: string | null;
+}
+
+/** 付費 VIP 序號（P-256 簽章）兌換紀錄，一組序號只能在一台裝置上開通一次。 */
+export interface VipSerialRedemption {
+  serial_id: string;
+  device_fingerprint: string;
+  plan_days: number;
+  redeemed_at: string;
+}
+
 export interface PromoRedemption {
   id: string;
   device_fingerprint: string;
