@@ -6,7 +6,13 @@ export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization');
     const expectedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
-    if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
+    if (!expectedSecret) {
+      console.error('[RevenueCat Webhook] REVENUECAT_WEBHOOK_SECRET is not configured; rejecting.');
+      return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
+    }
+    const expected = Buffer.from(`Bearer ${expectedSecret}`);
+    const given = Buffer.from(authHeader ?? '');
+    if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
