@@ -263,3 +263,47 @@ log 一行警告然後回 200——錢收了、授權沒開。
 接 RevenueCat SDK、三檔商品 ID、購買與恢復購買流程。
 注意 iOS 上架後，App 內解鎖數位功能一律要走 IAP（Apple Guideline 3.1.1），
 屆時「聯繫取得序號」這條路在 iOS 版可能要收掉或改寫。
+
+## 開發清單：課表包分享（`.riderclass`，spec M5.5）修正
+
+2026-09-24 盤點：格式（Zip ＋ `workout_class.json` ＋ 音檔）與 JSON 欄位雙端已對齊，
+但「分享出去對方拿到錯的或打不開」的問題有四條。分兩個單元依序做，**S1 完成並 commit 前不要動 S2**
+（兩個單元都改雙端的 `RiderClassArchiveService`）。
+
+### S1 — 匯出：Android 分享鍵接上 ＋ 跨平台 Zip 相容
+
+1. **Android 分享鍵沒有作用**：`MainActivity.kt` 的 `onShareClick` 呼叫 `exportRiderClass(it)`
+   後丟掉回傳的檔案，從未叫出分享面板。沿用 `ui/settings/SettingsScreen.kt` 備份分享那套
+   `FileProvider.getUriForFile` ＋ `ACTION_SEND` ＋ `createChooser`（確認 `file_paths` 涵蓋
+   `cacheDir/exports`）。匯出失敗（回傳 null）要讓使用者看得到。
+2. **Android 產生的包 iOS 解不開**：`ZipOutputStream` 預設 DEFLATED ＋ data descriptor
+   （local header 大小欄位為 0），iOS 手寫的 `extractZipData` 只支援「STORED、大小寫在 local header」。
+   **修 Android 寫入端**：每個 entry 改 `ZipEntry.STORED`，事先設好 `size`／`compressedSize`／`crc`。
+   iOS 解壓器不改、不引入 zip 套件。mp3/m4a 本來就壓不小，不壓縮不是損失。
+   - Android 測試：產生的 zip 每個 local header 的 method＝0、大小欄位非 0、flag bit 3 未設。
+   - iOS 測試：用一段寫死的 STORED zip 位元組（等同 Android 輸出格式）餵給匯入，確認解得出
+     `workout_class.json` 與音檔內容。
+3. iOS `shareClassPackage` 失敗時的 `print` 改為 Alert。
+
+### S2 — 匯入：不覆蓋、不偷換、看得見
+
+1. **重複匯入會覆蓋既有課表**：匯入沿用原 class id，存檔是 `INSERT OR REPLACE`。
+   **匯入一律重新產生 id**（class、segment、cue 全換，segment 的 `classId`、cue 的 `segmentId` 跟著改）。
+   已知且接受的結果：同一包匯入兩次會出現兩份課表。
+2. **音檔同名偷換**：目前本機已有同名檔就跳過，不同歌但同檔名時課表會播成本機那首。
+   改為：同名且內容相同（大小＋位元組比對即可）→ 重用；同名但內容不同 → 以 `_1`、`_2`
+   後綴另存，並改寫該課表所有引用這個檔名的 `musicFileName`。
+   與 Layer 1 第 6 點的碰撞後綴規則一致（有現成函式就重用，不要再寫一份）。
+3. **錯誤看得見**：雙端匯入失敗改為使用者可見的提示（Android Snackbar/Toast/Dialog、iOS Alert）；
+   Android 匯入成功也要有提示（iOS 已有「匯入成功」Alert，文案對齊）。
+4. **到期時不匯入**：iOS 只在 `ClassListView` 上掛 `onOpenURL`，到期畫面不會匯入；
+   Android 在 `onCreate` 一開始就匯入。Android 改為與 iOS 一致：試用到期／必須更新時不匯入。
+   順手讓 Android 在 App 已開啟時（`onNewIntent`）也能匯入。
+5. 測試：雙端各一個——匯入同一包兩次得到兩份不同 id 的課表；本機已有同名不同內容音檔時，
+   匯入後段落指向改名後的檔案且原檔未被覆寫。
+
+### 不在範圍
+
+- iOS 匯出／匯入把整個音檔讀進記憶體（`Data(contentsOf:)`）：有人回報大課表閃退再改串流。
+- M5.4 純 JSON 輕量分享：`.riderclass` 缺音檔時本來就會降級，不另做。
+- 外部資料夾曲目不打包：見 Layer 3 最後一點，刻意不擴充。
