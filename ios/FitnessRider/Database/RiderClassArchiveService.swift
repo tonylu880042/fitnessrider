@@ -51,22 +51,94 @@ public final class RiderClassArchiveService: Sendable {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let workoutClass = try decoder.decode(WorkoutClass.self, from: jsonFile.data)
+        var workoutClass = Self.regenerateIds(for: try decoder.decode(WorkoutClass.self, from: jsonFile.data))
 
-        let standardizedMusicPath = musicDir.standardizedFileURL.path
-        for file in extractedFiles where file.name != "workout_class.json" {
-            let destAudioURL = musicDir.appendingPathComponent(file.name).standardizedFileURL
-            guard destAudioURL.path.hasPrefix(standardizedMusicPath + "/") else {
-                continue
+        let audioFiles = extractedFiles.filter { $0.name != "workout_class.json" }
+        let nameMapping = resolveImportedFileNames(audioFiles)
+        workoutClass.segments = workoutClass.segments.map { seg in
+            var updated = seg
+            if let resolved = nameMapping[seg.musicFileName], resolved != seg.musicFileName {
+                updated.musicFileName = resolved
             }
-            if !FileManager.default.fileExists(atPath: destAudioURL.path) {
-                try? file.data.write(to: destAudioURL)
-            }
+            return updated
         }
 
         ClassRepository.shared.saveClass(workoutClass)
 
         return workoutClass
+    }
+
+    static func regenerateIds(for workoutClass: WorkoutClass) -> WorkoutClass {
+        let newClassId = UUID()
+        let newSegments = workoutClass.segments.map { seg -> WorkoutSegment in
+            let newSegmentId = UUID()
+            let newCues = seg.cues.map { cue in
+                WorkoutCue(
+                    id: UUID(),
+                    segmentId: newSegmentId,
+                    offsetMs: cue.offsetMs,
+                    posture: cue.posture,
+                    targetRpm: cue.targetRpm,
+                    resistanceLevel: cue.resistanceLevel,
+                    message: cue.message,
+                    handPosition: cue.handPosition,
+                    reminders: cue.reminders
+                )
+            }
+            return WorkoutSegment(
+                id: newSegmentId,
+                classId: newClassId,
+                orderIndex: seg.orderIndex,
+                title: seg.title,
+                musicFileName: seg.musicFileName,
+                durationMs: seg.durationMs,
+                baseBpm: seg.baseBpm,
+                playbackRate: seg.playbackRate,
+                intensityZone: seg.intensityZone,
+                cues: newCues
+            )
+        }
+        return WorkoutClass(
+            id: newClassId,
+            title: workoutClass.title,
+            author: workoutClass.author,
+            createdAt: workoutClass.createdAt,
+            totalDurationMs: workoutClass.totalDurationMs,
+            estimatedCalories: workoutClass.estimatedCalories,
+            segments: newSegments
+        )
+    }
+
+    func resolveImportedFileNames(_ files: [(name: String, data: Data)]) -> [String: String] {
+        var existingNames = Set((try? FileManager.default.contentsOfDirectory(atPath: musicDir.path)) ?? [])
+        var mapping: [String: String] = [:]
+        let standardizedMusicPath = musicDir.standardizedFileURL.path
+
+        for file in files {
+            let requestedURL = musicDir.appendingPathComponent(file.name).standardizedFileURL
+            guard requestedURL.path.hasPrefix(standardizedMusicPath + "/") else {
+                continue
+            }
+
+            let finalName: String
+            if !FileManager.default.fileExists(atPath: requestedURL.path) {
+                finalName = file.name
+            } else if let existingData = try? Data(contentsOf: requestedURL), existingData == file.data {
+                finalName = file.name
+            } else {
+                finalName = resolveUniqueMusicFileName(file.name, existingNames: existingNames)
+            }
+
+            let finalURL = musicDir.appendingPathComponent(finalName)
+            if !FileManager.default.fileExists(atPath: finalURL.path) {
+                try? file.data.write(to: finalURL)
+            }
+
+            existingNames.insert(finalName)
+            mapping[file.name] = finalName
+        }
+
+        return mapping
     }
 
     private func createZipData(from files: [(name: String, data: Data)]) -> Data {

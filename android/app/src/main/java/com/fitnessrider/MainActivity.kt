@@ -2,6 +2,7 @@ package com.fitnessrider
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: ClassRepository
     private lateinit var audioEngine: AudioEngineManager
     private lateinit var archiveService: RiderClassArchiveService
+    private val pendingImportUri = mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,33 +47,30 @@ class MainActivity : ComponentActivity() {
         repository = ClassRepository(this)
         audioEngine = AudioEngineManager(this)
         archiveService = RiderClassArchiveService(this)
-
-        intent?.data?.let { uri ->
-            lifecycleScope.launch {
-                try {
-                    contentResolver.openInputStream(uri)?.use { inputStream ->
-                        val tempFile = File(cacheDir, "incoming.riderclass")
-                        tempFile.outputStream().use { output ->
-                            inputStream.copyTo(output)
-                        }
-                        archiveService.importRiderClass(tempFile)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
+        if (savedInstanceState == null) pendingImportUri.value = intent?.data
 
         setContent {
             FitnessRiderTheme {
                 var isExpired by remember { mutableStateOf(VersionLifecycleManager.isExpired(this@MainActivity)) }
                 var mustUpdate by remember { mutableStateOf(false) }
+                var licenseChecked by remember { mutableStateOf(false) }
                 val licenseService = remember { com.fitnessrider.auth.LicenseVerificationService(this@MainActivity) }
 
                 LaunchedEffect(Unit) {
                     licenseService.refreshFromServer(currentVersionCode = VersionLifecycleManager.versionCode)
                     isExpired = VersionLifecycleManager.isExpired(this@MainActivity)
                     mustUpdate = licenseService.mustUpdate.value
+                    licenseChecked = true
+                }
+
+                val importUri = pendingImportUri.value
+                LaunchedEffect(importUri, licenseChecked) {
+                    if (importUri != null && licenseChecked) {
+                        pendingImportUri.value = null
+                        if (!isExpired && !mustUpdate) {
+                            importRiderClassFromUri(importUri)
+                        }
+                    }
                 }
 
                 if (mustUpdate) {
@@ -174,9 +173,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingImportUri.value = intent.data
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         audioEngine.release()
+    }
+
+    private suspend fun importRiderClassFromUri(uri: Uri) {
+        val imported = withContext(Dispatchers.IO) {
+            try {
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val tempFile = File(cacheDir, "incoming_${UUID.randomUUID()}.riderclass")
+                    tempFile.outputStream().use { output -> inputStream.copyTo(output) }
+                    val result = archiveService.importRiderClass(tempFile)
+                    tempFile.delete()
+                    result
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+        if (imported != null) {
+            Toast.makeText(this, "已成功匯入課表「${imported.title}」", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "課表匯入失敗", Toast.LENGTH_SHORT).show()
+        }
     }
 }
 

@@ -32,12 +32,14 @@ import com.fitnessrider.util.VersionLifecycleManager
 import com.fitnessrider.util.VipSerialVerifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.security.KeyPairGenerator
@@ -250,6 +252,80 @@ class FitnessRiderAndroidTest {
         assertEquals(payload.size, compressedSize)
         assertEquals(payload.size, uncompressedSize)
         assertTrue(compressedSize != 0)
+    }
+
+    @Test
+    fun testRegenerateIdsProducesFreshIdsOnEveryImport() {
+        val original = WorkoutClass(
+            id = "original-class",
+            title = "分享課表",
+            segments = listOf(
+                WorkoutSegment(
+                    id = "original-seg",
+                    classId = "original-class",
+                    musicFileName = "track.mp3",
+                    cues = listOf(
+                        WorkoutCue(id = "original-cue", segmentId = "original-seg")
+                    )
+                )
+            )
+        )
+
+        val firstImport = RiderClassArchiveService.regenerateIds(original)
+        val secondImport = RiderClassArchiveService.regenerateIds(original)
+
+        assertNotEquals("original-class", firstImport.id)
+        assertNotEquals("original-class", secondImport.id)
+        assertNotEquals(firstImport.id, secondImport.id)
+
+        assertEquals(firstImport.id, firstImport.segments[0].classId)
+        assertEquals(firstImport.segments[0].id, firstImport.segments[0].cues[0].segmentId)
+        assertEquals(secondImport.id, secondImport.segments[0].classId)
+        assertEquals(secondImport.segments[0].id, secondImport.segments[0].cues[0].segmentId)
+        assertNotEquals(firstImport.segments[0].id, secondImport.segments[0].id)
+        assertNotEquals(firstImport.segments[0].cues[0].id, secondImport.segments[0].cues[0].id)
+    }
+
+    @Test
+    fun testResolveImportedFileNamesReusesIdenticalAndSuffixesDifferentContent() {
+        val musicDir = java.nio.file.Files.createTempDirectory("musicDir").toFile()
+        try {
+            val existingSameContent = File(musicDir, "track.mp3")
+            existingSameContent.writeBytes(byteArrayOf(1, 2, 3))
+
+            val existingDifferentContent = File(musicDir, "collide.mp3")
+            existingDifferentContent.writeBytes(byteArrayOf(9, 9, 9))
+
+            val incomingSameContentTemp = File.createTempFile("incoming", ".tmp")
+            incomingSameContentTemp.writeBytes(byteArrayOf(1, 2, 3))
+
+            val incomingDifferentContentTemp = File.createTempFile("incoming", ".tmp")
+            incomingDifferentContentTemp.writeBytes(byteArrayOf(4, 5, 6))
+
+            val incomingNewTemp = File.createTempFile("incoming", ".tmp")
+            incomingNewTemp.writeBytes(byteArrayOf(7, 8))
+
+            val extracted = mapOf(
+                "track.mp3" to incomingSameContentTemp,
+                "collide.mp3" to incomingDifferentContentTemp,
+                "brand_new.mp3" to incomingNewTemp
+            )
+
+            val mapping = RiderClassArchiveService.resolveImportedFileNames(extracted, musicDir)
+
+            assertEquals("track.mp3", mapping["track.mp3"])
+            assertEquals(byteArrayOf(1, 2, 3).toList(), existingSameContent.readBytes().toList())
+
+            val renamed = mapping["collide.mp3"]!!
+            assertNotEquals("collide.mp3", renamed)
+            assertEquals(byteArrayOf(9, 9, 9).toList(), existingDifferentContent.readBytes().toList())
+            assertEquals(byteArrayOf(4, 5, 6).toList(), File(musicDir, renamed).readBytes().toList())
+
+            assertEquals("brand_new.mp3", mapping["brand_new.mp3"])
+            assertEquals(byteArrayOf(7, 8).toList(), File(musicDir, "brand_new.mp3").readBytes().toList())
+        } finally {
+            musicDir.deleteRecursively()
+        }
     }
 
     @Test

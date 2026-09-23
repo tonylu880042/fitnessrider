@@ -228,6 +228,110 @@ final class FitnessRiderTests: XCTestCase {
         ClassRepository.shared.deleteClass(byId: decoded.id)
     }
 
+    func testImportSameArchiveTwiceProducesTwoClassesWithDifferentIds() throws {
+        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+        let fileName = "s2_dup_\(UUID().uuidString).mp3"
+        let audioURL = musicDir.appendingPathComponent(fileName)
+        let audioBytes = Data([0x01, 0x02, 0x03, 0x04])
+        try audioBytes.write(to: audioURL)
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let sourceClass = WorkoutClass(
+            id: UUID(),
+            title: "重複匯入測試",
+            author: "Coach",
+            createdAt: Date(),
+            totalDurationMs: 60000,
+            estimatedCalories: 10,
+            segments: [
+                WorkoutSegment(
+                    id: UUID(),
+                    title: "段落",
+                    musicFileName: fileName,
+                    durationMs: 60000,
+                    baseBpm: 120.0,
+                    playbackRate: 1.0,
+                    intensityZone: 2,
+                    cues: []
+                )
+            ]
+        )
+
+        let archiveService = RiderClassArchiveService.shared
+        let archiveURL = try archiveService.exportRiderClass(for: sourceClass)
+        defer { try? FileManager.default.removeItem(at: archiveURL) }
+
+        let firstImport = try archiveService.importRiderClass(from: archiveURL)
+        let secondImport = try archiveService.importRiderClass(from: archiveURL)
+
+        XCTAssertNotEqual(firstImport.id, sourceClass.id)
+        XCTAssertNotEqual(secondImport.id, sourceClass.id)
+        XCTAssertNotEqual(firstImport.id, secondImport.id)
+        XCTAssertEqual(firstImport.segments.first?.classId, firstImport.id)
+        XCTAssertEqual(secondImport.segments.first?.classId, secondImport.id)
+        XCTAssertNotEqual(firstImport.segments.first?.id, secondImport.segments.first?.id)
+
+        ClassRepository.shared.deleteClass(byId: firstImport.id)
+        ClassRepository.shared.deleteClass(byId: secondImport.id)
+    }
+
+    func testImportRenamesFileWhenLocalCopyHasDifferentContentAndKeepsOriginal() throws {
+        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+        let sharedName = "s2_collide_\(UUID().uuidString).mp3"
+        let localURL = musicDir.appendingPathComponent(sharedName)
+        let localBytes = Data([0xAA, 0xBB, 0xCC])
+        try localBytes.write(to: localURL)
+        defer { try? FileManager.default.removeItem(at: localURL) }
+
+        let incomingBytes = Data([0x11, 0x22, 0x33, 0x44])
+        let sourceClass = WorkoutClass(
+            id: UUID(),
+            title: "同名不同內容測試",
+            author: "Coach",
+            createdAt: Date(),
+            totalDurationMs: 30000,
+            estimatedCalories: 5,
+            segments: [
+                WorkoutSegment(
+                    id: UUID(),
+                    title: "段落",
+                    musicFileName: sharedName,
+                    durationMs: 30000,
+                    baseBpm: 120.0,
+                    playbackRate: 1.0,
+                    intensityZone: 2,
+                    cues: []
+                )
+            ]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let jsonData = try encoder.encode(sourceClass)
+
+        var fixtureZip = Data()
+        fixtureZip.append(buildStoredZipLocalHeader(name: "workout_class.json", data: jsonData))
+        fixtureZip.append(buildStoredZipLocalHeader(name: sharedName, data: incomingBytes))
+
+        let fixtureURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).riderclass")
+        try fixtureZip.write(to: fixtureURL)
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+
+        let archiveService = RiderClassArchiveService.shared
+        let imported = try archiveService.importRiderClass(from: fixtureURL)
+
+        let newFileName = try XCTUnwrap(imported.segments.first?.musicFileName)
+        XCTAssertNotEqual(newFileName, sharedName)
+
+        XCTAssertEqual(try Data(contentsOf: localURL), localBytes)
+        let renamedURL = musicDir.appendingPathComponent(newFileName)
+        XCTAssertEqual(try Data(contentsOf: renamedURL), incomingBytes)
+
+        try? FileManager.default.removeItem(at: renamedURL)
+        ClassRepository.shared.deleteClass(byId: imported.id)
+    }
+
     @MainActor
     func testTempoClampingAndPercentageStepping() {
         let audio = AudioEngineManager.shared

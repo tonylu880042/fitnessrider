@@ -2,9 +2,11 @@ package com.fitnessrider.data
 
 import android.content.Context
 import com.fitnessrider.model.*
+import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.*
+import java.util.UUID
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -40,44 +42,54 @@ class RiderClassArchiveService(private val context: Context) {
     }
 
     suspend fun importRiderClass(zipFile: File): WorkoutClass? {
+        val importTempDir = File(context.cacheDir, "import_${UUID.randomUUID()}")
         return try {
+            importTempDir.mkdirs()
             var jsonString: String? = null
+            val extractedAudio = mutableMapOf<String, File>()
 
             ZipInputStream(BufferedInputStream(FileInputStream(zipFile))).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
+                var index = 0
                 while (entry != null) {
                     if (entry.name == "workout_class.json") {
                         val buffer = ByteArrayOutputStream()
                         zis.copyTo(buffer)
                         jsonString = buffer.toString(Charsets.UTF_8.name())
                     } else if (!entry.isDirectory) {
-                        val destFile = File(musicDir, entry.name)
-                        val canonicalDest = destFile.canonicalPath
-                        val canonicalDir = musicDir.canonicalPath
-                        if (canonicalDest.startsWith(canonicalDir + File.separator)) {
-                            if (!destFile.exists()) {
-                                destFile.parentFile?.mkdirs()
-                                FileOutputStream(destFile).use { fos ->
-                                    zis.copyTo(fos)
-                                }
-                            }
+                        val tempFile = File(importTempDir, "entry_$index")
+                        FileOutputStream(tempFile).use { fos ->
+                            zis.copyTo(fos)
                         }
+                        extractedAudio[entry.name] = tempFile
+                        index++
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
                 }
             }
 
-            if (jsonString != null) {
-                val workoutClass = deserializeJsonToClass(jsonString)
-                ClassRepository(context).saveClass(workoutClass)
-                workoutClass
-            } else {
-                null
-            }
+            val jsonStr = jsonString ?: return null
+            val nameMapping = resolveImportedFileNames(extractedAudio, musicDir)
+            var workoutClass = regenerateIds(deserializeJsonToClass(jsonStr))
+            workoutClass = workoutClass.copy(
+                segments = workoutClass.segments.map { seg ->
+                    val resolved = nameMapping[seg.musicFileName]
+                    if (resolved != null && resolved != seg.musicFileName) {
+                        seg.copy(musicFileName = resolved)
+                    } else {
+                        seg
+                    }
+                }
+            )
+
+            ClassRepository(context).saveClass(workoutClass)
+            workoutClass
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        } finally {
+            importTempDir.deleteRecursively()
         }
     }
 
@@ -115,6 +127,70 @@ class RiderClassArchiveService(private val context: Context) {
             zos.putNextEntry(entry)
             FileInputStream(file).use { fis -> fis.copyTo(zos) }
             zos.closeEntry()
+        }
+
+        internal fun regenerateIds(wc: WorkoutClass): WorkoutClass {
+            val newClassId = UUID.randomUUID().toString()
+            val newSegments = wc.segments.map { seg ->
+                val newSegmentId = UUID.randomUUID().toString()
+                seg.copy(
+                    id = newSegmentId,
+                    classId = newClassId,
+                    cues = seg.cues.map { cue ->
+                        cue.copy(id = UUID.randomUUID().toString(), segmentId = newSegmentId)
+                    }
+                )
+            }
+            return wc.copy(id = newClassId, segments = newSegments)
+        }
+
+        internal fun resolveImportedFileNames(extracted: Map<String, File>, musicDir: File): Map<String, String> {
+            if (!musicDir.exists()) musicDir.mkdirs()
+            val existingNames = musicDir.list()?.toMutableSet() ?: mutableSetOf()
+            val mapping = mutableMapOf<String, String>()
+            val canonicalDir = musicDir.canonicalPath
+
+            for ((entryName, tempFile) in extracted) {
+                val requestedDest = File(musicDir, entryName)
+                if (!requestedDest.canonicalPath.startsWith(canonicalDir + File.separator)) {
+                    tempFile.delete()
+                    continue
+                }
+
+                val finalName = when {
+                    !requestedDest.exists() -> entryName
+                    filesAreIdentical(requestedDest, tempFile) -> entryName
+                    else -> resolveUniqueMusicFileName(entryName, existingNames)
+                }
+
+                val finalDest = File(musicDir, finalName)
+                if (!finalDest.exists()) {
+                    tempFile.copyTo(finalDest)
+                }
+                tempFile.delete()
+
+                existingNames.add(finalName)
+                mapping[entryName] = finalName
+            }
+
+            return mapping
+        }
+
+        private fun filesAreIdentical(a: File, b: File): Boolean {
+            if (a.length() != b.length()) return false
+            FileInputStream(a).use { sa ->
+                FileInputStream(b).use { sb ->
+                    val bufA = ByteArray(8192)
+                    val bufB = ByteArray(8192)
+                    while (true) {
+                        val readA = sa.read(bufA)
+                        val readB = sb.read(bufB)
+                        if (readA != readB) return false
+                        if (readA == -1) return true
+                        if (!bufA.copyOfRange(0, readA).contentEquals(bufB.copyOfRange(0, readB))) return false
+                    }
+                }
+            }
         }
 
         fun serializeClassToJson(wc: WorkoutClass): String {

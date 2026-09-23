@@ -6,6 +6,8 @@ struct FitnessRiderApp: App {
     @StateObject private var licenseService = LicenseVerificationService.shared
     @State private var importedClassNotice: String?
     @State private var isShowingImportNotice: Bool = false
+    @State private var importErrorMessage: String?
+    @State private var isShowingImportErrorAlert: Bool = false
 
     init() {
         VersionLifecycleManager.shared.evaluateExpirationOnLaunch()
@@ -28,6 +30,11 @@ struct FitnessRiderApp: App {
                         } message: {
                             Text(importedClassNotice ?? "")
                         }
+                        .alert("匯入失敗", isPresented: $isShowingImportErrorAlert) {
+                            Button("確定", role: .cancel) {}
+                        } message: {
+                            Text(importErrorMessage ?? "")
+                        }
                 }
             }
             .task {
@@ -48,7 +55,8 @@ struct FitnessRiderApp: App {
                 importedClassNotice = "已成功由外部開啟並匯入課表「\(imported.title)」！"
                 isShowingImportNotice = true
             } catch {
-                print("Failed to import external riderclass: \(error)")
+                importErrorMessage = error.localizedDescription
+                isShowingImportErrorAlert = true
             }
         } else if url.pathExtension.lowercased() == "sqlite" {
             do {
