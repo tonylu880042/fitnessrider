@@ -219,6 +219,40 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testRiderClassZipEntryIsStoredWithRealSizesForIosCompat() {
+        val payload = "{\"title\":\"測試課表\"}".toByteArray(Charsets.UTF_8)
+        val output = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(output).use { zos ->
+            RiderClassArchiveService.writeStoredEntry(zos, "workout_class.json", payload)
+        }
+        val zip = output.toByteArray()
+
+        assertEquals(0x50, zip[0].toInt() and 0xFF)
+        assertEquals(0x4b, zip[1].toInt() and 0xFF)
+        assertEquals(0x03, zip[2].toInt() and 0xFF)
+        assertEquals(0x04, zip[3].toInt() and 0xFF)
+
+        val generalPurposeFlag = (zip[6].toInt() and 0xFF) or ((zip[7].toInt() and 0xFF) shl 8)
+        assertEquals("data descriptor bit (bit 3) must not be set", 0, generalPurposeFlag and 0x08)
+
+        val method = (zip[8].toInt() and 0xFF) or ((zip[9].toInt() and 0xFF) shl 8)
+        assertEquals("method must be STORED (0)", 0, method)
+
+        val compressedSize = ((zip[18].toInt() and 0xFF)) or
+            ((zip[19].toInt() and 0xFF) shl 8) or
+            ((zip[20].toInt() and 0xFF) shl 16) or
+            ((zip[21].toInt() and 0xFF) shl 24)
+        val uncompressedSize = ((zip[22].toInt() and 0xFF)) or
+            ((zip[23].toInt() and 0xFF) shl 8) or
+            ((zip[24].toInt() and 0xFF) shl 16) or
+            ((zip[25].toInt() and 0xFF) shl 24)
+
+        assertEquals(payload.size, compressedSize)
+        assertEquals(payload.size, uncompressedSize)
+        assertTrue(compressedSize != 0)
+    }
+
+    @Test
     fun testM4RealtimeCalorieAccumulationAndBounds() {
         val totalClassSec = 3000
         val totalCalories = 500.0

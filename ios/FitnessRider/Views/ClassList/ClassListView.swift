@@ -11,6 +11,8 @@ public struct ClassListView: View {
     @State private var classToDelete: WorkoutClass?
     @State private var isShowingDeleteAlert: Bool = false
     @State private var isWarningDismissed: Bool = false
+    @State private var isShowingShareErrorAlert: Bool = false
+    @State private var shareErrorMessage: String = ""
 
     private var remainingDays: Int {
         VersionLifecycleManager.shared.remainingDays()
@@ -135,6 +137,11 @@ public struct ClassListView: View {
                 }
             } message: {
                 Text("確定要刪除「\(classToDelete?.title ?? "")」嗎？此動作無法復原。")
+            }
+            .alert("課表匯出失敗", isPresented: $isShowingShareErrorAlert) {
+                Button("確定", role: .cancel) {}
+            } message: {
+                Text(shareErrorMessage)
             }
         }
     }
@@ -293,7 +300,8 @@ public struct ClassListView: View {
             self.shareURL = fileURL
             self.isShowingShareSheet = true
         } catch {
-            print("Failed to export riderclass: \(error)")
+            shareErrorMessage = error.localizedDescription
+            isShowingShareErrorAlert = true
         }
     }
 }

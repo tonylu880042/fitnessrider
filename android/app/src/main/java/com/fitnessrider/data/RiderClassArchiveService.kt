@@ -5,6 +5,7 @@ import com.fitnessrider.model.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.*
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -21,23 +22,13 @@ class RiderClassArchiveService(private val context: Context) {
             val zipFile = File(exportDir, "$sanitizedTitle.riderclass")
 
             ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-                val jsonString = serializeClassToJson(workoutClass)
-                val jsonEntry = ZipEntry("workout_class.json")
-                zos.putNextEntry(jsonEntry)
-                zos.write(jsonString.toByteArray(Charsets.UTF_8))
-                zos.closeEntry()
+                val jsonBytes = serializeClassToJson(workoutClass).toByteArray(Charsets.UTF_8)
+                writeStoredEntry(zos, "workout_class.json", jsonBytes)
 
-                for (seg in workoutClass.segments) {
-                    if (seg.musicFileName.isNotBlank()) {
-                        val audioFile = File(musicDir, seg.musicFileName)
-                        if (audioFile.exists()) {
-                            val audioEntry = ZipEntry(seg.musicFileName)
-                            zos.putNextEntry(audioEntry)
-                            FileInputStream(audioFile).use { fis ->
-                                fis.copyTo(zos)
-                            }
-                            zos.closeEntry()
-                        }
+                for (fileName in workoutClass.segments.map { it.musicFileName }.filter { it.isNotBlank() }.distinct()) {
+                    val audioFile = File(musicDir, fileName)
+                    if (audioFile.exists()) {
+                        writeStoredEntry(zos, fileName, audioFile)
                     }
                 }
             }
@@ -91,6 +82,41 @@ class RiderClassArchiveService(private val context: Context) {
     }
 
     companion object {
+        internal fun writeStoredEntry(zos: ZipOutputStream, name: String, bytes: ByteArray) {
+            val crc = CRC32()
+            crc.update(bytes)
+            val entry = ZipEntry(name)
+            entry.method = ZipEntry.STORED
+            entry.size = bytes.size.toLong()
+            entry.compressedSize = bytes.size.toLong()
+            entry.crc = crc.value
+            zos.putNextEntry(entry)
+            zos.write(bytes)
+            zos.closeEntry()
+        }
+
+        private fun writeStoredEntry(zos: ZipOutputStream, name: String, file: File) {
+            val crc = CRC32()
+            var size = 0L
+            FileInputStream(file).use { fis ->
+                val buffer = ByteArray(8192)
+                var read = fis.read(buffer)
+                while (read >= 0) {
+                    crc.update(buffer, 0, read)
+                    size += read
+                    read = fis.read(buffer)
+                }
+            }
+            val entry = ZipEntry(name)
+            entry.method = ZipEntry.STORED
+            entry.size = size
+            entry.compressedSize = size
+            entry.crc = crc.value
+            zos.putNextEntry(entry)
+            FileInputStream(file).use { fis -> fis.copyTo(zos) }
+            zos.closeEntry()
+        }
+
         fun serializeClassToJson(wc: WorkoutClass): String {
             val root = JSONObject()
             root.put("id", wc.id)

@@ -1,9 +1,13 @@
 package com.fitnessrider
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.fitnessrider.audio.AudioEngineManager
 import com.fitnessrider.data.ClassRepository
@@ -17,7 +21,9 @@ import com.fitnessrider.ui.expiration.VersionExpiredScreen
 import com.fitnessrider.ui.hud.WorkoutHUDScreen
 import com.fitnessrider.ui.settings.SettingsScreen
 import com.fitnessrider.util.VersionLifecycleManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -111,7 +117,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onShareClick = {
                                     lifecycleScope.launch {
-                                        archiveService.exportRiderClass(it)
+                                        val exported = withContext(Dispatchers.IO) { archiveService.exportRiderClass(it) }
+                                        if (exported != null) {
+                                            shareRiderClassFile(this@MainActivity, exported)
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "課表匯出失敗", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 },
                                 onDeleteClick = {
@@ -166,5 +177,20 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         audioEngine.release()
+    }
+}
+
+private fun shareRiderClassFile(context: Context, file: File) {
+    try {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "分享課表包"))
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "課表匯出失敗", Toast.LENGTH_SHORT).show()
     }
 }

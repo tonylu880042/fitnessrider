@@ -146,6 +146,88 @@ final class FitnessRiderTests: XCTestCase {
         ClassRepository.shared.deleteClass(byId: unpacked.id)
     }
 
+    private func buildStoredZipLocalHeader(name: String, data: Data) -> Data {
+        let fileNameBytes = [UInt8](name.utf8)
+        let fileNameLength = UInt16(fileNameBytes.count)
+        let size = UInt32(data.count)
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                let mask = (crc & 1) != 0 ? UInt32(0xEDB88320) : 0
+                crc = (crc >> 1) ^ mask
+            }
+        }
+        crc = ~crc
+
+        var header = Data()
+        header.append(contentsOf: [0x50, 0x4b, 0x03, 0x04])
+        header.append(contentsOf: [0x14, 0x00])
+        header.append(contentsOf: [0x00, 0x00])
+        header.append(contentsOf: [0x00, 0x00])
+        header.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        header.append(contentsOf: withUnsafeBytes(of: crc.littleEndian) { Array($0) })
+        header.append(contentsOf: withUnsafeBytes(of: size.littleEndian) { Array($0) })
+        header.append(contentsOf: withUnsafeBytes(of: size.littleEndian) { Array($0) })
+        header.append(contentsOf: withUnsafeBytes(of: fileNameLength.littleEndian) { Array($0) })
+        header.append(contentsOf: [0x00, 0x00])
+        header.append(contentsOf: fileNameBytes)
+        header.append(data)
+        return header
+    }
+
+    func testImportDecodesAndroidStyleStoredZipFixture() throws {
+        let testClass = WorkoutClass(
+            id: UUID(),
+            title: "Android 產出的課表",
+            author: "Coach Android",
+            createdAt: Date(),
+            totalDurationMs: 300000,
+            estimatedCalories: 80.0,
+            segments: [
+                WorkoutSegment(
+                    id: UUID(),
+                    title: "跨平台相容段落",
+                    musicFileName: "fixture_track.mp3",
+                    durationMs: 300000,
+                    baseBpm: 120.0,
+                    playbackRate: 1.0,
+                    intensityZone: 2,
+                    cues: []
+                )
+            ]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let jsonData = try encoder.encode(testClass)
+        let audioData = Data([0x49, 0x44, 0x33, 0x03, 0x00, 0x01, 0x02, 0x03])
+
+        var fixtureZip = Data()
+        fixtureZip.append(buildStoredZipLocalHeader(name: "workout_class.json", data: jsonData))
+        fixtureZip.append(buildStoredZipLocalHeader(name: "fixture_track.mp3", data: audioData))
+
+        let fixtureURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).riderclass")
+        try fixtureZip.write(to: fixtureURL)
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+
+        let archiveService = RiderClassArchiveService.shared
+        let decoded = try archiveService.importRiderClass(from: fixtureURL)
+
+        XCTAssertEqual(decoded.title, "Android 產出的課表")
+        XCTAssertEqual(decoded.segments.count, 1)
+        XCTAssertEqual(decoded.segments.first?.musicFileName, "fixture_track.mp3")
+
+        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+        let importedAudioURL = musicDir.appendingPathComponent("fixture_track.mp3")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedAudioURL.path))
+        XCTAssertEqual(try Data(contentsOf: importedAudioURL), audioData)
+
+        try? FileManager.default.removeItem(at: importedAudioURL)
+        ClassRepository.shared.deleteClass(byId: decoded.id)
+    }
+
     @MainActor
     func testTempoClampingAndPercentageStepping() {
         let audio = AudioEngineManager.shared
