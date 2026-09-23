@@ -215,3 +215,42 @@ LLM 看到資料會把刻意的產品決策當成 bug 報，這些要先講清�
   否則它百分之百會「好心」告訴教練總時長算錯了。
 - 語氣是「觀察」不是「錯誤」。對教了二十年的教練說「你這堂課設計有問題」是 UX 地雷。
 - 講評永遠不能擋住儲存，只是附加資訊。
+
+## 開發清單：Paywall（M7）第一階段——不依賴商店的部分
+
+App Store Connect／Google Play Console／RevenueCat 的訂閱商品都還沒設定（2026-09-23 確認），
+沒有商品 ID 就寫不出可測的 IAP 流程。所以第一階段只做「商品 ID 出來之後不必重寫」的部分，
+**不要引入 RevenueCat SDK，也不要先蓋一層假的購買抽象層**——沒有真的購買系統可接。
+
+### P1. Webhook 身分解析（後端，現在就能做完並測試）
+
+`/api/webhooks/revenuecat` 目前拿 `app_user_id` 去 `getUserById`／`getUserByEmail`，
+但**純試用的裝置在後端沒有 user row**：`/api/auth/register` 從來沒被 App 呼叫過，
+合成帳號 `coach_xxxxxxxx@fitnessrider.local` 只有在 `activateLicenseWithCode`
+（輸入代碼）時才會建立。從沒輸過代碼、直接付費的教練會走到 `User not found`，
+log 一行警告然後回 200——錢收了、授權沒開。
+
+- **`app_user_id` 一律用 `device_fingerprint`**。這是沒有帳號系統前提下唯一對得起來的識別。
+- Webhook 改為經 `devices` 表反查 `user_id`；查不到就沿用 `activateLicenseWithCode`
+  既有那段建立合成 user ＋ 綁定 device，不要另寫一套建立流程。
+- 為了相容，舊的 `getUserById`／email 查法保留當 fallback。
+- 測試寫在 `backend/src/lib/*.test.mjs`（`node:test` 可直接 import `.ts`；
+  未設 `DATABASE_URL` 時 `db.ts` 走本機 JSON 模式）。不要引入新測試框架。
+
+### P2. 付費牆畫面（雙端）
+
+到期畫面目前只給「輸入推廣代碼」，沒有任何地方說明 VIP 是什麼、多少錢。
+
+- 三檔方案卡片（spec M7.1）：月繳 NT$390、季繳 NT$890、年繳 NT$2,390，
+  年繳標「🔥 飛輪教練首選・現省 NT$2,290」。
+- 列出權益：無限課表建立、無損變速播放、全功能 HUD、課表備份匯出。
+- 入口：到期畫面「試用結束」那條路徑，以及設定頁。
+- **價格只放在每端一個常數裡**，不要散在 UI 文字中——商店設定好之後價格可能會調。
+- **CTA 指向現有的序號輸入流程**，因為今天只有這條路能真的開通。
+  不要做假的購買按鈕，也不要做「即將推出」的死按鈕。
+
+### 之後（商店設定好才能做）
+
+接 RevenueCat SDK、三檔商品 ID、購買與恢復購買流程。
+注意 iOS 上架後，App 內解鎖數位功能一律要走 IAP（Apple Guideline 3.1.1），
+屆時「聯繫取得序號」這條路在 iOS 版可能要收掉或改寫。
