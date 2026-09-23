@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { db } from '@/lib/db';
+import type { User } from '@/lib/types';
+
+async function resolveUserForAppUserId(appUserId: string): Promise<User> {
+  const device = await db.getDeviceByFingerprint(appUserId);
+  if (device) {
+    const user = await db.getUserById(device.user_id);
+    if (user) {
+      return user;
+    }
+  }
+
+  let user = await db.getUserById(appUserId);
+  if (!user && appUserId.includes('@')) {
+    user = await db.getUserByEmail(appUserId);
+  }
+  if (user) {
+    return user;
+  }
+
+  return db.getOrCreateUserForDevice(appUserId);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,15 +46,11 @@ export async function POST(req: NextRequest) {
     const { type, app_user_id, product_id, expiration_at_ms, entitlement_id } = event;
     console.log(`[RevenueCat Webhook] Type: ${type}, AppUserID: ${app_user_id}, Product: ${product_id}`);
 
-    let user = await db.getUserById(app_user_id);
-    if (!user && app_user_id.includes('@')) {
-      user = await db.getUserByEmail(app_user_id);
+    if (typeof app_user_id !== 'string' || app_user_id.trim() === '') {
+      return NextResponse.json({ error: 'Missing app_user_id' }, { status: 400 });
     }
 
-    if (!user) {
-      console.warn(`[RevenueCat Webhook] User not found for app_user_id: ${app_user_id}`);
-      return NextResponse.json({ message: 'User not found, acknowledged' }, { status: 200 });
-    }
+    const user = await resolveUserForAppUserId(app_user_id);
 
     let planType: 'monthly' | 'quarterly' | 'yearly' = 'yearly';
     if (product_id?.toLowerCase().includes('month')) {

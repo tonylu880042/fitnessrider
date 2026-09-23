@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { Pool } from 'pg';
-import { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
+import type { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
 import { PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
 import { verifyVipSerial } from './vipSerial';
 
@@ -476,7 +476,7 @@ export const db = {
       return { success: false, error: '無效的授權序號或推廣代碼', error_code: 'INVALID_CODE' };
     }
 
-    let dev = await this.getDeviceByFingerprint(deviceFingerprint);
+    const dev = await this.getDeviceByFingerprint(deviceFingerprint);
     let userId = dev?.user_id;
 
     if (isPromo && userId) {
@@ -543,20 +543,8 @@ export const db = {
     }
 
     if (!userId) {
-      userId = crypto.randomUUID();
-      await this.createUser({
-        id: userId,
-        email: `coach_${deviceFingerprint.slice(0, 8)}@fitnessrider.local`,
-        password_hash: 'local_license_auth',
-        name: '飛輪教練',
-      });
-      dev = await this.bindDevice({
-        id: crypto.randomUUID(),
-        user_id: userId,
-        device_fingerprint: deviceFingerprint,
-        platform: platform,
-        device_model: deviceModel,
-      });
+      const newUser = await this.getOrCreateUserForDevice(deviceFingerprint, platform, deviceModel);
+      userId = newUser.id;
     }
 
     if (isPromo) {
@@ -596,6 +584,36 @@ export const db = {
       trial_days: durationDays,
       ...(deviceSecret ? { device_secret: deviceSecret } : {}),
     };
+  },
+
+  async getOrCreateUserForDevice(
+    deviceFingerprint: string,
+    platform: 'ios' | 'android' = 'ios',
+    deviceModel: string = 'Coach Device'
+  ): Promise<User> {
+    const existingDevice = await this.getDeviceByFingerprint(deviceFingerprint);
+    if (existingDevice) {
+      const existingUser = await this.getUserById(existingDevice.user_id);
+      if (existingUser) {
+        return existingUser;
+      }
+    }
+
+    const userId = crypto.randomUUID();
+    const newUser = await this.createUser({
+      id: userId,
+      email: `coach_${deviceFingerprint.slice(0, 8)}@fitnessrider.local`,
+      password_hash: 'local_license_auth',
+      name: '飛輪教練',
+    });
+    await this.bindDevice({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      device_fingerprint: deviceFingerprint,
+      platform,
+      device_model: deviceModel,
+    });
+    return newUser;
   },
 
   async bindDevice(device: {
