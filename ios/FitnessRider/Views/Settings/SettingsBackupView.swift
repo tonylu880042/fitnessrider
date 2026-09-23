@@ -16,6 +16,7 @@ public struct SettingsBackupView: View {
     @State private var isShowingAlert: Bool = false
     @State private var isShowingActivationAlert: Bool = false
     @State private var isShowingDeviceTransferSheet: Bool = false
+    @State private var isShowingPaywallSheet: Bool = false
     @State private var licenseCodeInput: String = ""
     @State private var isCopiedDeviceId: Bool = false
 
@@ -91,6 +92,14 @@ public struct SettingsBackupView: View {
                     }
 
                     Button {
+                        isShowingPaywallSheet = true
+                    } label: {
+                        Label("查看 VIP 付費方案與價格", systemImage: "creditcard.fill")
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .fontWeight(.semibold)
+                    }
+
+                    Button {
                         isShowingActivationAlert = true
                     } label: {
                         Label("輸入授權碼開通 / 啟用 VIP", systemImage: "key.fill")
@@ -161,6 +170,11 @@ public struct SettingsBackupView: View {
             }
             .sheet(isPresented: $isShowingDeviceTransferSheet) {
                 DeviceTransferSheet()
+            }
+            .sheet(isPresented: $isShowingPaywallSheet) {
+                PaywallView {
+                    isShowingActivationAlert = true
+                }
             }
             .fileImporter(
                 isPresented: $isShowingRestorePicker,

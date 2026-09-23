@@ -13,6 +13,7 @@ public struct VersionExpiredView: View {
 
     @State private var isShowingActivationAlert: Bool = false
     @State private var isShowingDeviceTransferSheet: Bool = false
+    @State private var isShowingPaywallSheet: Bool = false
     @State private var enteredLicenseCode: String = ""
     @State private var statusAlertMessage: String = ""
     @State private var isShowingStatusAlert: Bool = false
@@ -142,6 +143,20 @@ public struct VersionExpiredView: View {
                         }
 
                         Button {
+                            isShowingPaywallSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "creditcard.fill")
+                                    .font(.system(size: 14))
+                                Text("查看 VIP 付費方案與價格")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                        }
+
+                        Button {
                             isShowingDeviceTransferSheet = true
                         } label: {
                             HStack(spacing: 6) {
@@ -191,6 +206,11 @@ public struct VersionExpiredView: View {
         }
         .sheet(isPresented: $isShowingDeviceTransferSheet) {
             DeviceTransferSheet()
+        }
+        .sheet(isPresented: $isShowingPaywallSheet) {
+            PaywallView {
+                isShowingActivationAlert = true
+            }
         }
         .alert("輸入授權序號或推廣代碼", isPresented: $isShowingActivationAlert) {
             TextField("如: 26FR-NR 或 FRVIP-...", text: $enteredLicenseCode)

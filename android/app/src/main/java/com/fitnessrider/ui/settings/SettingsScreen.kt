@@ -28,6 +28,7 @@ import com.fitnessrider.data.SQLiteBackupService
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
+import com.fitnessrider.ui.paywall.PaywallScreen
 import com.fitnessrider.util.VersionLifecycleManager
 import kotlinx.coroutines.launch
 
@@ -50,6 +51,7 @@ fun SettingsScreen(
     var notificationMessage by remember { mutableStateOf<String?>(null) }
     var showActivationDialog by remember { mutableStateOf(false) }
     var showDeviceTransferDialog by remember { mutableStateOf(false) }
+    var showPaywall by remember { mutableStateOf(false) }
     var enteredLicenseCode by remember { mutableStateOf("") }
     var activationError by remember { mutableStateOf<String?>(null) }
 
@@ -255,16 +257,26 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Button(
+                        onClick = { showPaywall = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text(text = "💳 查看 VIP 付費方案與價格", fontSize = 13.sp, color = Color.White)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
                         onClick = {
                             enteredLicenseCode = ""
                             activationError = null
                             showActivationDialog = true
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().height(40.dp)
                     ) {
-                        Text(text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天試用)", fontSize = 13.sp, color = Color.White)
+                        Text(text = "🔑 輸入授權序號 / 課程代碼 (兌換 30 天試用)", fontSize = 13.sp, color = TopBarGreenDark)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -376,6 +388,18 @@ fun SettingsScreen(
             licenseService = licenseService,
             onTransferSuccess = { msg ->
                 notificationMessage = msg
+            }
+        )
+    }
+
+    if (showPaywall) {
+        PaywallScreen(
+            onDismiss = { showPaywall = false },
+            onActivateClick = {
+                showPaywall = false
+                enteredLicenseCode = ""
+                activationError = null
+                showActivationDialog = true
             }
         )
     }

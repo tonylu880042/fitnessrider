@@ -47,6 +47,8 @@
 		F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */; };
 		F4A47D9E5A3913DEE93C69D7 /* CueAudioBeepPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */; };
 		F625B8B33957A4FADE25A1F0 /* CueEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA526D599B28D6FC985A6C56 /* CueEditorSheet.swift */; };
+		3451D61783704A059106144E /* PaywallPricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22E38797308C414193531D9C /* PaywallPricing.swift */; };
+		809AF88583354666A433D3C6 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D624C28052B849FA8C3670AA /* PaywallView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +105,8 @@
 		F32B11B64F4439AEE54F16E8 /* FitnessRiderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessRiderApp.swift; sourceTree = "<group>"; };
 		F7E6D9CA3BF3DD5B1F033E0B /* PostureType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostureType.swift; sourceTree = "<group>"; };
 		FE803BA7F2F5F2C4055C80FC /* SQLiteBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLiteBackupService.swift; sourceTree = "<group>"; };
+		22E38797308C414193531D9C /* PaywallPricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallPricing.swift; sourceTree = "<group>"; };
+		D624C28052B849FA8C3670AA /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +179,7 @@
 				E92BD3C95326013660D39116 /* AppSettings.swift */,
 				239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */,
 				CB5B98767E33F68C6567AB2C /* HandPosition.swift */,
+				22E38797308C414193531D9C /* PaywallPricing.swift */,
 				F7E6D9CA3BF3DD5B1F033E0B /* PostureType.swift */,
 				5212617614AF55277248379B /* WorkoutClass.swift */,
 				998E959DCF787BBF19BA2073 /* WorkoutCue.swift */,
@@ -259,9 +264,18 @@
 				897734ED20D615ED61DB6E2E /* ClassList */,
 				2AB5ADA3A64ADC8CB71F9231 /* Components */,
 				0523801649F5B621E4843723 /* ExecutionHUD */,
+				D9D5A195935A4278A6E9FCF5 /* Paywall */,
 				D3B6CD31CA67792501095328 /* Settings */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		D9D5A195935A4278A6E9FCF5 /* Paywall */ = {
+			isa = PBXGroup;
+			children = (
+				D624C28052B849FA8C3670AA /* PaywallView.swift */,
+			);
+			path = Paywall;
 			sourceTree = "<group>";
 		};
 		AC32A99D889F7BCA354AB10B /* Audio */ = {
@@ -409,6 +423,8 @@
 				71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */,
 				D62CDA980EA2491E94FBE6E0 /* MusicLibraryView.swift in Sources */,
 				B704D086609C03463C22B955 /* MusicSource.swift in Sources */,
+				3451D61783704A059106144E /* PaywallPricing.swift in Sources */,
+				809AF88583354666A433D3C6 /* PaywallView.swift in Sources */,
 				A2A878EF73458BFC8E24215E /* PostureType.swift in Sources */,
 				AC5F464F895A6D039612C850 /* RiderClassArchiveService.swift in Sources */,
 				52FB471677D3FFFB4E4A3F52 /* SQLiteBackupService.swift in Sources */,

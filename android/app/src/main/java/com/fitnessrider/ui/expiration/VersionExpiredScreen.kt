@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fitnessrider.theme.*
+import com.fitnessrider.ui.paywall.PaywallScreen
 import com.fitnessrider.util.VersionLifecycleManager
 import kotlinx.coroutines.launch
 
@@ -51,6 +52,7 @@ fun VersionExpiredScreen(
     var showBrowserlessDialog by remember { mutableStateOf(false) }
     var showActivationDialog by remember { mutableStateOf(false) }
     var showDeviceTransferDialog by remember { mutableStateOf(false) }
+    var showPaywall by remember { mutableStateOf(false) }
     var enteredLicenseCode by remember { mutableStateOf("") }
     var activationStatusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -212,6 +214,20 @@ fun VersionExpiredScreen(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { showPaywall = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                    ) {
+                        Text(
+                            text = "💳 查看 VIP 付費方案與價格",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TopBarGreenDark
                         )
                     }
 
@@ -420,6 +436,16 @@ fun VersionExpiredScreen(
             onTransferSuccess = { msg ->
                 activationStatusMessage = msg
                 onUnlocked?.invoke()
+            }
+        )
+    }
+
+    if (showPaywall) {
+        PaywallScreen(
+            onDismiss = { showPaywall = false },
+            onActivateClick = {
+                showPaywall = false
+                showActivationDialog = true
             }
         )
     }

@@ -1283,6 +1283,21 @@ class FitnessRiderAndroidTest {
         assertEquals(0, segmentStepForSwipe(100f, 120f, segmentThreshold))
     }
 
+    @Test
+    fun testPaywallPricingMatchesSpecAndYearlySavingsArithmetic() {
+        assertEquals(390, PaywallPricing.MONTHLY_PRICE_TWD)
+        assertEquals(890, PaywallPricing.QUARTERLY_PRICE_TWD)
+        assertEquals(2390, PaywallPricing.YEARLY_PRICE_TWD)
+        assertEquals(2290, PaywallPricing.YEARLY_SAVINGS_TWD)
+        assertEquals(
+            PaywallPricing.MONTHLY_PRICE_TWD * 12 - PaywallPricing.YEARLY_PRICE_TWD,
+            PaywallPricing.YEARLY_SAVINGS_TWD
+        )
+        assertEquals("NT$2,390", PaywallPricing.formatTwd(PaywallPricing.YEARLY_PRICE_TWD))
+        assertEquals("NT$390", PaywallPricing.formatTwd(PaywallPricing.MONTHLY_PRICE_TWD))
+        org.junit.Assert.assertTrue(PaywallPricing.YEARLY_BADGE_TEXT.contains("NT$2,290"))
+    }
+
     private class FakeSharedPreferences : android.content.SharedPreferences {
         val data = mutableMapOf<String, Any?>()
         override fun getAll(): MutableMap<String, *> = data

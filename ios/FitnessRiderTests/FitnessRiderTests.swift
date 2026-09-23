@@ -1168,5 +1168,19 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(rateStepForSwipe(dx: 100, dy: 120, threshold: 60), 0)
         XCTAssertEqual(segmentStepForSwipe(dx: 100, dy: 120, threshold: 80), 0)
     }
+
+    func testPaywallPricingMatchesSpecAndYearlySavingsArithmetic() {
+        XCTAssertEqual(PaywallPricing.monthlyPriceTWD, 390)
+        XCTAssertEqual(PaywallPricing.quarterlyPriceTWD, 890)
+        XCTAssertEqual(PaywallPricing.yearlyPriceTWD, 2390)
+        XCTAssertEqual(PaywallPricing.yearlySavingsTWD, 2290)
+        XCTAssertEqual(
+            PaywallPricing.monthlyPriceTWD * 12 - PaywallPricing.yearlyPriceTWD,
+            PaywallPricing.yearlySavingsTWD
+        )
+        XCTAssertEqual(PaywallPricing.formatTwd(PaywallPricing.yearlyPriceTWD), "NT$2,390")
+        XCTAssertEqual(PaywallPricing.formatTwd(PaywallPricing.monthlyPriceTWD), "NT$390")
+        XCTAssertTrue(PaywallPricing.yearlyBadgeText.contains("NT$2,290"))
+    }
 }
 
