@@ -1192,7 +1192,7 @@ final class FitnessRiderTests: XCTestCase {
     @MainActor
     func testCrossfadeOptionsSecondsMatchAcrossPlatforms() {
         let options = AppSettings.crossfadeOptionsSeconds
-        XCTAssertEqual(options, [0.0, 1.0, 2.0, 3.0, 5.0, 8.0])
+        XCTAssertEqual(options, [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 15.0])
         XCTAssertTrue(options.contains(2.0), "預設值 2 秒必須仍是合法選項之一")
     }
 

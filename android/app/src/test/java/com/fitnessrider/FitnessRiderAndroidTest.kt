@@ -1089,7 +1089,7 @@ class FitnessRiderAndroidTest {
     @Test
     fun testCrossfadeOptionsSecondsMatchAcrossPlatforms() {
         val options = AppSettings.CROSSFADE_OPTIONS_SECONDS
-        assertEquals(listOf(0.0, 1.0, 2.0, 3.0, 5.0, 8.0), options)
+        assertEquals(listOf(0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 15.0), options)
         org.junit.Assert.assertTrue("預設值 2 秒必須仍是合法選項之一", options.contains(2.0))
     }
 

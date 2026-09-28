@@ -28,7 +28,7 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 ## 已知落差（已修復對齊）
 
 - **iOS 編輯器的段落試聽（已對齊）**：`ClassEditorView.startPreview` 已全面引入 `AVAudioPlayer` 真實放音，支援變速不變調、即時波形 Scrubbing 與結束自動重置，與 Android 的 `ExoPlayer` 達成完全功能對等。
-- **雙平台曲目切換平滑轉場 (Crossfade)（已對齊）**：雙端均採用雙軌／雙 Deck 架構（iOS `AVAudioEngine` 雙 `AudioDeck`；Android 雙 `ExoPlayer`），實現 1~8 秒等能量（Equal-Power: $\cos$ fade-out, $\sin$ fade-in）平滑交錯淡入淡出，並與「段落結束自動暫停 (Auto-Pause)」嚴格互斥，雙端設定提供 0s / 1s / 2s / 3s / 5s / 8s 設定。
+- **雙平台曲目切換平滑轉場 (Crossfade)（已對齊）**：雙端均採用雙軌／雙 Deck 架構（iOS `AVAudioEngine` 雙 `AudioDeck`；Android 雙 `ExoPlayer`），實現 1~8 秒等能量（Equal-Power: $\cos$ fade-out, $\sin$ fade-in）平滑交錯淡入淡出，並與「段落結束自動暫停 (Auto-Pause)」嚴格互斥，雙端設定提供 0s / 1s / 2s / 3s / 5s / 8s / 10s / 15s 設定（2026-09-28 加長，見下方「開發清單：Crossfade 加長＋手動換曲淡入淡出」）。
 
 ## 產品決策（不要當成 bug 修掉）
 
@@ -122,7 +122,7 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
 
 - Android：`ui/settings/SettingsScreen.kt:147` 的 `options` 清單（目前 0/1/2/3）。
 - iOS：`Views/Settings/SettingsBackupView.swift:38` 的 `Picker` tag（同上）。
-- **選項定案：0 / 1 / 2 / 3 / 5 / 8 秒**，兩端必須完全一致，預設仍為 2 秒；
+- **選項定案：0 / 1 / 2 / 3 / 5 / 8 秒**（2026-09-28 再加 10 / 15，見 C1），兩端必須完全一致，預設仍為 2 秒；
   與「段落結束自動暫停」互斥的規則不變。
 - 六個選項塞不進 Android 現在的橫向等寬按鈕排，改成兩排（3+3）。
 
@@ -142,6 +142,59 @@ FitnessRider — 飛輪課表編排與課堂中控，雙原生（`android/` Kotl
   中間還留有斜向安全死區（垂直大於水平但不到 1.5 倍時兩者都不觸發）。
   判斷邏輯在雙端同名純函式 `rateStepForSwipe` / `segmentStepForSwipe`，有互斥性測試把關。
 - 換曲原本就有按鈕（Android `:222`/`:243`、iOS `:227`/`:267`），沒有因此失去功能。
+
+## 開發清單：Crossfade 加長＋手動換曲淡入淡出（2026-09-28 教練回報）
+
+教練原話：「很多音樂的前奏和結尾空白太多，建議拉至 15」；「左邊音樂名稱欄直接按的話，好像沒有淡入淡出」。
+兩個單元依序做，**C1 完成並 commit 前不要動 C2**（都會碰雙端 `AppSettings`／測試檔）。
+
+### C1 — 選項加到 15 秒
+
+- 選項改為 **0 / 1 / 2 / 3 / 5 / 8 / 10 / 15**：保留舊值（教練已存的設定不能失效），只往後加。預設仍 2 秒。
+- Android `AppSettings.CROSSFADE_OPTIONS_SECONDS`、iOS `AppSettings.crossfadeOptionsSeconds`；
+  雙端 `testCrossfadeOptionsSecondsMatchAcrossPlatforms` 同步改。
+- Android `SettingsScreen.kt` 的 `chunked(3)` 改 `chunked(4)`（8 顆 → 4＋4）。
+- 引擎不用動：`effectiveDuration` 已 clamp 在段落長度一半。
+
+### C2 — 手動換曲也淡入淡出
+
+現況：只有「段落自然播完」會 crossfade。以下手動換曲全是硬切（`cancelCrossfade` → 重新載入）：
+HUD 左側清單點選（Android `WorkoutHUDScreen.kt:286`、iOS `WorkoutHUDView.swift:327`，呼叫 `loadClass(…, index)`）、
+上一首／下一首按鈕、垂直滑動換曲、iOS 鎖定畫面遠端控制（`AudioEngineManager.swift` 的 remote command）。
+
+**產品決策（2026-09-28 Tony 定案）**：
+- **所有手動換曲都淡入淡出**，範圍如上。「上一首」在播放超過 3 秒時回到本曲開頭，仍是直接 seek，不淡。
+- **秒數完全沿用設定值**（設 15 秒就淡 15 秒），同樣經 `effectiveDuration` clamp 在「目標段落長度的一半」，
+  與「段落結束自動暫停」互斥（開啟時一律硬切）。
+- **暫停中換曲 → 硬切**（沒有聲音可淡）。點清單在暫停中會開始播放，這個既有行為保留，但從目標段落直接開始、不淡入。
+
+**行為模型：「立即切換＋舊曲尾巴」**，不要沿用自動 crossfade 的「淡完才換 index」模型：
+- 手動換曲當下，引擎狀態（`currentSegmentIndex`、目前段落、時長、進度、速率、Cue）**立刻**變成目標段落，
+  HUD 清單反白立刻跟著走。教練點了歌卻要等 15 秒反白才移動會以為沒按到。
+- 做法：目前的 active 播放器／deck 降級為「尾巴」，目標段落載到另一個播放器／deck、音量 0 從頭播，
+  並成為新的 active。之後依**經過的時間**（不是舊曲剩餘時間）算 progress = elapsed / D，
+  套既有 `equalPowerVolumes`：尾巴 fadeOut、新曲 fadeIn；progress 到 1 時尾巴停止並清掉。
+- 尾巴的「播放結束」回呼一律忽略（Android 靠 `CrossfadeFinishCoordinator` 的 active index 檢查、
+  iOS 靠 `handleTrackBufferFinished` 的 `deckId == activeDeck.id` 檢查——換 active 後舊的自然被擋掉）。
+  Android 需要在 coordinator 加一個「交換 active 播放器但不動 segment index 規則」的入口，別繞過它自己改 index。
+- 淡入淡出途中：
+  - 暫停 → 尾巴與新曲一起暫停；繼續 → 一起繼續，elapsed 不含暫停時間。
+  - 再次手動換曲 → 舊尾巴立刻停掉，目前的 active 成為新尾巴，重新開始計時。
+  - seek／`loadClass`／離開 HUD → 尾巴立刻停掉，音量復原 1.0。
+  - 若自動 crossfade 的觸發條件在尾巴還沒淡完時成立 → 先停掉尾巴再開始自動 crossfade（實務上 clamp 一半長度後不會碰到，但要保證不會三軌同響）。
+  - 手動換曲時若自動 crossfade 正在進行 → 先 `cancelCrossfade()` 再照上面流程。
+- 目標段落沒有音檔（檔案不存在）時：照常切換並把舊曲當尾巴淡出，新曲那邊沒聲音即可，不能崩潰。
+- 速率：新 active 用目標段落的 `playbackRate`；尾巴保留原速率直到停止。
+
+**API 形狀**：雙端引擎各加一個 `jumpToSegment(index)`（iOS 同名），內部決定淡或硬切；
+`nextSegment`／`previousSegment` 改呼叫它；HUD 清單改呼叫 `jumpToSegment(index)` 然後 `play()`，
+不再用 `loadClass` 換曲（`loadClass` 只留給進入 HUD 時載入課表）。
+
+**測試（雙端同名純函式＋測試）**：
+- `manualJumpFadeDuration(requestedDuration, targetSegmentDuration, isAutoPauseEnabled, isPlaying)`：
+  暫停中→0、自動暫停開→0、設定 0→0、正常→min(設定, 目標長度一半)、15 秒設定配 20 秒段落→10。
+  放在 `CrossfadeCalculator` 裡，內部重用 `effectiveDuration`。
+- Android：coordinator 的「交換 active」後，舊播放器 index 的 track-ended 被拒絕、新的被接受，segment index 等於目標。
 
 ## 開發清單：編輯器段落清單（spec M1.2 補完）
 

@@ -145,7 +145,7 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            AppSettings.CROSSFADE_OPTIONS_SECONDS.chunked(3).forEach { rowOptions ->
+                            AppSettings.CROSSFADE_OPTIONS_SECONDS.chunked(4).forEach { rowOptions ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
