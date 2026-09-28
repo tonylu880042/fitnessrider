@@ -283,7 +283,7 @@ fun WorkoutHUDScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        audioManager.loadClass(workoutClass, index)
+                                        audioManager.jumpToSegment(index)
                                         audioManager.play()
                                     }
                                     .background(if (isCurrent) TopBarGreen.copy(alpha = 0.12f) else Color.Transparent)

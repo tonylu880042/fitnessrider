@@ -21,6 +21,25 @@ public struct CrossfadeCalculator: Sendable {
         }
         return min(requestedDuration, segmentDuration * 0.5)
     }
+
+    public static func manualJumpFadeDuration(
+        requestedDuration: Double,
+        targetSegmentDuration: Double,
+        isAutoPauseEnabled: Bool,
+        isPlaying: Bool
+    ) -> Double {
+        guard isPlaying else { return 0.0 }
+        return effectiveDuration(
+            requestedDuration: requestedDuration,
+            segmentDuration: targetSegmentDuration,
+            isAutoPauseEnabled: isAutoPauseEnabled
+        )
+    }
+
+    public static func manualTailVolume(startVolume: Float, progress: Double) -> Float {
+        let (fadeOut, _) = equalPowerVolumes(progress: progress)
+        return startVolume * fadeOut
+    }
 }
 
 @MainActor
@@ -106,6 +125,16 @@ public final class AudioEngineManager: ObservableObject {
     private var lastTriggeredCueId: UUID?
     private var lastBeepSecond: Int = -1
 
+    private var manualTailDeckIndex: Int?
+    private var manualTailDuration: Double = 0.0
+    private var manualTailElapsed: Double = 0.0
+    private var manualTailStartVolume: Float = 1.0
+
+    private var manualTailDeck: AudioDeck? {
+        guard let idx = manualTailDeckIndex else { return nil }
+        return idx == 0 ? deckA : deckB
+    }
+
     private init() {
         setupAudioSession()
         setupEngine()
@@ -137,6 +166,7 @@ public final class AudioEngineManager: ObservableObject {
         self.currentClass = workoutClass
         self.currentSegmentIndex = max(0, min(startSegmentIndex, workoutClass.segments.count - 1))
         cancelCrossfade()
+        clearManualTail()
         loadSegment(on: activeDeck, segmentIndex: currentSegmentIndex)
         incomingDeck.stop()
     }
@@ -209,6 +239,9 @@ public final class AudioEngineManager: ObservableObject {
         if isCrossfading && incomingDeck.currentAudioFile != nil {
             incomingDeck.playerNode.play()
         }
+        if let tailDeck = manualTailDeck, tailDeck.currentAudioFile != nil {
+            tailDeck.playerNode.play()
+        }
         isPlaying = true
         startTimer()
         updateNowPlayingInfo()
@@ -219,6 +252,7 @@ public final class AudioEngineManager: ObservableObject {
         if isCrossfading {
             incomingDeck.playerNode.pause()
         }
+        manualTailDeck?.playerNode.pause()
         isPlaying = false
         stopTimer()
         updateNowPlayingInfo()
@@ -234,6 +268,7 @@ public final class AudioEngineManager: ObservableObject {
 
     public func seek(to seconds: Double) {
         cancelCrossfade()
+        clearManualTail()
         let clampedSeconds = max(0, min(seconds, currentDurationSeconds))
         self.currentOffsetSeconds = clampedSeconds
         activeDeck.currentOffsetSeconds = clampedSeconds
@@ -274,26 +309,82 @@ public final class AudioEngineManager: ObservableObject {
     public func nextSegment() {
         guard let currentClass = currentClass else { return }
         if currentSegmentIndex < currentClass.segments.count - 1 {
-            cancelCrossfade()
-            currentSegmentIndex += 1
-            loadSegment(on: activeDeck, segmentIndex: currentSegmentIndex)
-            incomingDeck.stop()
-            if isPlaying { play() }
+            jumpToSegment(currentSegmentIndex + 1)
         }
     }
 
     public func previousSegment() {
-        cancelCrossfade()
         if currentOffsetSeconds > 3.0 {
             seek(to: 0)
         } else if currentSegmentIndex > 0 {
-            currentSegmentIndex -= 1
-            loadSegment(on: activeDeck, segmentIndex: currentSegmentIndex)
-            incomingDeck.stop()
-            if isPlaying { play() }
+            jumpToSegment(currentSegmentIndex - 1)
         } else {
             seek(to: 0)
         }
+    }
+
+    public func jumpToSegment(_ index: Int) {
+        guard let currentClass = currentClass, index >= 0, index < currentClass.segments.count else { return }
+        cancelCrossfade()
+
+        let targetSegment = currentClass.segments[index]
+        let fadeDuration = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: AppSettings.shared.crossfadeDurationSeconds,
+            targetSegmentDuration: Double(targetSegment.durationMs) / 1000.0,
+            isAutoPauseEnabled: AppSettings.shared.isAutoPauseBetweenSegmentsEnabled,
+            isPlaying: isPlaying
+        )
+
+        if fadeDuration <= 0.0 {
+            clearManualTail()
+            currentSegmentIndex = index
+            loadSegment(on: activeDeck, segmentIndex: index)
+            incomingDeck.stop()
+            if isPlaying { play() }
+            return
+        }
+
+        let tailStartVolume = activeDeck.playerNode.volume
+        clearManualTail()
+        let tailDeckIndex = activeDeckIndex
+        let tailDeck = tailDeckIndex == 0 ? deckA : deckB
+        activeDeckIndex = 1 - activeDeckIndex
+        currentSegmentIndex = index
+        loadSegment(on: activeDeck, segmentIndex: index)
+        activeDeck.setVolume(0.0)
+
+        manualTailDeckIndex = tailDeckIndex
+        manualTailDuration = fadeDuration
+        manualTailElapsed = 0.0
+        manualTailStartVolume = tailStartVolume
+        tailDeck.setVolume(tailStartVolume)
+
+        if activeDeck.currentAudioFile != nil {
+            activeDeck.playerNode.play()
+        }
+        updateNowPlayingInfo()
+    }
+
+    private func clearManualTail() {
+        manualTailDeck?.stop()
+        manualTailDeckIndex = nil
+        manualTailDuration = 0.0
+        manualTailElapsed = 0.0
+        manualTailStartVolume = 1.0
+        activeDeck.setVolume(1.0)
+    }
+
+    private func updateManualTail() {
+        guard let tailDeck = manualTailDeck else { return }
+        manualTailElapsed += 0.1
+        let progress = manualTailDuration > 0 ? manualTailElapsed / manualTailDuration : 1.0
+        if progress >= 1.0 {
+            clearManualTail()
+            return
+        }
+        let (_, fadeIn) = CrossfadeCalculator.equalPowerVolumes(progress: progress)
+        tailDeck.setVolume(CrossfadeCalculator.manualTailVolume(startVolume: manualTailStartVolume, progress: progress))
+        activeDeck.setVolume(fadeIn)
     }
 
     private func startCrossfade(effectiveDuration: Double) {
@@ -417,6 +508,10 @@ public final class AudioEngineManager: ObservableObject {
         self.currentOffsetSeconds += 0.1 * currentRate
         activeDeck.currentOffsetSeconds = self.currentOffsetSeconds
 
+        if manualTailDeckIndex != nil {
+            updateManualTail()
+        }
+
         let effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
             requestedDuration: AppSettings.shared.crossfadeDurationSeconds,
             segmentDuration: currentDurationSeconds,
@@ -430,6 +525,9 @@ public final class AudioEngineManager: ObservableObject {
 
         if !isCrossfading {
             if effectiveCrossfade > 0.0 && hasNextSegment && remaining <= effectiveCrossfade {
+                if manualTailDeckIndex != nil {
+                    clearManualTail()
+                }
                 startCrossfade(effectiveDuration: effectiveCrossfade)
             } else if remaining <= 0.0 {
                 handleTrackCompletion()

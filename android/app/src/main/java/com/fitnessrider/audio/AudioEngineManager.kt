@@ -35,6 +35,21 @@ object CrossfadeCalculator {
         }
         return minOf(requestedDuration, segmentDuration * 0.5)
     }
+
+    fun manualJumpFadeDuration(
+        requestedDuration: Double,
+        targetSegmentDuration: Double,
+        isAutoPauseEnabled: Boolean,
+        isPlaying: Boolean
+    ): Double {
+        if (!isPlaying) return 0.0
+        return effectiveDuration(requestedDuration, targetSegmentDuration, isAutoPauseEnabled)
+    }
+
+    fun manualTailVolume(startVolume: Float, progress: Double): Float {
+        val (fadeOut, _) = calculateEqualPowerVolumes(progress)
+        return startVolume * fadeOut
+    }
 }
 
 class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
@@ -54,6 +69,12 @@ class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
 
     fun setSegmentIndex(index: Int) {
         currentSegmentIndex = index
+    }
+
+    fun swapActivePlayerForManualJump(segmentIndex: Int) {
+        activePlayerIndex = 1 - activePlayerIndex
+        currentSegmentIndex = segmentIndex
+        isCrossfading = false
     }
 
     fun startCrossfade() {
@@ -133,6 +154,14 @@ class AudioEngineManager(private val context: Context) {
 
     private var lastBeepSecond = -1
 
+    private var manualTailPlayerIndex: Int? = null
+    private var manualTailDuration: Double = 0.0
+    private var manualTailElapsed: Double = 0.0
+    private var manualTailStartVolume: Float = 1.0f
+
+    private fun manualTailPlayerOrNull(): ExoPlayer? =
+        manualTailPlayerIndex?.let { if (it == 0) playerA else playerB }
+
     init {
         setupPlayerListener(playerA, 0)
         setupPlayerListener(playerB, 1)
@@ -165,6 +194,7 @@ class AudioEngineManager(private val context: Context) {
         crossfadeCoordinator.beginNewClass(clampedIndex)
         _currentSegmentIndex.value = clampedIndex
         cancelCrossfade()
+        clearManualTail()
         incomingPlayer.clearMediaItems()
         loadCurrentSegment()
     }
@@ -198,6 +228,9 @@ class AudioEngineManager(private val context: Context) {
             if (_isCrossfading.value && incomingPlayer.mediaItemCount > 0) {
                 incomingPlayer.play()
             }
+            manualTailPlayerOrNull()?.let { tailPlayer ->
+                if (tailPlayer.mediaItemCount > 0) tailPlayer.play()
+            }
             _isPlaying.value = true
             startProgressTracking()
         }
@@ -208,6 +241,7 @@ class AudioEngineManager(private val context: Context) {
         if (_isCrossfading.value) {
             incomingPlayer.pause()
         }
+        manualTailPlayerOrNull()?.pause()
         _isPlaying.value = false
         stopProgressTracking()
     }
@@ -218,6 +252,7 @@ class AudioEngineManager(private val context: Context) {
 
     fun seekTo(seconds: Double) {
         cancelCrossfade()
+        clearManualTail()
         val clamped = seconds.coerceIn(0.0, _currentDurationSeconds.value)
         _currentOffsetSeconds.value = clamped
         if (activePlayer.mediaItemCount > 0) {
@@ -247,26 +282,93 @@ class AudioEngineManager(private val context: Context) {
     fun nextSegment() {
         val c = currentClass ?: return
         if (crossfadeCoordinator.currentSegmentIndex < c.segments.size - 1) {
-            cancelCrossfade()
-            crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex + 1)
-            _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
-            loadCurrentSegment()
-            if (_isPlaying.value) play()
+            jumpToSegment(crossfadeCoordinator.currentSegmentIndex + 1)
         }
     }
 
     fun previousSegment() {
-        cancelCrossfade()
         if (_currentOffsetSeconds.value > 3.0) {
             seekTo(0.0)
         } else if (crossfadeCoordinator.currentSegmentIndex > 0) {
-            crossfadeCoordinator.setSegmentIndex(crossfadeCoordinator.currentSegmentIndex - 1)
-            _currentSegmentIndex.value = crossfadeCoordinator.currentSegmentIndex
-            loadCurrentSegment()
-            if (_isPlaying.value) play()
+            jumpToSegment(crossfadeCoordinator.currentSegmentIndex - 1)
         } else {
             seekTo(0.0)
         }
+    }
+
+    fun jumpToSegment(index: Int) {
+        val c = currentClass ?: return
+        if (index !in c.segments.indices) return
+        cancelCrossfade()
+
+        val targetSegment = c.segments[index]
+        val fadeDuration = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = settings.crossfadeDurationSeconds,
+            targetSegmentDuration = targetSegment.durationMs / 1000.0,
+            isAutoPauseEnabled = settings.isAutoPauseBetweenSegmentsEnabled,
+            isPlaying = _isPlaying.value
+        )
+
+        if (fadeDuration <= 0.0) {
+            clearManualTail()
+            crossfadeCoordinator.setSegmentIndex(index)
+            _currentSegmentIndex.value = index
+            loadCurrentSegment()
+            if (_isPlaying.value) play()
+            return
+        }
+
+        val tailStartVolume = activePlayer.volume
+        clearManualTail()
+        val tailPlayerIndex = crossfadeCoordinator.activePlayerIndex
+        val tailPlayer = if (tailPlayerIndex == 0) playerA else playerB
+        crossfadeCoordinator.swapActivePlayerForManualJump(index)
+        _currentSegmentIndex.value = index
+
+        setRate(targetSegment.playbackRate)
+        loadSegmentOnPlayer(activePlayer, targetSegment)
+        activePlayer.volume = 0.0f
+        _currentDurationSeconds.value = targetSegment.durationMs / 1000.0
+        _currentOffsetSeconds.value = 0.0
+
+        manualTailPlayerIndex = tailPlayerIndex
+        manualTailDuration = fadeDuration
+        manualTailElapsed = 0.0
+        manualTailStartVolume = tailStartVolume
+        tailPlayer.volume = tailStartVolume
+
+        val hasAudio = targetSegment.musicFileName.isNotBlank() &&
+            MusicSource.exists(context, repository, targetSegment.musicFileName)
+        if (hasAudio) {
+            activePlayer.play()
+        }
+        startProgressTracking()
+    }
+
+    private fun clearManualTail() {
+        manualTailPlayerOrNull()?.let { tailPlayer ->
+            tailPlayer.pause()
+            tailPlayer.clearMediaItems()
+            tailPlayer.volume = 1.0f
+        }
+        manualTailPlayerIndex = null
+        manualTailDuration = 0.0
+        manualTailElapsed = 0.0
+        manualTailStartVolume = 1.0f
+        activePlayer.volume = 1.0f
+    }
+
+    private fun updateManualTail() {
+        val tailPlayer = manualTailPlayerOrNull() ?: return
+        manualTailElapsed += 0.1
+        val progress = if (manualTailDuration > 0.0) manualTailElapsed / manualTailDuration else 1.0
+        if (progress >= 1.0) {
+            clearManualTail()
+            return
+        }
+        val (_, fadeIn) = CrossfadeCalculator.calculateEqualPowerVolumes(progress)
+        tailPlayer.volume = CrossfadeCalculator.manualTailVolume(manualTailStartVolume, progress)
+        activePlayer.volume = fadeIn
     }
 
     private fun startCrossfade(effectiveDuration: Double) {
@@ -398,6 +500,10 @@ class AudioEngineManager(private val context: Context) {
                 _currentOffsetSeconds.value = currentSec
                 _currentDurationSeconds.value = totalSec
 
+                if (manualTailPlayerIndex != null) {
+                    updateManualTail()
+                }
+
                 val effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
                     requestedDuration = settings.crossfadeDurationSeconds,
                     segmentDuration = totalSec,
@@ -410,6 +516,9 @@ class AudioEngineManager(private val context: Context) {
 
                 if (!_isCrossfading.value) {
                     if (effectiveCrossfade > 0.0 && hasNext && remaining <= effectiveCrossfade) {
+                        if (manualTailPlayerIndex != null) {
+                            clearManualTail()
+                        }
                         startCrossfade(effectiveCrossfade)
                     } else if (remaining <= 0.0) {
                         handleTrackEnded(activePlayerIndex)

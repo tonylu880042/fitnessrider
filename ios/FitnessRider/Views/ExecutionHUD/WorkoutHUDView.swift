@@ -324,7 +324,7 @@ public struct WorkoutHUDView: View {
                         .cornerRadius(8)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            audioManager.loadClass(workoutClass, startSegmentIndex: index)
+                            audioManager.jumpToSegment(index)
                             audioManager.play()
                         }
                     }

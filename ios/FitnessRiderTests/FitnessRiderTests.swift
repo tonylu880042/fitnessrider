@@ -1175,6 +1175,71 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(shortDuration, 0.5)
     }
 
+    func testManualJumpFadeDuration() {
+        let whilePaused = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: 2.0,
+            targetSegmentDuration: 60.0,
+            isAutoPauseEnabled: false,
+            isPlaying: false
+        )
+        XCTAssertEqual(whilePaused, 0.0)
+
+        let autoPauseEnabled = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: 2.0,
+            targetSegmentDuration: 60.0,
+            isAutoPauseEnabled: true,
+            isPlaying: true
+        )
+        XCTAssertEqual(autoPauseEnabled, 0.0)
+
+        let settingZero = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: 0.0,
+            targetSegmentDuration: 60.0,
+            isAutoPauseEnabled: false,
+            isPlaying: true
+        )
+        XCTAssertEqual(settingZero, 0.0)
+
+        let normal = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: 2.0,
+            targetSegmentDuration: 60.0,
+            isAutoPauseEnabled: false,
+            isPlaying: true
+        )
+        XCTAssertEqual(normal, 2.0)
+
+        let clampedByHalfSegment = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration: 15.0,
+            targetSegmentDuration: 20.0,
+            isAutoPauseEnabled: false,
+            isPlaying: true
+        )
+        XCTAssertEqual(clampedByHalfSegment, 10.0)
+    }
+
+    func testManualTailVolume() {
+        let fullStartAtZero = CrossfadeCalculator.manualTailVolume(startVolume: 1.0, progress: 0.0)
+        XCTAssertEqual(fullStartAtZero, 1.0, accuracy: 0.0001)
+
+        let partialStartAtZero = CrossfadeCalculator.manualTailVolume(startVolume: 0.3, progress: 0.0)
+        XCTAssertEqual(partialStartAtZero, 0.3, accuracy: 0.0001)
+
+        let fullStartAtEnd = CrossfadeCalculator.manualTailVolume(startVolume: 1.0, progress: 1.0)
+        XCTAssertEqual(fullStartAtEnd, 0.0, accuracy: 0.0001)
+
+        let partialStartAtEnd = CrossfadeCalculator.manualTailVolume(startVolume: 0.3, progress: 1.0)
+        XCTAssertEqual(partialStartAtEnd, 0.0, accuracy: 0.0001)
+
+        let startVolumes: [Float] = [0.1, 0.3, 0.6, 1.0]
+        let progressPoints = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
+        for start in startVolumes {
+            for p in progressPoints {
+                let v = CrossfadeCalculator.manualTailVolume(startVolume: start, progress: p)
+                XCTAssertLessThanOrEqual(v, start + 0.0001, "manualTailVolume(\(start), \(p)) = \(v) must never exceed startVolume \(start)")
+            }
+        }
+    }
+
     @MainActor
     func testAppSettingsCrossfadeDuration() {
         let settings = AppSettings.shared

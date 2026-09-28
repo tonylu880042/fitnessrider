@@ -1149,6 +1149,97 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testManualJumpFadeDuration() {
+        val whilePaused = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = 2.0,
+            targetSegmentDuration = 60.0,
+            isAutoPauseEnabled = false,
+            isPlaying = false
+        )
+        assertEquals(0.0, whilePaused, 0.0001)
+
+        val autoPauseEnabled = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = 2.0,
+            targetSegmentDuration = 60.0,
+            isAutoPauseEnabled = true,
+            isPlaying = true
+        )
+        assertEquals(0.0, autoPauseEnabled, 0.0001)
+
+        val settingZero = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = 0.0,
+            targetSegmentDuration = 60.0,
+            isAutoPauseEnabled = false,
+            isPlaying = true
+        )
+        assertEquals(0.0, settingZero, 0.0001)
+
+        val normal = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = 2.0,
+            targetSegmentDuration = 60.0,
+            isAutoPauseEnabled = false,
+            isPlaying = true
+        )
+        assertEquals(2.0, normal, 0.0001)
+
+        val clampedByHalfSegment = CrossfadeCalculator.manualJumpFadeDuration(
+            requestedDuration = 15.0,
+            targetSegmentDuration = 20.0,
+            isAutoPauseEnabled = false,
+            isPlaying = true
+        )
+        assertEquals(10.0, clampedByHalfSegment, 0.0001)
+    }
+
+    @Test
+    fun testManualTailVolume() {
+        val fullStartAtZero = CrossfadeCalculator.manualTailVolume(startVolume = 1.0f, progress = 0.0)
+        assertEquals(1.0f, fullStartAtZero, 0.0001f)
+
+        val partialStartAtZero = CrossfadeCalculator.manualTailVolume(startVolume = 0.3f, progress = 0.0)
+        assertEquals(0.3f, partialStartAtZero, 0.0001f)
+
+        val fullStartAtEnd = CrossfadeCalculator.manualTailVolume(startVolume = 1.0f, progress = 1.0)
+        assertEquals(0.0f, fullStartAtEnd, 0.0001f)
+
+        val partialStartAtEnd = CrossfadeCalculator.manualTailVolume(startVolume = 0.3f, progress = 1.0)
+        assertEquals(0.0f, partialStartAtEnd, 0.0001f)
+
+        val startVolumes = listOf(0.1f, 0.3f, 0.6f, 1.0f)
+        val progressPoints = listOf(0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
+        for (start in startVolumes) {
+            for (p in progressPoints) {
+                val v = CrossfadeCalculator.manualTailVolume(start, p)
+                assertTrue(
+                    "manualTailVolume($start, $p) = $v must never exceed startVolume $start",
+                    v <= start + 0.0001f
+                )
+            }
+        }
+    }
+
+    @Test
+    fun testCrossfadeCoordinatorSwapForManualJumpRejectsOldPlayerTrackEnded() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 3)
+        assertEquals(0, coordinator.activePlayerIndex)
+
+        coordinator.swapActivePlayerForManualJump(segmentIndex = 5)
+
+        assertEquals(5, coordinator.currentSegmentIndex)
+        assertEquals(1, coordinator.activePlayerIndex)
+        assertFalse(coordinator.isCrossfading)
+
+        assertFalse(
+            "old player's stale track-ended must be rejected after a manual jump swap",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 0)
+        )
+        assertTrue(
+            "new active player's track-ended must be accepted",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 1)
+        )
+    }
+
+    @Test
     fun testCrossfadeFinishNoOpWhenNotCrossfading() {
         val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 0)
         var tearDownRan = false
