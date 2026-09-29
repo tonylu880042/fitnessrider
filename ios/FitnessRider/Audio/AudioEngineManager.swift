@@ -40,6 +40,15 @@ public struct CrossfadeCalculator: Sendable {
         let (fadeOut, _) = equalPowerVolumes(progress: progress)
         return startVolume * fadeOut
     }
+
+    public static func crossfadeHandoverElapsed(progress: Double, effectiveDuration: Double) -> Double {
+        let clamped = max(0.0, min(1.0, progress))
+        return clamped * effectiveDuration
+    }
+
+    public static func isIncomingTrackTheTail(activeVolume: Float, incomingVolume: Float) -> Bool {
+        return incomingVolume > activeVolume
+    }
 }
 
 @MainActor
@@ -329,7 +338,6 @@ public final class AudioEngineManager: ObservableObject {
 
     public func jumpToSegment(_ index: Int) {
         guard let currentClass = currentClass, index >= 0, index < currentClass.segments.count else { return }
-        cancelCrossfade()
 
         let targetSegment = currentClass.segments[index]
         let fadeDuration = CrossfadeCalculator.manualJumpFadeDuration(
@@ -340,6 +348,7 @@ public final class AudioEngineManager: ObservableObject {
         )
 
         if fadeDuration <= 0.0 {
+            cancelCrossfade()
             clearManualTail()
             currentSegmentIndex = index
             loadSegment(on: activeDeck, segmentIndex: index)
@@ -348,11 +357,87 @@ public final class AudioEngineManager: ObservableObject {
             return
         }
 
+        if isCrossfading, index == currentSegmentIndex + 1 {
+            handoverAutoCrossfadeToManualTail(targetIndex: index)
+            return
+        }
+
+        if isCrossfading {
+            jumpDuringCrossfadeToOtherSegment(index: index, targetSegment: targetSegment, fadeDuration: fadeDuration)
+            return
+        }
+
         let tailStartVolume = activeDeck.playerNode.volume
         clearManualTail()
         let tailDeckIndex = activeDeckIndex
         let tailDeck = tailDeckIndex == 0 ? deckA : deckB
         activeDeckIndex = 1 - activeDeckIndex
+        currentSegmentIndex = index
+        loadSegment(on: activeDeck, segmentIndex: index)
+        activeDeck.setVolume(0.0)
+
+        manualTailDeckIndex = tailDeckIndex
+        manualTailDuration = fadeDuration
+        manualTailElapsed = 0.0
+        manualTailStartVolume = tailStartVolume
+        tailDeck.setVolume(tailStartVolume)
+
+        if activeDeck.currentAudioFile != nil {
+            activeDeck.playerNode.play()
+        }
+        updateNowPlayingInfo()
+    }
+
+    private func handoverAutoCrossfadeToManualTail(targetIndex: Int) {
+        let effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
+            requestedDuration: AppSettings.shared.crossfadeDurationSeconds,
+            segmentDuration: currentDurationSeconds,
+            isAutoPauseEnabled: AppSettings.shared.isAutoPauseBetweenSegmentsEnabled
+        )
+        let remaining = max(0.0, currentDurationSeconds - currentOffsetSeconds)
+        let progress: Double = effectiveCrossfade > 0.0
+            ? max(0.0, min(1.0, 1.0 - (remaining / effectiveCrossfade)))
+            : 1.0
+        let elapsed = CrossfadeCalculator.crossfadeHandoverElapsed(progress: progress, effectiveDuration: effectiveCrossfade)
+
+        let oldActiveIndex = activeDeckIndex
+        let oldActiveDeck = activeDeck
+        let newActiveDeck = incomingDeck
+        activeDeckIndex = 1 - activeDeckIndex
+
+        isCrossfading = false
+        currentSegmentIndex = targetIndex
+        currentSegment = currentClass?.segments[targetIndex]
+        currentRate = currentSegment?.playbackRate ?? currentRate
+        currentDurationSeconds = newActiveDeck.currentDurationSeconds
+        currentOffsetSeconds = elapsed
+        newActiveDeck.currentOffsetSeconds = elapsed
+
+        manualTailDeckIndex = oldActiveIndex
+        manualTailDuration = effectiveCrossfade
+        manualTailElapsed = elapsed
+        manualTailStartVolume = 1.0
+
+        let (_, fadeIn) = CrossfadeCalculator.equalPowerVolumes(progress: progress)
+        oldActiveDeck.setVolume(CrossfadeCalculator.manualTailVolume(startVolume: 1.0, progress: progress))
+        newActiveDeck.setVolume(fadeIn)
+
+        updateNowPlayingInfo()
+    }
+
+    private func jumpDuringCrossfadeToOtherSegment(index: Int, targetSegment: WorkoutSegment, fadeDuration: Double) {
+        let activeVolume = activeDeck.playerNode.volume
+        let incomingVolume = incomingDeck.playerNode.volume
+        let incomingIsTail = CrossfadeCalculator.isIncomingTrackTheTail(activeVolume: activeVolume, incomingVolume: incomingVolume)
+        let tailStartVolume = incomingIsTail ? incomingVolume : activeVolume
+
+        if !incomingIsTail {
+            activeDeckIndex = 1 - activeDeckIndex
+        }
+        let tailDeckIndex = 1 - activeDeckIndex
+        let tailDeck = tailDeckIndex == 0 ? deckA : deckB
+
+        isCrossfading = false
         currentSegmentIndex = index
         loadSegment(on: activeDeck, segmentIndex: index)
         activeDeck.setVolume(0.0)

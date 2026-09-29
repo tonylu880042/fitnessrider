@@ -1378,6 +1378,91 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testCrossfadeHandoverElapsedAndVolumesMatchPreHandover() {
+        val progress = 0.3
+        val effectiveDuration = 10.0
+
+        val elapsed = CrossfadeCalculator.crossfadeHandoverElapsed(progress, effectiveDuration)
+        assertEquals(3.0, elapsed, 0.0001)
+
+        val recomputedProgress = elapsed / effectiveDuration
+        val (preHandoverFadeOut, preHandoverFadeIn) = CrossfadeCalculator.calculateEqualPowerVolumes(progress)
+        val tailVolume = CrossfadeCalculator.manualTailVolume(startVolume = 1.0f, progress = recomputedProgress)
+        val (_, newActiveVolume) = CrossfadeCalculator.calculateEqualPowerVolumes(recomputedProgress)
+
+        assertEquals("尾巴音量要與接手前的舊曲淡出音量相同", preHandoverFadeOut, tailVolume, 0.0001f)
+        assertEquals("新 active 音量要與接手前的淡入音量相同", preHandoverFadeIn, newActiveVolume, 0.0001f)
+
+        val clampedNegative = CrossfadeCalculator.crossfadeHandoverElapsed(-0.5, effectiveDuration)
+        assertEquals(0.0, clampedNegative, 0.0001)
+
+        val clampedOver = CrossfadeCalculator.crossfadeHandoverElapsed(1.8, effectiveDuration)
+        assertEquals(effectiveDuration, clampedOver, 0.0001)
+    }
+
+    @Test
+    fun testIncomingLouderBecomesTail() {
+        assertTrue(
+            "淡入軌音量較大時，淡入軌應該當尾巴",
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume = 0.4f, incomingVolume = 0.9f)
+        )
+        assertFalse(
+            "淡出軌（active）音量較大或相等時，active 應該當尾巴，不是 incoming",
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume = 0.9f, incomingVolume = 0.4f)
+        )
+        assertFalse(
+            "音量相等時不翻轉，active 當尾巴",
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume = 0.5f, incomingVolume = 0.5f)
+        )
+    }
+
+    @Test
+    fun testCoordinatorResolveManualJumpDuringCrossfadeNoFlipRejectsOldActiveTrackEnded() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 2)
+        coordinator.startCrossfade()
+        assertEquals(0, coordinator.activePlayerIndex)
+
+        val tailPlayerIndex = coordinator.resolveManualJumpDuringCrossfade(segmentIndex = 9, flipActivePlayer = false)
+
+        assertEquals("沒有翻轉時，尾巴應該是原本的 incoming（index 1）", 1, tailPlayerIndex)
+        assertEquals(0, coordinator.activePlayerIndex)
+        assertEquals(9, coordinator.currentSegmentIndex)
+        assertFalse(coordinator.isCrossfading)
+
+        assertTrue(
+            "沒有翻轉時，原本的 active（index 0）現在載入新目標，track-ended 仍要接受",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 0)
+        )
+        assertFalse(
+            "沒有翻轉時，尾巴（原本的 incoming，index 1）的 track-ended 要被拒絕",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 1)
+        )
+    }
+
+    @Test
+    fun testCoordinatorResolveManualJumpDuringCrossfadeWithFlip() {
+        val coordinator = CrossfadeFinishCoordinator(startSegmentIndex = 4)
+        coordinator.startCrossfade()
+        assertEquals(0, coordinator.activePlayerIndex)
+
+        val tailPlayerIndex = coordinator.resolveManualJumpDuringCrossfade(segmentIndex = 7, flipActivePlayer = true)
+
+        assertEquals("翻轉時，尾巴應該是原本的 active（index 0）", 0, tailPlayerIndex)
+        assertEquals(1, coordinator.activePlayerIndex)
+        assertEquals(7, coordinator.currentSegmentIndex)
+        assertFalse(coordinator.isCrossfading)
+
+        assertFalse(
+            "翻轉後，舊 active（index 0，現在是尾巴）的 track-ended 要被拒絕",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 0)
+        )
+        assertTrue(
+            "翻轉後，新 active（index 1）的 track-ended 要接受",
+            coordinator.shouldHandleTrackEnded(endedPlayerIndex = 1)
+        )
+    }
+
+    @Test
     fun testHapticFeedbackManagerResolvesHostFromApplicationContextNotActivityContext() {
         val appContext = object : android.content.ContextWrapper(null) {}
         val activityLikeContext = object : android.content.ContextWrapper(null) {

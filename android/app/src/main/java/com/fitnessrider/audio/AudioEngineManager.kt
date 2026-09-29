@@ -50,6 +50,14 @@ object CrossfadeCalculator {
         val (fadeOut, _) = calculateEqualPowerVolumes(progress)
         return startVolume * fadeOut
     }
+
+    fun crossfadeHandoverElapsed(progress: Double, effectiveDuration: Double): Double {
+        return progress.coerceIn(0.0, 1.0) * effectiveDuration
+    }
+
+    fun isIncomingTrackTheTail(activeVolume: Float, incomingVolume: Float): Boolean {
+        return incomingVolume > activeVolume
+    }
 }
 
 class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
@@ -75,6 +83,16 @@ class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
         activePlayerIndex = 1 - activePlayerIndex
         currentSegmentIndex = segmentIndex
         isCrossfading = false
+    }
+
+    fun resolveManualJumpDuringCrossfade(segmentIndex: Int, flipActivePlayer: Boolean): Int {
+        val tailPlayerIndex = if (flipActivePlayer) activePlayerIndex else 1 - activePlayerIndex
+        if (flipActivePlayer) {
+            activePlayerIndex = 1 - activePlayerIndex
+        }
+        currentSegmentIndex = segmentIndex
+        isCrossfading = false
+        return tailPlayerIndex
     }
 
     fun startCrossfade() {
@@ -299,7 +317,6 @@ class AudioEngineManager(private val context: Context) {
     fun jumpToSegment(index: Int) {
         val c = currentClass ?: return
         if (index !in c.segments.indices) return
-        cancelCrossfade()
 
         val targetSegment = c.segments[index]
         val fadeDuration = CrossfadeCalculator.manualJumpFadeDuration(
@@ -310,11 +327,22 @@ class AudioEngineManager(private val context: Context) {
         )
 
         if (fadeDuration <= 0.0) {
+            cancelCrossfade()
             clearManualTail()
             crossfadeCoordinator.setSegmentIndex(index)
             _currentSegmentIndex.value = index
             loadCurrentSegment()
             if (_isPlaying.value) play()
+            return
+        }
+
+        if (crossfadeCoordinator.isCrossfading && index == crossfadeCoordinator.currentSegmentIndex + 1) {
+            handoverAutoCrossfadeToManualTail(index)
+            return
+        }
+
+        if (crossfadeCoordinator.isCrossfading) {
+            jumpDuringCrossfadeToOtherSegment(index, targetSegment, fadeDuration)
             return
         }
 
@@ -343,6 +371,79 @@ class AudioEngineManager(private val context: Context) {
             activePlayer.play()
         }
         startProgressTracking()
+    }
+
+    private fun handoverAutoCrossfadeToManualTail(targetIndex: Int) {
+        val effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
+            requestedDuration = settings.crossfadeDurationSeconds,
+            segmentDuration = _currentDurationSeconds.value,
+            isAutoPauseEnabled = settings.isAutoPauseBetweenSegmentsEnabled
+        )
+        val remaining = (_currentDurationSeconds.value - _currentOffsetSeconds.value).coerceAtLeast(0.0)
+        val progress = if (effectiveCrossfade > 0.0) {
+            (1.0 - (remaining / effectiveCrossfade)).coerceIn(0.0, 1.0)
+        } else {
+            1.0
+        }
+        val elapsed = CrossfadeCalculator.crossfadeHandoverElapsed(progress, effectiveCrossfade)
+
+        val oldActivePlayer = activePlayer
+        val newActivePlayer = incomingPlayer
+        val tailPlayerIndex = crossfadeCoordinator.resolveManualJumpDuringCrossfade(targetIndex, flipActivePlayer = true)
+
+        _isCrossfading.value = false
+        _currentSegmentIndex.value = targetIndex
+
+        val newSegment = currentSegment
+        if (newSegment != null) {
+            _currentRate.value = newSegment.playbackRate
+        }
+        _currentDurationSeconds.value = if (newActivePlayer.mediaItemCount > 0 && newActivePlayer.duration > 0) {
+            newActivePlayer.duration / 1000.0
+        } else {
+            (newSegment?.durationMs ?: 0) / 1000.0
+        }
+        _currentOffsetSeconds.value = elapsed
+
+        manualTailPlayerIndex = tailPlayerIndex
+        manualTailDuration = effectiveCrossfade
+        manualTailElapsed = elapsed
+        manualTailStartVolume = 1.0f
+
+        val (_, fadeIn) = CrossfadeCalculator.calculateEqualPowerVolumes(progress)
+        oldActivePlayer.volume = CrossfadeCalculator.manualTailVolume(1.0f, progress)
+        newActivePlayer.volume = fadeIn
+    }
+
+    private fun jumpDuringCrossfadeToOtherSegment(index: Int, targetSegment: WorkoutSegment, fadeDuration: Double) {
+        val activeVolume = activePlayer.volume
+        val incomingVolume = incomingPlayer.volume
+        val incomingIsTail = CrossfadeCalculator.isIncomingTrackTheTail(activeVolume, incomingVolume)
+        val tailStartVolume = if (incomingIsTail) incomingVolume else activeVolume
+
+        val tailPlayerIndex = crossfadeCoordinator.resolveManualJumpDuringCrossfade(index, flipActivePlayer = !incomingIsTail)
+        val tailPlayer = if (tailPlayerIndex == 0) playerA else playerB
+
+        _isCrossfading.value = false
+        _currentSegmentIndex.value = index
+
+        setRate(targetSegment.playbackRate)
+        loadSegmentOnPlayer(activePlayer, targetSegment)
+        activePlayer.volume = 0.0f
+        _currentDurationSeconds.value = targetSegment.durationMs / 1000.0
+        _currentOffsetSeconds.value = 0.0
+
+        manualTailPlayerIndex = tailPlayerIndex
+        manualTailDuration = fadeDuration
+        manualTailElapsed = 0.0
+        manualTailStartVolume = tailStartVolume
+        tailPlayer.volume = tailStartVolume
+
+        val hasAudio = targetSegment.musicFileName.isNotBlank() &&
+            MusicSource.exists(context, repository, targetSegment.musicFileName)
+        if (hasAudio) {
+            activePlayer.play()
+        }
     }
 
     private fun clearManualTail() {

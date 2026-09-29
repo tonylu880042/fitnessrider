@@ -1347,6 +1347,43 @@ final class FitnessRiderTests: XCTestCase {
         }
     }
 
+    func testCrossfadeHandoverElapsedAndVolumesMatchPreHandover() {
+        let progress = 0.3
+        let effectiveDuration = 10.0
+
+        let elapsed = CrossfadeCalculator.crossfadeHandoverElapsed(progress: progress, effectiveDuration: effectiveDuration)
+        XCTAssertEqual(elapsed, 3.0, accuracy: 0.0001)
+
+        let recomputedProgress = elapsed / effectiveDuration
+        let (preHandoverFadeOut, preHandoverFadeIn) = CrossfadeCalculator.equalPowerVolumes(progress: progress)
+        let tailVolume = CrossfadeCalculator.manualTailVolume(startVolume: 1.0, progress: recomputedProgress)
+        let (_, newActiveVolume) = CrossfadeCalculator.equalPowerVolumes(progress: recomputedProgress)
+
+        XCTAssertEqual(tailVolume, preHandoverFadeOut, accuracy: 0.0001, "尾巴音量要與接手前的舊曲淡出音量相同")
+        XCTAssertEqual(newActiveVolume, preHandoverFadeIn, accuracy: 0.0001, "新 active 音量要與接手前的淡入音量相同")
+
+        let clampedNegative = CrossfadeCalculator.crossfadeHandoverElapsed(progress: -0.5, effectiveDuration: effectiveDuration)
+        XCTAssertEqual(clampedNegative, 0.0, accuracy: 0.0001)
+
+        let clampedOver = CrossfadeCalculator.crossfadeHandoverElapsed(progress: 1.8, effectiveDuration: effectiveDuration)
+        XCTAssertEqual(clampedOver, effectiveDuration, accuracy: 0.0001)
+    }
+
+    func testIncomingLouderBecomesTail() {
+        XCTAssertTrue(
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume: 0.4, incomingVolume: 0.9),
+            "淡入軌音量較大時，淡入軌應該當尾巴"
+        )
+        XCTAssertFalse(
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume: 0.9, incomingVolume: 0.4),
+            "淡出軌（active）音量較大或相等時，active 應該當尾巴，不是 incoming"
+        )
+        XCTAssertFalse(
+            CrossfadeCalculator.isIncomingTrackTheTail(activeVolume: 0.5, incomingVolume: 0.5),
+            "音量相等時不翻轉，active 當尾巴"
+        )
+    }
+
     @MainActor
     func testManualJumpBackDuringTailFadeDoesNotSkipSegmentFromStaleCompletion() throws {
         let settings = AppSettings.shared
@@ -1406,6 +1443,71 @@ final class FitnessRiderTests: XCTestCase {
             engine.currentSegmentIndex, 0,
             "尾巴 deck 被 clearManualTail() 停掉觸發的舊世代 completion 不應該把 currentSegmentIndex 推進到 1"
         )
+
+        engine.pause()
+    }
+
+    @MainActor
+    func testManualNextDuringAutoCrossfadeConvertsToManualTailWithoutSkippingSegment() throws {
+        let settings = AppSettings.shared
+        let originalCrossfade = settings.crossfadeDurationSeconds
+        let originalAutoPause = settings.isAutoPauseBetweenSegmentsEnabled
+        settings.crossfadeDurationSeconds = 3.0
+        settings.isAutoPauseBetweenSegmentsEnabled = false
+        defer {
+            settings.crossfadeDurationSeconds = originalCrossfade
+            settings.isAutoPauseBetweenSegmentsEnabled = originalAutoPause
+        }
+
+        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+        let fileNameA = "f3_silence_a_\(UUID().uuidString).caf"
+        let fileNameB = "f3_silence_b_\(UUID().uuidString).caf"
+        let urlA = musicDir.appendingPathComponent(fileNameA)
+        let urlB = musicDir.appendingPathComponent(fileNameB)
+        try writeSilentAudioFile(to: urlA, seconds: 8.0)
+        try writeSilentAudioFile(to: urlB, seconds: 8.0)
+        defer {
+            try? FileManager.default.removeItem(at: urlA)
+            try? FileManager.default.removeItem(at: urlB)
+        }
+
+        let classId = UUID()
+        let workoutClass = WorkoutClass(
+            id: classId,
+            title: "F3 自動轉手動尾巴測試",
+            segments: [
+                WorkoutSegment(
+                    id: UUID(), classId: classId, orderIndex: 0, title: "段落一",
+                    musicFileName: fileNameA, durationMs: 8_000, baseBpm: 120.0,
+                    playbackRate: 1.0, intensityZone: 2, cues: []
+                ),
+                WorkoutSegment(
+                    id: UUID(), classId: classId, orderIndex: 1, title: "段落二",
+                    musicFileName: fileNameB, durationMs: 8_000, baseBpm: 120.0,
+                    playbackRate: 1.0, intensityZone: 2, cues: []
+                )
+            ]
+        )
+
+        let engine = AudioEngineManager.shared
+        engine.loadClass(workoutClass, startSegmentIndex: 0)
+        engine.play()
+        XCTAssertEqual(engine.currentSegmentIndex, 0)
+
+        var waited = 0.0
+        while !engine.isCrossfading && waited < 8.0 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            waited += 0.2
+        }
+        XCTAssertTrue(engine.isCrossfading, "應該已進入自動 crossfade 才能測試中途手動換曲")
+
+        engine.nextSegment()
+
+        XCTAssertEqual(engine.currentSegmentIndex, 1, "手動換到正在淡入的段落應該剛好前進一格，不多不少")
+        XCTAssertFalse(engine.isCrossfading, "轉成手動尾巴後不應該還在自動 crossfade 狀態")
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(engine.currentSegmentIndex, 1, "轉換後不應該被任何殘留回呼推進或跳回")
 
         engine.pause()
     }
