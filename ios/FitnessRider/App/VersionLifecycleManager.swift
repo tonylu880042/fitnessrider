@@ -14,6 +14,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
     private let userDefaultsExpiredKey = "fitness_rider_is_expired"
     private let userDefaultsFirstLaunchKey = "fitness_rider_first_launch_timestamp"
     private let userDefaultsRedeemedPromosKey = "fitness_rider_redeemed_promos"
+    private let userDefaultsRedeemedVipSerialsKey = "fitness_rider_redeemed_vip_serials"
 
     public let buildDate: Date
 
@@ -64,6 +65,11 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
         self.isVIP = evaluateVipStatus()
         self.vipPlanName = Self.planName(isPromo: Self.isPromoVipCode(Self.storedVipCode(defaults: .standard)))
+    }
+
+    static func stackedVipExpiry(nowMs: Double, currentExpiryMs: Double?, planDays: Int) -> Double {
+        let base = (currentExpiryMs != nil && currentExpiryMs! > nowMs) ? currentExpiryMs! : nowMs
+        return base + Double(planDays) * secondsPerDay
     }
 
     static func planName(isPromo: Bool) -> String {
@@ -234,9 +240,23 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         }
 
         if let vipSerialInfo {
-            let planSec: TimeInterval = Double(vipSerialInfo.planDays) * 86_400.0
-            let expiresTs = now.addingTimeInterval(planSec).timeIntervalSince1970
+            var redeemedSerials = defaults.stringArray(forKey: userDefaultsRedeemedVipSerialsKey) ?? []
+            if redeemedSerials.contains(vipSerialInfo.serialId) {
+                if evaluateVipStatus(currentTime: now, defaults: defaults) {
+                    return (true, "此序號已在本設備使用過，到期時間維持不變。")
+                } else {
+                    return (false, "此序號已在本設備使用過，授權已到期，請使用新的序號。")
+                }
+            }
 
+            let nowTs = now.timeIntervalSince1970
+            let currentExpiryTs: Double? = evaluateVipStatus(currentTime: now, defaults: defaults)
+                ? defaults.double(forKey: "fitness_rider_vip_expires")
+                : nil
+            let expiresTs = Self.stackedVipExpiry(nowMs: nowTs, currentExpiryMs: currentExpiryTs, planDays: vipSerialInfo.planDays)
+
+            redeemedSerials.append(vipSerialInfo.serialId)
+            defaults.set(redeemedSerials, forKey: userDefaultsRedeemedVipSerialsKey)
             defaults.set(true, forKey: "fitness_rider_vip_active")
             defaults.set(expiresTs, forKey: "fitness_rider_vip_expires")
             defaults.set(code, forKey: "fitness_rider_vip_code")
@@ -264,6 +284,14 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         defaults.set(expiresTs, forKey: "fitness_rider_vip_expires")
         defaults.set(effectiveCode, forKey: "fitness_rider_vip_code")
         defaults.set(false, forKey: userDefaultsExpiredKey)
+
+        if !isPromo, let code, let vipSerialInfo = VipSerialVerifier.verify(code) {
+            var redeemedSerials = defaults.stringArray(forKey: userDefaultsRedeemedVipSerialsKey) ?? []
+            if !redeemedSerials.contains(vipSerialInfo.serialId) {
+                redeemedSerials.append(vipSerialInfo.serialId)
+                defaults.set(redeemedSerials, forKey: userDefaultsRedeemedVipSerialsKey)
+            }
+        }
         if defaults == UserDefaults.standard {
             DeviceIdentifierService.shared.vipLicenseKey = effectiveCode
             DeviceIdentifierService.shared.vipExpiresTimestamp = expiresTs

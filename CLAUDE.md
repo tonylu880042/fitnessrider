@@ -196,6 +196,45 @@ HUD 左側清單點選（Android `WorkoutHUDScreen.kt:286`、iOS `WorkoutHUDView
   放在 `CrossfadeCalculator` 裡，內部重用 `effectiveDuration`。
 - Android：coordinator 的「交換 active」後，舊播放器 index 的 track-ended 被拒絕、新的被接受，segment index 等於目標。
 
+## 開發清單：VIP 序號疊加＋終身版顯示（2026-09-29）
+
+背景：要讓兩組人長期使用——(a) 負責推廣的人給**終身**（簽一組 `--plan-days 36500` 的序號，現有工具即可）；
+(b) 另一組靠推薦賺月份：他們推薦的新教練付費後，Tony **手動**簽一組幾個月的序號給推薦人。
+自動化推薦碼**暫不做**：商店付款還沒接（見 Paywall 節），沒有可靠的「對方已付費」訊號，以註冊觸發會被假裝置刷。
+
+### V1 — 序號時間疊加，且同一序號不能重複加天數
+
+現況（三邊都一樣）：兌換 VIP 序號時到期 = **現在** + `planDays`，直接覆蓋。
+- 後端 `lib/db.ts` `activateLicenseWithCode` 的 `expiresAt = Date.now() + durationDays`。
+- Android `util/VersionLifecycleManager.kt` 的 `vipSerialInfo != null` 分支（離線 fallback）。
+- iOS `App/VersionLifecycleManager.swift` 的 `if let vipSerialInfo` 分支（離線 fallback）。
+兩個問題：還有 30 天時兌換 90 天序號只剩 90 天（推薦獎勵會吃掉剩餘天數）；
+**同一台裝置重新輸入同一組序號會成功並把到期重設為「現在＋天數」**——等於同一組序號可以無限續用
+（後端 `claimVipSerial` 對「已被本裝置認領」回傳 true、`/api/license/activate` 的 `isSerialClaimedByDevice` 也放行）。
+
+改為：
+- **新序號**：到期 = max(現在, 目前生效中的到期時間) ＋ `planDays`。「目前生效中」＝ 此裝置／user 的 license
+  `status === 'active'` 且未過期，**推廣碼 30 天體驗也算**（不另外排除，簡單且對教練有利）；基礎 7 天試用不是 VIP 到期，不算。
+- **同一序號在同一裝置再輸入一次**：回傳成功但**不加天數**，沿用目前到期時間（已過期就維持過期、回傳清楚的錯誤訊息
+  「此序號已在本設備使用過」）。後端要讓 `claimVipSerial` 分得出「剛認領」與「本來就是本裝置的」，不要另寫一套查詢。
+- App 本機（離線 fallback）同樣規則：記錄已兌換過的序號 `serialId` 集合（Android 仿 `KEY_REDEEMED_PROMOS` 的 StringSet，
+  iOS 用 UserDefaults 陣列），重複的不加天數。線上兌換成功時 App 一律採用後端回傳的 `expires_at`（現行行為，
+  不要在 App 端再疊一次），並把該 serialId 記入本機集合。
+- 疊加計算做成純函式，三邊同名：`stackedVipExpiry(nowMs, currentExpiryMs /* 沒有或已過期傳 null/0 */, planDays)`。
+- 測試：後端寫在 `backend/src/lib/*.test.mjs` 並加進 `package.json` 的 test 指令；Android／iOS 寫在既有測試檔。
+  至少：無現有到期→now+days；現有到期在未來→現有＋days；現有已過期→now+days；
+  後端整合測（本機 JSON 模式）：同裝置兌換兩組不同序號天數相加；同一序號兌換兩次到期不變；
+  同一序號換另一台裝置仍被拒（既有行為不能壞）。
+
+### V2 — 終身版顯示
+
+目前序號開通一律顯示「專業年繳版 (VIP)」（Android `auth/LicenseVerificationService.kt`、`util/VersionLifecycleManager.kt`；
+iOS `App/VersionLifecycleManager.swift` 的 `planName`、`Auth/LicenseVerificationService.swift`；後端 activate 回應訊息）。
+- 規則只看到期時間：**VIP 到期距今超過 10 年 → 顯示「終身版 (VIP)」**，兌換成功訊息同步改為「已升級為「終身版 (VIP)」」。
+  不新增 plan_type、不改序號格式。推廣碼體驗版的名稱不變。
+- 純函式雙端同名（例如 `isLifetimeVip(expiresMs, nowMs)`），有測試（9 年→否、11 年→是、剛好 36500 天序號→是）。
+- 後端 `/api/license/activate` 的成功訊息同樣依此規則。
+
 ## 開發清單：編輯器段落清單（spec M1.2 補完）
 
 段落目前只能「就地取代」—— 編輯器所有操作都是 `segments[selectedIndex] = updated`，

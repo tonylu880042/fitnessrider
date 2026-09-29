@@ -81,14 +81,17 @@ export async function POST(req: NextRequest) {
     const isPromo = result.is_promo;
     return NextResponse.json({
       success: true,
-      message: isPromo
-        ? '推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。'
-        : '授權開通成功！已升級為專業年繳版。',
+      message: result.already_claimed_by_device
+        ? '此序號已在本設備使用過，到期時間維持不變。'
+        : isPromo
+          ? '推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。'
+          : '授權開通成功！已升級為專業年繳版。',
       plan_type: result.license?.plan_type || (isPromo ? 'promo_trial_30d' : 'yearly'),
       expires_at: result.license?.expires_at,
       days_remaining: result.trial_days || (isPromo ? 30 : 365),
       is_promo: isPromo,
       ...(result.device_secret ? { device_secret: result.device_secret } : {}),
+      ...(result.already_claimed_by_device ? { already_claimed_by_device: true } : {}),
     });
   } catch (error: unknown) {
     console.error('License Activate Error:', error);

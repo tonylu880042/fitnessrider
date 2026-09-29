@@ -14,6 +14,7 @@ object VersionLifecycleManager {
     const val KEY_VIP_EXPIRES = "fitness_rider_vip_expires"
     const val KEY_VIP_CODE = "fitness_rider_vip_code"
     const val KEY_REDEEMED_PROMOS = "fitness_rider_redeemed_promos"
+    const val KEY_REDEEMED_VIP_SERIALS = "fitness_rider_redeemed_vip_serials"
     private const val MS_PER_DAY = 86_400_000L
 
     val buildTimeMs: Long get() = BuildConfig.BUILD_TIME_MS
@@ -22,6 +23,11 @@ object VersionLifecycleManager {
     val updateUrl: String get() = BuildConfig.UPDATE_URL
     val versionName: String get() = BuildConfig.VERSION_NAME
     val versionCode: Int get() = BuildConfig.VERSION_CODE
+
+    fun stackedVipExpiry(nowMs: Long, currentExpiryMs: Long?, planDays: Int): Long {
+        val base = if (currentExpiryMs != null && currentExpiryMs > nowMs) currentExpiryMs else nowMs
+        return base + planDays.toLong() * MS_PER_DAY
+    }
 
     fun isPromoCode(rawCode: String): Boolean {
         val code = rawCode.trim().uppercase()
@@ -177,10 +183,21 @@ object VersionLifecycleManager {
         }
 
         if (vipSerialInfo != null) {
-            val planMs = vipSerialInfo.planDays.toLong() * MS_PER_DAY
-            val expiresMs = now + planMs
+            val redeemedSerials = prefs.getStringSet(KEY_REDEEMED_VIP_SERIALS, emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (redeemedSerials.contains(vipSerialInfo.serialId)) {
+                return if (isVipActive(context, overrideCurrentTimeMs)) {
+                    Pair(true, "此序號已在本設備使用過，到期時間維持不變。")
+                } else {
+                    Pair(false, "此序號已在本設備使用過，授權已到期，請使用新的序號。")
+                }
+            }
 
+            val currentExpiryMs = if (isVipActive(context, overrideCurrentTimeMs)) prefs.getLong(KEY_VIP_EXPIRES, 0L) else null
+            val expiresMs = stackedVipExpiry(now, currentExpiryMs, vipSerialInfo.planDays)
+
+            redeemedSerials.add(vipSerialInfo.serialId)
             prefs.edit()
+                .putStringSet(KEY_REDEEMED_VIP_SERIALS, redeemedSerials)
                 .putBoolean(KEY_VIP_ACTIVE, true)
                 .putLong(KEY_VIP_EXPIRES, expiresMs)
                 .putString(KEY_VIP_CODE, code)
@@ -206,12 +223,22 @@ object VersionLifecycleManager {
         }
         val effectiveCode = code ?: if (isPromo) "promo_verified" else "server_verified"
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
+        val editor = prefs.edit()
             .putBoolean(KEY_VIP_ACTIVE, true)
             .putLong(KEY_VIP_EXPIRES, expiresMs)
             .putString(KEY_VIP_CODE, effectiveCode)
             .putBoolean(KEY_IS_EXPIRED, false)
-            .apply()
+
+        if (!isPromo && code != null) {
+            val vipSerialInfo = VipSerialVerifier.verify(code)
+            if (vipSerialInfo != null) {
+                val redeemedSerials = prefs.getStringSet(KEY_REDEEMED_VIP_SERIALS, emptySet())?.toMutableSet() ?: mutableSetOf()
+                redeemedSerials.add(vipSerialInfo.serialId)
+                editor.putStringSet(KEY_REDEEMED_VIP_SERIALS, redeemedSerials)
+            }
+        }
+
+        editor.apply()
     }
 
     fun recordPromoRedemption(context: Context, code: String) {

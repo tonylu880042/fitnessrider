@@ -11,3 +11,12 @@ export const MIN_SUPPORTED_VERSION_CODE = {
 export function minSupportedVersionCodeFor(platform: string | null | undefined): number {
   return platform === 'ios' ? MIN_SUPPORTED_VERSION_CODE.ios : MIN_SUPPORTED_VERSION_CODE.android;
 }
+
+export function stackedVipExpiry(
+  nowMs: number,
+  currentExpiryMs: number | null | undefined,
+  planDays: number
+): number {
+  const base = currentExpiryMs && currentExpiryMs > nowMs ? currentExpiryMs : nowMs;
+  return base + planDays * 24 * 60 * 60 * 1000;
+}

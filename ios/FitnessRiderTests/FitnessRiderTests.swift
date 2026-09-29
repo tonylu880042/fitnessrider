@@ -912,6 +912,79 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(manager.remainingDays(currentTime: day35, defaults: testDefaults), 365)
     }
 
+    func testStackedVipExpiryPureFunction() {
+        let oneDay: TimeInterval = 86400.0
+        let now: Double = 1_800_000_000
+
+        XCTAssertEqual(VersionLifecycleManager.stackedVipExpiry(nowMs: now, currentExpiryMs: nil, planDays: 90), now + 90 * oneDay)
+        XCTAssertEqual(VersionLifecycleManager.stackedVipExpiry(nowMs: now, currentExpiryMs: now + 30 * oneDay, planDays: 90), now + 30 * oneDay + 90 * oneDay)
+        XCTAssertEqual(VersionLifecycleManager.stackedVipExpiry(nowMs: now, currentExpiryMs: now - 10 * oneDay, planDays: 90), now + 90 * oneDay)
+    }
+
+    func testVipSerialStackingAddsPlanDaysToExistingExpiry() throws {
+        let launchDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "VipStackTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        let testKey = P256.Signing.PrivateKey()
+        let testPublicKeyB64 = testKey.publicKey.derRepresentation.base64EncodedString()
+        let serialA = try signVipSerial(privateKey: testKey, serialIdHex: "11112222", planDays: 100)
+        let serialB = try signVipSerial(privateKey: testKey, serialIdHex: "33334444", planDays: 30)
+
+        let resA = manager.activateLicenseCode(serialA, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: launchDate)
+        XCTAssertTrue(resA.success)
+        let expiresAfterA = testDefaults.double(forKey: "fitness_rider_vip_expires")
+        XCTAssertEqual(expiresAfterA, launchDate.timeIntervalSince1970 + 100 * oneDay)
+
+        let resB = manager.activateLicenseCode(serialB, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: launchDate)
+        XCTAssertTrue(resB.success)
+        let expiresAfterB = testDefaults.double(forKey: "fitness_rider_vip_expires")
+        XCTAssertEqual(expiresAfterB, expiresAfterA + 30 * oneDay)
+    }
+
+    func testSameVipSerialRedeemedTwiceDoesNotAddDays() throws {
+        let launchDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "VipRepeatTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        let testKey = P256.Signing.PrivateKey()
+        let testPublicKeyB64 = testKey.publicKey.derRepresentation.base64EncodedString()
+        let serial = try signVipSerial(privateKey: testKey, serialIdHex: "55556666", planDays: 200)
+
+        let first = manager.activateLicenseCode(serial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: launchDate)
+        XCTAssertTrue(first.success)
+        let expiresAfterFirst = testDefaults.double(forKey: "fitness_rider_vip_expires")
+        XCTAssertEqual(expiresAfterFirst, launchDate.timeIntervalSince1970 + 200 * oneDay)
+
+        let later = launchDate.addingTimeInterval(5 * oneDay)
+        let second = manager.activateLicenseCode(serial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: later)
+        XCTAssertTrue(second.success)
+        XCTAssertTrue(second.message.contains("已在本設備使用過"))
+        let expiresAfterSecond = testDefaults.double(forKey: "fitness_rider_vip_expires")
+        XCTAssertEqual(expiresAfterSecond, expiresAfterFirst)
+    }
+
+    func testSameVipSerialReenteredAfterExpiryFails() throws {
+        let launchDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "VipExpiredRepeatTestDefaults_\(UUID().uuidString)")!
+        let oneDay: TimeInterval = 86400.0
+
+        let testKey = P256.Signing.PrivateKey()
+        let testPublicKeyB64 = testKey.publicKey.derRepresentation.base64EncodedString()
+        let serial = try signVipSerial(privateKey: testKey, serialIdHex: "77778888", planDays: 10)
+
+        let first = manager.activateLicenseCode(serial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: launchDate)
+        XCTAssertTrue(first.success)
+
+        let afterExpiry = launchDate.addingTimeInterval(20 * oneDay)
+        let second = manager.activateLicenseCode(serial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: afterExpiry)
+        XCTAssertFalse(second.success)
+        XCTAssertTrue(second.message.contains("已到期"))
+    }
+
     func testVipSerialVerifierRejectsTamperedAndWrongKeySerials() throws {
         let keyPairA = P256.Signing.PrivateKey()
         let keyPairB = P256.Signing.PrivateKey()

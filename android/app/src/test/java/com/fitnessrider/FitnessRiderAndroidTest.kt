@@ -675,6 +675,87 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testStackedVipExpiryPureFunction() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val oneDayMs = 86_400_000L
+        val now = 1_800_000_000_000L
+
+        assertEquals(now + 90 * oneDayMs, manager.stackedVipExpiry(now, null, 90))
+        assertEquals(now + 30 * oneDayMs + 90 * oneDayMs, manager.stackedVipExpiry(now, now + 30 * oneDayMs, 90))
+        assertEquals(now + 90 * oneDayMs, manager.stackedVipExpiry(now, now - 10 * oneDayMs, 90))
+    }
+
+    @Test
+    fun testVipSerialStackingAddsPlanDaysToExistingExpiry() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+        val oneDayMs = 86_400_000L
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serialA = signVipSerial(keyPair.private, "11112222", 100)
+        val serialB = signVipSerial(keyPair.private, "33334444", 30)
+
+        val mockNow = 1_800_000_000_000L
+        val resA = manager.activateLicenseCode(fakeContext, serialA, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(resA.first)
+        val expiresAfterA = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        assertEquals(mockNow + 100 * oneDayMs, expiresAfterA)
+
+        val resB = manager.activateLicenseCode(fakeContext, serialB, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(resB.first)
+        val expiresAfterB = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        assertEquals(expiresAfterA + 30 * oneDayMs, expiresAfterB)
+    }
+
+    @Test
+    fun testSameVipSerialRedeemedTwiceDoesNotAddDays() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+        val oneDayMs = 86_400_000L
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serial = signVipSerial(keyPair.private, "55556666", 200)
+
+        val mockNow = 1_800_000_000_000L
+        val first = manager.activateLicenseCode(fakeContext, serial, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(first.first)
+        val expiresAfterFirst = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        assertEquals(mockNow + 200 * oneDayMs, expiresAfterFirst)
+
+        val later = mockNow + 5 * oneDayMs
+        val second = manager.activateLicenseCode(fakeContext, serial, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = later)
+        org.junit.Assert.assertTrue(second.first)
+        org.junit.Assert.assertTrue(second.second.contains("已在本設備使用過"))
+        val expiresAfterSecond = fakePrefs.getLong(manager.KEY_VIP_EXPIRES, 0L)
+        assertEquals(expiresAfterFirst, expiresAfterSecond)
+    }
+
+    @Test
+    fun testSameVipSerialReenteredAfterExpiryFails() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+        val oneDayMs = 86_400_000L
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serial = signVipSerial(keyPair.private, "77778888", 10)
+
+        val mockNow = 1_800_000_000_000L
+        val first = manager.activateLicenseCode(fakeContext, serial, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(first.first)
+
+        val afterExpiry = mockNow + 20 * oneDayMs
+        val second = manager.activateLicenseCode(fakeContext, serial, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = afterExpiry)
+        org.junit.Assert.assertFalse(second.first)
+        org.junit.Assert.assertTrue(second.second.contains("已到期"))
+    }
+
+    @Test
     fun testPromoCodeCannotDowngradeActivePaidVip() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
         val fakePrefs = FakeSharedPreferences()

@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Pool } from 'pg';
 import type { User, Device, License, DeviceTransferLog, PromoRedemption, DeviceTrialAnchor, VipSerialRedemption } from './types';
-import { PROMO_TOTAL_TRIAL_DAYS } from './licenseConfig';
+import { PROMO_TOTAL_TRIAL_DAYS, stackedVipExpiry } from './licenseConfig';
 import { verifyVipSerial } from './vipSerial';
 
 interface InMemoryData {
@@ -408,7 +408,11 @@ export const db = {
     return crypto.timingSafeEqual(expectedBuf, givenBuf);
   },
 
-  async claimVipSerial(serialId: string, deviceFingerprint: string, planDays: number): Promise<boolean> {
+  async claimVipSerial(
+    serialId: string,
+    deviceFingerprint: string,
+    planDays: number
+  ): Promise<'new' | 'same_device' | 'other_device'> {
     if (pgPool) {
       await initPgTables();
       const inserted = await pgPool.query(
@@ -417,18 +421,18 @@ export const db = {
          ON CONFLICT (serial_id) DO NOTHING`,
         [serialId, deviceFingerprint, planDays, new Date().toISOString()]
       );
-      if (inserted.rowCount && inserted.rowCount > 0) return true;
+      if (inserted.rowCount && inserted.rowCount > 0) return 'new';
 
       const existing = await pgPool.query(
         'SELECT device_fingerprint FROM vip_serial_redemptions WHERE serial_id = $1 LIMIT 1',
         [serialId]
       );
-      return existing.rows[0]?.device_fingerprint === deviceFingerprint;
+      return existing.rows[0]?.device_fingerprint === deviceFingerprint ? 'same_device' : 'other_device';
     } else {
       const data = ensureLocalDb();
       if (!data.vip_serial_redemptions) data.vip_serial_redemptions = [];
       const existing = data.vip_serial_redemptions.find(r => r.serial_id === serialId);
-      if (existing) return existing.device_fingerprint === deviceFingerprint;
+      if (existing) return existing.device_fingerprint === deviceFingerprint ? 'same_device' : 'other_device';
 
       data.vip_serial_redemptions.push({
         serial_id: serialId,
@@ -437,7 +441,7 @@ export const db = {
         redeemed_at: new Date().toISOString(),
       });
       saveLocalDb(data);
-      return true;
+      return 'new';
     }
   },
 
@@ -455,6 +459,7 @@ export const db = {
     is_promo?: boolean;
     trial_days?: number;
     device_secret?: string;
+    already_claimed_by_device?: boolean;
   }> {
     const code = rawCode.trim().toUpperCase();
     const promoStatus = checkPromoCodeStatus(code);
@@ -523,23 +528,53 @@ export const db = {
       expiresAt = new Date(promoExpiresMs).toISOString();
       durationDays = PROMO_TOTAL_TRIAL_DAYS;
     } else {
-      durationDays = vipSerialInfo!.planDays;
-      expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-    }
-
-    if (isValidVIP && vipSerialInfo) {
-      const claimed = await this.claimVipSerial(
-        vipSerialInfo.serialId,
+      const claimResult = await this.claimVipSerial(
+        vipSerialInfo!.serialId,
         deviceFingerprint,
-        vipSerialInfo.planDays
+        vipSerialInfo!.planDays
       );
-      if (!claimed) {
+      if (claimResult === 'other_device') {
         return {
           success: false,
           error: '此授權序號已在其他設備開通過。如需更換設備，請使用「轉移既有授權」功能。',
           error_code: 'VIP_SERIAL_ALREADY_CLAIMED',
         };
       }
+
+      const existingLicense = userId ? await this.getLicenseByUserId(userId) : null;
+
+      if (claimResult === 'same_device') {
+        const isStillActive =
+          !!existingLicense &&
+          existingLicense.status === 'active' &&
+          new Date(existingLicense.expires_at).getTime() > Date.now();
+
+        if (!isStillActive) {
+          return {
+            success: false,
+            error: '此序號已在本設備使用過，授權已到期，請使用新的序號。',
+            error_code: 'VIP_SERIAL_ALREADY_USED',
+          };
+        }
+
+        const existingAnchor = await this.getDeviceTrialAnchor(deviceFingerprint);
+        return {
+          success: true,
+          license: existingLicense,
+          is_promo: existingLicense.plan_type === 'promo_trial_30d',
+          trial_days: 0,
+          already_claimed_by_device: true,
+          ...(existingAnchor?.device_secret ? { device_secret: existingAnchor.device_secret } : {}),
+        };
+      }
+
+      durationDays = vipSerialInfo!.planDays;
+      const now = Date.now();
+      const currentActiveExpiryMs =
+        existingLicense && existingLicense.status === 'active'
+          ? new Date(existingLicense.expires_at).getTime()
+          : null;
+      expiresAt = new Date(stackedVipExpiry(now, currentActiveExpiryMs, durationDays)).toISOString();
     }
 
     if (!userId) {
