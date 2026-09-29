@@ -5,7 +5,7 @@ const PAYLOAD_BYTES = 7;
 
 export const VIP_SERIAL_PUBLIC_KEY_SPKI_B64 =
   process.env.VIP_SERIAL_PUBLIC_KEY_SPKI_B64 ||
-  'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEjwz6HDGkpRRv8HNT+3HqVORKB6ByIDcHXG5StD9sr0fc2fmZs6R19dObhW2U75iKdEILOefyPHF/E7yY1mVC1g==';
+  'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbITb9ZCFHCWVpGGXXOpuXrlZFGI77w/yCKDOgqqDzCUCuu2kwsFMYf0h//3dRcp3gux17N/abmGRPnuCXeUeIw==';
 
 export interface VipSerialInfo {
   serialId: string;
