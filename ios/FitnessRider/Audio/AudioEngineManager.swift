@@ -54,6 +54,7 @@ private final class AudioDeck {
     var currentDurationSeconds: Double = 0.0
     var currentOffsetSeconds: Double = 0.0
     var segmentIndex: Int = -1
+    var scheduleGeneration: Int = 0
 
     init(id: String) {
         self.id = id
@@ -83,6 +84,7 @@ private final class AudioDeck {
     }
 
     func stop() {
+        scheduleGeneration += 1
         playerNode.stop()
         currentAudioFile = nil
         audioLengthSamples = 0
@@ -216,6 +218,8 @@ public final class AudioEngineManager: ObservableObject {
 
         let deckId = deck.id
         let segmentIndex = deck.segmentIndex
+        deck.scheduleGeneration += 1
+        let generation = deck.scheduleGeneration
 
         deck.playerNode.scheduleSegment(
             file,
@@ -224,7 +228,7 @@ public final class AudioEngineManager: ObservableObject {
             at: nil
         ) { [weak self] in
             DispatchQueue.main.async {
-                self?.handleTrackBufferFinished(deckId: deckId, segmentIndex: segmentIndex)
+                self?.handleTrackBufferFinished(deckId: deckId, segmentIndex: segmentIndex, generation: generation)
             }
         }
     }
@@ -452,8 +456,8 @@ public final class AudioEngineManager: ObservableObject {
         activeDeck.setVolume(1.0)
     }
 
-    private func handleTrackBufferFinished(deckId: String, segmentIndex: Int) {
-        guard deckId == activeDeck.id, segmentIndex == currentSegmentIndex else { return }
+    private func handleTrackBufferFinished(deckId: String, segmentIndex: Int, generation: Int) {
+        guard deckId == activeDeck.id, segmentIndex == currentSegmentIndex, generation == activeDeck.scheduleGeneration else { return }
         if isCrossfading {
             let effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
                 requestedDuration: AppSettings.shared.crossfadeDurationSeconds,

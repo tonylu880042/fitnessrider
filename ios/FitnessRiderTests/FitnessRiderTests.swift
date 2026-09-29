@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+import AVFoundation
 @testable import FitnessRider
 
 final class FitnessRiderTests: XCTestCase {
@@ -174,6 +175,16 @@ final class FitnessRiderTests: XCTestCase {
         header.append(contentsOf: fileNameBytes)
         header.append(data)
         return header
+    }
+
+    private func writeSilentAudioFile(to url: URL, seconds: Double) throws {
+        let sampleRate = 44100.0
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1))
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        let frameCount = AVAudioFrameCount(sampleRate * seconds)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        try file.write(from: buffer)
     }
 
     func testImportDecodesAndroidStyleStoredZipFixture() throws {
@@ -1334,6 +1345,69 @@ final class FitnessRiderTests: XCTestCase {
                 XCTAssertLessThanOrEqual(v, start + 0.0001, "manualTailVolume(\(start), \(p)) = \(v) must never exceed startVolume \(start)")
             }
         }
+    }
+
+    @MainActor
+    func testManualJumpBackDuringTailFadeDoesNotSkipSegmentFromStaleCompletion() throws {
+        let settings = AppSettings.shared
+        let originalCrossfade = settings.crossfadeDurationSeconds
+        let originalAutoPause = settings.isAutoPauseBetweenSegmentsEnabled
+        settings.crossfadeDurationSeconds = 3.0
+        settings.isAutoPauseBetweenSegmentsEnabled = false
+        defer {
+            settings.crossfadeDurationSeconds = originalCrossfade
+            settings.isAutoPauseBetweenSegmentsEnabled = originalAutoPause
+        }
+
+        let musicDir = SQLiteDatabase.shared.musicDirectoryURL
+        let fileNameA = "f2_silence_a_\(UUID().uuidString).caf"
+        let fileNameB = "f2_silence_b_\(UUID().uuidString).caf"
+        let urlA = musicDir.appendingPathComponent(fileNameA)
+        let urlB = musicDir.appendingPathComponent(fileNameB)
+        try writeSilentAudioFile(to: urlA, seconds: 30.0)
+        try writeSilentAudioFile(to: urlB, seconds: 30.0)
+        defer {
+            try? FileManager.default.removeItem(at: urlA)
+            try? FileManager.default.removeItem(at: urlB)
+        }
+
+        let classId = UUID()
+        let workoutClass = WorkoutClass(
+            id: classId,
+            title: "F2 尾巴回呼測試",
+            segments: [
+                WorkoutSegment(
+                    id: UUID(), classId: classId, orderIndex: 0, title: "段落一",
+                    musicFileName: fileNameA, durationMs: 30_000, baseBpm: 120.0,
+                    playbackRate: 1.0, intensityZone: 2, cues: []
+                ),
+                WorkoutSegment(
+                    id: UUID(), classId: classId, orderIndex: 1, title: "段落二",
+                    musicFileName: fileNameB, durationMs: 30_000, baseBpm: 120.0,
+                    playbackRate: 1.0, intensityZone: 2, cues: []
+                )
+            ]
+        )
+
+        let engine = AudioEngineManager.shared
+        engine.loadClass(workoutClass, startSegmentIndex: 0)
+        engine.play()
+        XCTAssertEqual(engine.currentSegmentIndex, 0)
+
+        engine.nextSegment()
+        XCTAssertEqual(engine.currentSegmentIndex, 1)
+
+        engine.previousSegment()
+        XCTAssertEqual(engine.currentSegmentIndex, 0)
+
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+
+        XCTAssertEqual(
+            engine.currentSegmentIndex, 0,
+            "尾巴 deck 被 clearManualTail() 停掉觸發的舊世代 completion 不應該把 currentSegmentIndex 推進到 1"
+        )
+
+        engine.pause()
     }
 
     @MainActor
