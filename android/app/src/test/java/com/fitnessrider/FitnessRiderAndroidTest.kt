@@ -686,6 +686,33 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testIsLifetimeVipPureFunction() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val oneDayMs = 86_400_000L
+        val now = 1_800_000_000_000L
+
+        org.junit.Assert.assertFalse(manager.isLifetimeVip(now + 9 * 365 * oneDayMs, now))
+        org.junit.Assert.assertTrue(manager.isLifetimeVip(now + 11 * 365 * oneDayMs, now))
+    }
+
+    @Test
+    fun testFreshLifetimeVipSerialDisplaysLifetimePlanNameAndMessage() {
+        val manager = com.fitnessrider.util.VersionLifecycleManager
+        val fakePrefs = FakeSharedPreferences()
+        val fakeContext = MockContext(fakePrefs)
+
+        val keyPair = generateTestEcKeyPair()
+        val publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        val serial = signVipSerial(keyPair.private, "9A9B9C9D", 36500)
+
+        val mockNow = 1_800_000_000_000L
+        val res = manager.activateLicenseCode(fakeContext, serial, testVipPublicKeyOverride = publicKeyBase64, overrideCurrentTimeMs = mockNow)
+        org.junit.Assert.assertTrue(res.first)
+        org.junit.Assert.assertTrue(res.second.contains("終身版 (VIP)"))
+        org.junit.Assert.assertEquals("終身版 (VIP)", manager.getVipPlanName(fakeContext, overrideCurrentTimeMs = mockNow))
+    }
+
+    @Test
     fun testVipSerialStackingAddsPlanDaysToExistingExpiry() {
         val manager = com.fitnessrider.util.VersionLifecycleManager
         val fakePrefs = FakeSharedPreferences()

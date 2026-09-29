@@ -20,3 +20,9 @@ export function stackedVipExpiry(
   const base = currentExpiryMs && currentExpiryMs > nowMs ? currentExpiryMs : nowMs;
   return base + planDays * 24 * 60 * 60 * 1000;
 }
+
+export const LIFETIME_VIP_THRESHOLD_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+
+export function isLifetimeVip(expiresMs: number, nowMs: number): boolean {
+  return expiresMs - nowMs > LIFETIME_VIP_THRESHOLD_MS;
+}

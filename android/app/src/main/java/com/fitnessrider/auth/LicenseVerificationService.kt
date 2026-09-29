@@ -201,7 +201,14 @@ class LicenseVerificationService(private val context: Context) {
                     if (valid && plan != "trial" && plan != "none") {
                         _isLicensed.value = true
                         _remainingDays.value = days
-                        _planType.value = "專業年繳版 (VIP)"
+                        val expiresAtIso = respJson.optString("expires_at", "")
+                        val expiresAtMs = if (expiresAtIso.isNotEmpty()) {
+                            try { java.time.Instant.parse(expiresAtIso).toEpochMilli() } catch (e: Exception) { 0L }
+                        } else 0L
+                        _planType.value = com.fitnessrider.util.VersionLifecycleManager.vipPlanName(
+                            plan == "promo_trial_30d",
+                            expiresAtMs
+                        )
                     }
                 }
             }

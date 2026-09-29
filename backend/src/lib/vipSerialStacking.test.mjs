@@ -18,7 +18,7 @@ fs.rmSync(DATA_FILE, { force: true });
 register(new URL('./tsExtensionResolveHook.mjs', import.meta.url));
 
 const { db } = await import('./db.ts');
-const { stackedVipExpiry } = await import('./licenseConfig.ts');
+const { stackedVipExpiry, isLifetimeVip } = await import('./licenseConfig.ts');
 const { buildVipSerialPayload, encodeVipSerial } = await import('./vipSerial.ts');
 
 test.after(() => {
@@ -53,6 +53,30 @@ test('stackedVipExpiry：現有到期時間已過期 -> now + planDays', () => {
   const currentExpiry = now - 10 * 24 * 60 * 60 * 1000;
   const result = stackedVipExpiry(now, currentExpiry, 90);
   assert.equal(result, now + 90 * 24 * 60 * 60 * 1000);
+});
+
+test('isLifetimeVip：9 年後到期 -> 否', () => {
+  const now = Date.parse('2026-09-29T00:00:00Z');
+  const expires = now + 9 * 365 * 24 * 60 * 60 * 1000;
+  assert.equal(isLifetimeVip(expires, now), false);
+});
+
+test('isLifetimeVip：11 年後到期 -> 是', () => {
+  const now = Date.parse('2026-09-29T00:00:00Z');
+  const expires = now + 11 * 365 * 24 * 60 * 60 * 1000;
+  assert.equal(isLifetimeVip(expires, now), true);
+});
+
+test('isLifetimeVip：全新 36500 天序號 -> 是', async () => {
+  const fingerprint = `fp-lifetime-${crypto.randomUUID()}`;
+  const serial = makeSerial(randomSerialId(), 36500);
+
+  const res = await db.activateLicenseWithCode(fingerprint, serial);
+  assert.equal(res.success, true);
+
+  const now = Date.now();
+  const expiresMs = new Date(res.license.expires_at).getTime();
+  assert.equal(isLifetimeVip(expiresMs, now), true);
 });
 
 test('同一裝置兌換兩組不同序號時到期時間相加（疊加）', async () => {

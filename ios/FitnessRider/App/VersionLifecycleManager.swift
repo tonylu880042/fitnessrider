@@ -64,7 +64,10 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         }
 
         self.isVIP = evaluateVipStatus()
-        self.vipPlanName = Self.planName(isPromo: Self.isPromoVipCode(Self.storedVipCode(defaults: .standard)))
+        self.vipPlanName = Self.planName(
+            isPromo: Self.isPromoVipCode(Self.storedVipCode(defaults: .standard)),
+            expiresMs: UserDefaults.standard.double(forKey: "fitness_rider_vip_expires")
+        )
     }
 
     static func stackedVipExpiry(nowMs: Double, currentExpiryMs: Double?, planDays: Int) -> Double {
@@ -72,8 +75,15 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         return base + Double(planDays) * secondsPerDay
     }
 
-    static func planName(isPromo: Bool) -> String {
-        isPromo ? "推廣課程專屬版 (\(promoTotalTrialDays)天免費)" : "專業年繳版 (VIP)"
+    static let lifetimeVipThresholdSeconds: TimeInterval = 10 * 365 * secondsPerDay
+
+    static func isLifetimeVip(expiresMs: Double, nowMs: Double) -> Bool {
+        expiresMs - nowMs > lifetimeVipThresholdSeconds
+    }
+
+    static func planName(isPromo: Bool, expiresMs: Double = 0, nowMs: Double = Date().timeIntervalSince1970) -> String {
+        if isPromo { return "推廣課程專屬版 (\(promoTotalTrialDays)天免費)" }
+        return isLifetimeVip(expiresMs: expiresMs, nowMs: nowMs) ? "終身版 (VIP)" : "專業年繳版 (VIP)"
     }
 
     static func storedVipCode(defaults: UserDefaults) -> String? {
@@ -270,8 +280,8 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
 
             self.isVIP = true
             self.isExpiredOnLaunch = false
-            self.vipPlanName = Self.planName(isPromo: false)
-            return (true, "授權開通成功！已升級為「專業年繳版 (VIP)」")
+            self.vipPlanName = Self.planName(isPromo: false, expiresMs: expiresTs, nowMs: nowTs)
+            return (true, "授權開通成功！已升級為「\(self.vipPlanName)」")
         }
 
         return (false, "無效的授權序號或推廣代碼")
@@ -299,7 +309,7 @@ public final class VersionLifecycleManager: ObservableObject, @unchecked Sendabl
         }
         self.isVIP = true
         self.isExpiredOnLaunch = false
-        self.vipPlanName = Self.planName(isPromo: isPromo)
+        self.vipPlanName = Self.planName(isPromo: isPromo, expiresMs: expiresTs)
     }
 
     public func reconcileFirstLaunchAnchor(serverAnchor: Date) {

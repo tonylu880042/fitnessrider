@@ -921,6 +921,29 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(VersionLifecycleManager.stackedVipExpiry(nowMs: now, currentExpiryMs: now - 10 * oneDay, planDays: 90), now + 90 * oneDay)
     }
 
+    func testIsLifetimeVipPureFunction() {
+        let oneDay: TimeInterval = 86400.0
+        let now: Double = 1_800_000_000
+
+        XCTAssertFalse(VersionLifecycleManager.isLifetimeVip(expiresMs: now + 9 * 365 * oneDay, nowMs: now))
+        XCTAssertTrue(VersionLifecycleManager.isLifetimeVip(expiresMs: now + 11 * 365 * oneDay, nowMs: now))
+    }
+
+    func testFreshLifetimeVipSerialDisplaysLifetimePlanNameAndMessage() throws {
+        let launchDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)
+        let testDefaults = UserDefaults(suiteName: "LifetimeVipTestDefaults_\(UUID().uuidString)")!
+
+        let testKey = P256.Signing.PrivateKey()
+        let testPublicKeyB64 = testKey.publicKey.derRepresentation.base64EncodedString()
+        let serial = try signVipSerial(privateKey: testKey, serialIdHex: "9A9B9C9D", planDays: 36500)
+
+        let res = manager.activateLicenseCode(serial, defaults: testDefaults, testVipPublicKeyOverride: testPublicKeyB64, overrideCurrentDate: launchDate)
+        XCTAssertTrue(res.success)
+        XCTAssertTrue(res.message.contains("終身版 (VIP)"))
+        XCTAssertEqual(manager.vipPlanName, "終身版 (VIP)")
+    }
+
     func testVipSerialStackingAddsPlanDaysToExistingExpiry() throws {
         let launchDate = Date(timeIntervalSince1970: 1_800_000_000)
         let manager = VersionLifecycleManager(explicitFirstLaunchDate: launchDate)

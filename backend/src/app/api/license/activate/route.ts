@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, isPromoCode } from '@/lib/db';
 import { verifyJwt } from '@/lib/auth';
 import { verifyVipSerial } from '@/lib/vipSerial';
+import { isLifetimeVip } from '@/lib/licenseConfig';
 
 export async function POST(req: NextRequest) {
   try {
@@ -79,13 +80,17 @@ export async function POST(req: NextRequest) {
     }
 
     const isPromo = result.is_promo;
+    const expiresAtMs = result.license?.expires_at ? new Date(result.license.expires_at).getTime() : 0;
+    const isLifetime = !isPromo && isLifetimeVip(expiresAtMs, Date.now());
     return NextResponse.json({
       success: true,
       message: result.already_claimed_by_device
         ? '此序號已在本設備使用過，到期時間維持不變。'
         : isPromo
           ? '推廣課程專屬代碼兌換成功！已為此設備啟用 30 天全功能免費 VIP 體驗。'
-          : '授權開通成功！已升級為專業年繳版。',
+          : isLifetime
+            ? '授權開通成功！已升級為「終身版 (VIP)」'
+            : '授權開通成功！已升級為專業年繳版。',
       plan_type: result.license?.plan_type || (isPromo ? 'promo_trial_30d' : 'yearly'),
       expires_at: result.license?.expires_at,
       days_remaining: result.trial_days || (isPromo ? 30 : 365),

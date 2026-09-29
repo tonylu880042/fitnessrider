@@ -237,7 +237,9 @@ public final class LicenseVerificationService: ObservableObject {
                     if valid && plan != "trial" && plan != "none" {
                         newIsLicensed = true
                         newRemainingDays = days
-                        newPlanType = "專業年繳版 (VIP)"
+                        let expiresAtIso = json["expires_at"] as? String
+                        let expiresMs = expiresAtIso.flatMap { Self.parseISO8601($0) }?.timeIntervalSince1970 ?? 0
+                        newPlanType = VersionLifecycleManager.planName(isPromo: plan == "promo_trial_30d", expiresMs: expiresMs)
                     }
                 }
             }
@@ -328,7 +330,9 @@ public final class LicenseVerificationService: ObservableObject {
                 let days = licenseData?["days_remaining"] as? Int ?? 365
                 let expiresAtIso = licenseData?["expires_at"] as? String
 
+                var expiresMsForName: Double = 0
                 if let expiresAtIso, let expiresAtDate = Self.parseISO8601(expiresAtIso) {
+                    expiresMsForName = expiresAtDate.timeIntervalSince1970
                     VersionLifecycleManager.shared.activateVipFromServer(
                         expiresAt: expiresAtDate,
                         isPromo: plan == "promo_trial_30d"
@@ -342,7 +346,7 @@ public final class LicenseVerificationService: ObservableObject {
                 return DeviceTransferResult(
                     success: true,
                     message: msg,
-                    planType: plan == "trial" ? "全功能免費試用版" : VersionLifecycleManager.planName(isPromo: plan == "promo_trial_30d"),
+                    planType: plan == "trial" ? "全功能免費試用版" : VersionLifecycleManager.planName(isPromo: plan == "promo_trial_30d", expiresMs: expiresMsForName),
                     remainingDays: days
                 )
             } else {

@@ -29,6 +29,22 @@ object VersionLifecycleManager {
         return base + planDays.toLong() * MS_PER_DAY
     }
 
+    private const val LIFETIME_VIP_THRESHOLD_MS = 10L * 365 * MS_PER_DAY
+
+    fun isLifetimeVip(expiresMs: Long, nowMs: Long): Boolean {
+        return expiresMs - nowMs > LIFETIME_VIP_THRESHOLD_MS
+    }
+
+    fun vipPlanName(isPromo: Boolean, expiresMs: Long = 0L, nowMs: Long = System.currentTimeMillis()): String {
+        return if (isPromo) {
+            "推廣課程專屬版 (${BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)"
+        } else if (isLifetimeVip(expiresMs, nowMs)) {
+            "終身版 (VIP)"
+        } else {
+            "專業年繳版 (VIP)"
+        }
+    }
+
     fun isPromoCode(rawCode: String): Boolean {
         val code = rawCode.trim().uppercase()
         val regex = Regex("^(\\d{2})FR-NR$")
@@ -204,7 +220,7 @@ object VersionLifecycleManager {
                 .putBoolean(KEY_IS_EXPIRED, false)
                 .apply()
 
-            return Pair(true, "授權開通成功！已升級為「專業年繳版 (VIP)」")
+            return Pair(true, "授權開通成功！已升級為「${vipPlanName(false, expiresMs, now)}」")
         }
 
         return Pair(false, "無效的授權序號或推廣代碼")
@@ -267,12 +283,14 @@ object VersionLifecycleManager {
         return c == "PROMO_VERIFIED" || Regex("^\\d{2}FR-NR$").matches(c)
     }
 
-    fun getVipPlanName(context: Context): String {
-        return if (isPromoVipCode(getVipCode(context))) {
-            "推廣課程專屬版 (${BuildConfig.PROMO_TOTAL_TRIAL_DAYS}天免費)"
-        } else {
-            "專業年繳版 (VIP)"
-        }
+    fun getVipPlanName(context: Context, overrideCurrentTimeMs: Long? = null): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val now = overrideCurrentTimeMs ?: System.currentTimeMillis()
+        return vipPlanName(
+            isPromoVipCode(getVipCode(context)),
+            prefs.getLong(KEY_VIP_EXPIRES, 0L),
+            now
+        )
     }
 
     fun getFormattedBuildDate(): String {
