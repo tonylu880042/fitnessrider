@@ -235,6 +235,59 @@ iOS `App/VersionLifecycleManager.swift` 的 `planName`、`Auth/LicenseVerificati
 - 純函式雙端同名（例如 `isLifetimeVip(expiresMs, nowMs)`），有測試（9 年→否、11 年→是、剛好 36500 天序號→是）。
 - 後端 `/api/license/activate` 的成功訊息同樣依此規則。
 
+## 開發清單：code review 急件修正（2026-09-29，v1.0.7 上線後）
+
+2026-09-29 code review（範圍 90df8c6..78f448b）找到的三個已上線問題，依序修，**前一個 commit 前不要動下一個**
+（F2、F3 都改 iOS `AudioEngineManager.swift`）。其餘 review 發現（序號先認領後寫 license、iOS Keychain／UserDefaults
+到期時間不一致、轉移只認最後一組序號、剩餘天數寫死 365 等）不在這一輪。
+
+### F1 — 伺服器已拒絕的序號，App 不可再走離線兌換
+
+V1 新增的後端錯誤碼 `VIP_SERIAL_ALREADY_USED` 沒有加進 App 的 anti-abuse 清單
+（Android `auth/LicenseVerificationService.kt` `activateCode` 內的 `antiAbuseCodes`、
+iOS `Auth/LicenseVerificationService.swift` `activateCode` 內的 `antiAbuseCodes`），
+伺服器拒絕後 App 落到離線 `activateLicenseCode`；重灌／清資料後本機已兌換集合是空的，同一組舊序號又被加一次天數，
+V1 要堵的漏洞在 App 端重新打開。
+
+- 把 `VIP_SERIAL_ALREADY_USED` 加進兩端清單。
+- 清單從函式內的區域變數抽成具名常數（Android companion／object 常數、iOS `static let`），雙端同名，
+  並加測試：兩端清單內容完全一致且包含 `VIP_SERIAL_ALREADY_USED`（仿 `testCrossfadeOptionsSecondsMatchAcrossPlatforms`）。
+- **刻意不改成「只有網路失敗才走離線」**：Android `device_secret` 存在 SharedPreferences，重灌後遺失，
+  後端對新序號回 `DEVICE_SECRET_REQUIRED`（403）；若一律不 fallback，重灌的付費教練會完全無法開通新序號
+  （見產品決策第 6 點）。這個取捨等序號管理工具／後端改版時再處理。
+
+### F2 — iOS：淡入淡出途中跳回前一首，會被舊的完成回呼跳到下一首
+
+iOS `scheduleBuffer` 的 completion 只帶 `deckId` 與 `segmentIndex`。`clearManualTail()` 停掉尾巴 deck 時會觸發它的
+completion（非同步丟到 main）；若這次是跳回那個 deck 剛放的段落（例：N → 下一首 N+1 → 3 秒內按上一首回 N），
+deck 重新成為 active、index 也相同，舊回呼通過 `handleTrackBufferFinished` 的檢查 → `handleTrackCompletion` 直接跳到 N+1。
+`seek` 也會 `playerNode.stop()` 同一個 deck、同一個 index，同樣有風險。Android 不受影響（`clearMediaItems` 不發 `STATE_ENDED`）。
+
+- 修法：`AudioDeck` 加一個排程世代計數（例 `scheduleGeneration`），每次 `scheduleBuffer`／`stop()` 都遞增；
+  completion 捕捉排程當下的世代，`handleTrackBufferFinished` 多檢查「世代仍是該 deck 目前的世代」，舊的一律丟棄。
+  不要用延遲、旗標或「忽略接下來 N 毫秒」這類時間補丁。
+- 測試：優先在模擬器上做真實整合測試——測試內產生兩個短的無聲音檔（AVAudioFile 寫 PCM）放進音樂目錄、
+  建一堂兩段的課、play → nextSegment → previousSegment、跑一小段 RunLoop 後斷言 `currentSegmentIndex` 仍是 0。
+  若整合測試在 CI／模擬器上不穩定，退而把判斷抽成純函式並測「舊世代被拒、新世代被接受」，並在回報中說明。
+
+### F3 — 自動 crossfade 進行中手動換曲：音量跳回滿格、正在淡入的歌被重來
+
+雙端 `jumpToSegment` 一開始先 `cancelCrossfade()`：把正在淡入的播放器清掉、把淡出中的舊歌音量重設 1.0，
+之後才讀 `tailStartVolume`。15 秒 crossfade 讓這個窗口很長，教練聽到下一首進來時按「下一首」或點清單很常見。
+
+- **目標正好是正在淡入的那一段（currentIndex + 1）**：不要重載。把這次自動 crossfade 直接「轉成」手動尾巴——
+  淡入中的播放器／deck 成為 active（保留目前播放位置，不從 0 開始），淡出中的舊歌成為尾巴；
+  `manualTailDuration` = 目前這次自動 crossfade 的有效秒數，`manualTailElapsed` = 目前 crossfade progress × 該秒數，
+  `manualTailStartVolume` = 1.0。這樣接手瞬間兩軌音量與原本曲線完全連續，剩下的時間照手動尾巴規則淡完。
+  引擎狀態（index、時長、進度、速率、cue）立刻切到該段，進度以淡入播放器的實際位置為準。
+- **目標是其他段落**：兩軌中「目前音量較大」的那一軌成為尾巴（從它目前的音量開始淡出），另一軌停掉並載入目標。
+  Android 需要讓 coordinator 能指定「新的 active 是哪個 index」（淡入軌較大聲時 active index 不翻轉），
+  不要繞過 coordinator 自己改 index。
+- 暫停中、自動暫停開啟、設定 0 秒時仍是硬切（沿用 `manualJumpFadeDuration` 規則），行為不變。
+- 測試（雙端同名純函式＋測試）：把「接手時要用的 elapsed／起始音量／誰當尾巴」抽成純函式，至少測：
+  progress 0.3 接手 → elapsed＝0.3×D、兩軌音量與接手前相同；淡入軌較大聲時由淡入軌當尾巴；
+  Android coordinator 在「active 不翻轉」情境下，舊 index 的 track-ended 仍被拒絕。
+
 ## 開發清單：編輯器段落清單（spec M1.2 補完）
 
 段落目前只能「就地取代」—— 編輯器所有操作都是 `segments[selectedIndex] = updated`，
