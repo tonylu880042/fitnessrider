@@ -10,7 +10,7 @@ object VipSerialVerifier {
     private const val PAYLOAD_HEX_LENGTH = 14
 
     private const val PUBLIC_KEY_SPKI_B64 =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbITb9ZCFHCWVpGGXXOpuXrlZFGI77w/yCKDOgqqDzCUCuu2kwsFMYf0h//3dRcp3gux17N/abmGRPnuCXeUeIw=="
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUOYyxUID4AwF6AvfYc26QJN9DWPyzJv31cvEHYA06slJzBCDH5HetPw94wY0YEi9XXdZBNKHy5q8x1I6riPnKg=="
 
     private val HEX_PATTERN = Regex("^[0-9A-F]+$")
 

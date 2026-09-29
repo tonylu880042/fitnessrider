@@ -6,7 +6,7 @@ public enum VipSerialVerifier {
     private static let payloadHexLength = 14
 
     private static let publicKeySPKIBase64 =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbITb9ZCFHCWVpGGXXOpuXrlZFGI77w/yCKDOgqqDzCUCuu2kwsFMYf0h//3dRcp3gux17N/abmGRPnuCXeUeIw=="
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUOYyxUID4AwF6AvfYc26QJN9DWPyzJv31cvEHYA06slJzBCDH5HetPw94wY0YEi9XXdZBNKHy5q8x1I6riPnKg=="
 
     public struct VipSerialInfo: Equatable {
         public let serialId: String
