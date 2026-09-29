@@ -1202,6 +1202,23 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testAntiAbuseCodesMatchAcrossPlatforms() {
+        val codes = com.fitnessrider.auth.LicenseVerificationService.antiAbuseCodes
+        assertEquals(
+            setOf(
+                "PROMO_EXPIRED",
+                "PROMO_ALREADY_REDEEMED",
+                "VIP_SERIAL_ALREADY_CLAIMED",
+                "VIP_ALREADY_ACTIVE",
+                "PROMO_YEAR_EXPIRED",
+                "VIP_SERIAL_ALREADY_USED"
+            ),
+            codes
+        )
+        org.junit.Assert.assertTrue(codes.contains("VIP_SERIAL_ALREADY_USED"))
+    }
+
+    @Test
     fun testAppSettingsHapticFeedbackEnabled() {
         val fakePrefs = FakeSharedPreferences()
         val mockContext = MockContext(fakePrefs)

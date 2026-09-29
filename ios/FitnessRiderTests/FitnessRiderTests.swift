@@ -1358,6 +1358,20 @@ final class FitnessRiderTests: XCTestCase {
     }
 
     @MainActor
+    func testAntiAbuseCodesMatchAcrossPlatforms() {
+        let codes = LicenseVerificationService.antiAbuseCodes
+        XCTAssertEqual(codes, [
+            "PROMO_EXPIRED",
+            "PROMO_ALREADY_REDEEMED",
+            "VIP_SERIAL_ALREADY_CLAIMED",
+            "VIP_ALREADY_ACTIVE",
+            "PROMO_YEAR_EXPIRED",
+            "VIP_SERIAL_ALREADY_USED"
+        ])
+        XCTAssertTrue(codes.contains("VIP_SERIAL_ALREADY_USED"))
+    }
+
+    @MainActor
     func testAppSettingsHapticFeedbackEnabled() {
         let settings = AppSettings.shared
         let originalValue = settings.isHapticFeedbackEnabled

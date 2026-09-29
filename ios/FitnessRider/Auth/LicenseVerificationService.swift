@@ -27,6 +27,15 @@ public struct DeviceTransferResult: Equatable {
 public final class LicenseVerificationService: ObservableObject {
     public static let shared = LicenseVerificationService()
 
+    public static let antiAbuseCodes: Set<String> = [
+        "PROMO_EXPIRED",
+        "PROMO_ALREADY_REDEEMED",
+        "VIP_SERIAL_ALREADY_CLAIMED",
+        "VIP_ALREADY_ACTIVE",
+        "PROMO_YEAR_EXPIRED",
+        "VIP_SERIAL_ALREADY_USED"
+    ]
+
     @Published public private(set) var isLicensed: Bool = true
     @Published public private(set) var planType: String = "全功能免費試用版"
     @Published public private(set) var expirationDate: Date = Date().addingTimeInterval(Double(VersionLifecycleManager.lifecycleDays) * 86400)
@@ -68,14 +77,7 @@ public final class LicenseVerificationService: ObservableObject {
             return (true, onlineMsg)
         }
 
-        let antiAbuseCodes: Set<String> = [
-            "PROMO_EXPIRED",
-            "PROMO_ALREADY_REDEEMED",
-            "VIP_SERIAL_ALREADY_CLAIMED",
-            "VIP_ALREADY_ACTIVE",
-            "PROMO_YEAR_EXPIRED"
-        ]
-        if let code = errorCode, antiAbuseCodes.contains(code) {
+        if let code = errorCode, Self.antiAbuseCodes.contains(code) {
             return (false, onlineMsg)
         }
 

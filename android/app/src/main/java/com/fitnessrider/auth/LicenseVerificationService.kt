@@ -18,6 +18,15 @@ class LicenseVerificationService(private val context: Context) {
         fun computeMustUpdate(minSupportedVersionCode: Int, currentVersionCode: Int): Boolean {
             return minSupportedVersionCode > 0 && currentVersionCode < minSupportedVersionCode
         }
+
+        val antiAbuseCodes = setOf(
+            "PROMO_EXPIRED",
+            "PROMO_ALREADY_REDEEMED",
+            "VIP_SERIAL_ALREADY_CLAIMED",
+            "VIP_ALREADY_ACTIVE",
+            "PROMO_YEAR_EXPIRED",
+            "VIP_SERIAL_ALREADY_USED"
+        )
     }
 
     private val deviceService = DeviceIdentifierService(context)
@@ -126,13 +135,6 @@ class LicenseVerificationService(private val context: Context) {
             } else if (respJson.has("error")) {
                 val errorMsg = respJson.getString("error")
                 val errorCode = respJson.optString("error_code", "")
-                val antiAbuseCodes = setOf(
-                    "PROMO_EXPIRED",
-                    "PROMO_ALREADY_REDEEMED",
-                    "VIP_SERIAL_ALREADY_CLAIMED",
-                    "VIP_ALREADY_ACTIVE",
-                    "PROMO_YEAR_EXPIRED"
-                )
                 if (errorCode in antiAbuseCodes) {
                     return@withContext Pair(false, errorMsg)
                 }
