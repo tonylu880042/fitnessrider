@@ -18,8 +18,7 @@
 
 ## 分支策略（2026-09-30）
 
-- D0 在 `feature/rider3d-integration`（worktree `../fitnessrider-rider3d`）完成、確認教練版行為與 main 完全相同後，
-  **合回 main 並刪除 worktree**。
+- D0 在 `feature/rider3d-integration` 完成，2026-09-30 合回 main，分支與 worktree 已刪除。
 - D1 起直接在 main 開發，一個單元一個 commit。3D 功能以 `isRider3D` 旗標只出現在 3D 版，教練版行為不變；
   教練版的修正 3D 版自動取得，不需要同步分支。
 
@@ -64,7 +63,7 @@
 
 來源：實機 `192.168.0.115` 探測（2026-09-30）＋主機原始碼 `uGymLauncher`（Windows WPF，.NET Nancy 自架於 port 8000；
 `NancyModule/NancyModuleTraining.cs` 的 `#region fitnessrider3d`、`NancyModule/NancyModuleControl.cs`、`Data/NancyData.cs`）。
-原始碼 zip 不進 repo。
+原始碼 zip 放在 repo 外 `/Users/tunghunglu/projects/uGymLauncher.zip`，不進 repo。
 
 ### 找主機
 - UDP 廣播到 `255.255.255.255:24000`，純 ASCII、逗號分隔、無引號：`uGym,ip,<主機IP>,8000`。port 在主機程式裡寫死 8000。
