@@ -34,7 +34,6 @@ android {
     val promoTotalTrialDays = promoProps.getProperty("TRIAL_DAYS", "30").trim().toIntOrNull() ?: 30
 
     defaultConfig {
-        applicationId = "com.fitnessrider.coach"
         minSdk = 26
         targetSdk = 35
         versionCode = appVersionCode
@@ -58,6 +57,20 @@ android {
         buildConfigField("String", "UPDATE_URL", "\"https://appdistribution.firebase.dev/i/d740076f27b77ab0\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    flavorDimensions += "edition"
+    productFlavors {
+        create("coach") {
+            dimension = "edition"
+            applicationId = "com.fitnessrider.coach"
+            buildConfigField("boolean", "IS_RIDER3D", "false")
+        }
+        create("rider3d") {
+            dimension = "edition"
+            applicationId = "com.fitnessrider.rider3d"
+            buildConfigField("boolean", "IS_RIDER3D", "true")
+        }
     }
 
     buildTypes {

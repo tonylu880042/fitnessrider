@@ -1719,5 +1719,9 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(PaywallPricing.formatTwd(PaywallPricing.monthlyPriceTWD), "NT$390")
         XCTAssertTrue(PaywallPricing.yearlyBadgeText.contains("NT$2,290"))
     }
+
+    func testCoachHostedRunIsNotRider3D() {
+        XCTAssertFalse(AppVariant.isRider3D)
+    }
 }
 

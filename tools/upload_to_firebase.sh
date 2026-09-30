@@ -51,9 +51,9 @@ echo "=========================================="
 "${PROJECT_DIR}/tools/check_promo_code.sh"
 
 echo ">> 正在編譯 Android Debug APK (Version ${VERSION_NAME}, Code ${VERSION_CODE})..."
-(cd "${PROJECT_DIR}/android" && ./gradlew assembleDebug)
+(cd "${PROJECT_DIR}/android" && ./gradlew assembleCoachDebug)
 
-BUILD_APK="${PROJECT_DIR}/android/app/build/outputs/apk/debug/app-debug.apk"
+BUILD_APK="${PROJECT_DIR}/android/app/build/outputs/apk/coach/debug/app-coach-debug.apk"
 if [ ! -f "$BUILD_APK" ]; then
     echo "錯誤: 找不到剛編譯完成的 APK: $BUILD_APK"
     exit 1

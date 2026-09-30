@@ -9,6 +9,10 @@
   iOS 新 target `FitnessRider3D`（`app.fitnessrider.rider3d`）。顯示名稱暫定「FitnessRider 3D」，圖示待提供前沿用現有。
 - 3D 版不走 7 天試用／推廣碼／VIP 付費牆，改用**啟動碼**解鎖——**設計待定，先不做**。
   定案前 3D 版沿用教練版的授權流程，不要自己先發明一套。
+  **啟動碼設計必須處理**：同一台裝置上兩個 App 拿到的 `device_fingerprint` 相同（Android `ANDROID_ID` 依簽章金鑰、
+  iOS `identifierForVendor` 依開發者帳號，都不分 App）。後端 `device_trials` 只在 `device_secret` 為空時寫入，
+  所以不會覆蓋先裝那個 App 的授權，但後裝的 App 會共用試用起算日、線上兌換會被拒（沒有該裝置的 secret）。
+  3D 版對後端要用自己的識別（例如在 fingerprint 前加固定前綴），或啟動碼完全不走這套後端。
 - 3D 主機介接來源：`FitnessRider3D_Spec_V1.0.12_2019.07.01.pptx`（REST `/api/v1/fitnessrider3d/*`，
   主機以 UDP 廣播 `255.255.255.255:24000` 公告 IP 與 port）。實機確認後的正式格式補在本文件「3D 主機 API」一節。
 
@@ -27,7 +31,7 @@
   iOS 讀 3D target 專屬 Info.plist 的 `FRIsRider3D`。3D 相關程式碼放在共用原始碼、以這個旗標決定是否出現，
   這樣既有兩個測試檔可以直接測 3D 的純函式，不另開測試 target。
 - 網路權限只加在 3D 版：Android `src/rider3d/AndroidManifest.xml` 允許 cleartext（3D 主機是區網 http）；
-  iOS 3D 版 Info.plist 加 `NSLocalNetworkUsageDescription`。
+  iOS 3D 版 Info.plist 加 `NSLocalNetworkUsageDescription` 與 ATS `NSAllowsLocalNetworking`（對應 Android 的 cleartext）。
 - **先做手動輸入主機 IP:port**。UDP 自動搜尋要等 iOS 的 `com.apple.developer.networking.multicast`
   向 Apple 申請核准後，兩端一起加（不要只做 Android）。
 - Firebase：`google-services.json` 要有 `com.fitnessrider.rider3d` 的 client（Tony 在 Firebase console

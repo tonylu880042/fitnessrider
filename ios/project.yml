@@ -34,6 +34,29 @@ targets:
     dependencies:
       - sdk: libsqlite3.tbd
 
+  FitnessRider3D:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitnessRider
+        excludes:
+          - Resources/Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: app.fitnessrider.rider3d
+      INFOPLIST_FILE: FitnessRider3D/Info.plist
+      TARGETED_DEVICE_FAMILY: "1,2" # 1 = iPhone, 2 = iPad
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      GENERATE_INFOPLIST_FILE: NO
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+    systemFrameworks:
+      - AVFoundation
+      - AudioToolbox
+      - MediaPlayer
+      - Security
+      - UniformTypeIdentifiers
+    dependencies:
+      - sdk: libsqlite3.tbd
+
   FitnessRiderTests:
     type: bundle.unit-test
     platform: iOS

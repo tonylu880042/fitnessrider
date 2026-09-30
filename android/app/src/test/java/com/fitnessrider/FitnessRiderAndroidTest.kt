@@ -1709,6 +1709,11 @@ class FitnessRiderAndroidTest {
         org.junit.Assert.assertTrue(PaywallPricing.YEARLY_BADGE_TEXT.contains("NT$2,290"))
     }
 
+    @Test
+    fun testCoachBuildIsNotRider3D() {
+        org.junit.Assert.assertFalse(AppVariant.isRider3D)
+    }
+
     private class FakeSharedPreferences : android.content.SharedPreferences {
         val data = mutableMapOf<String, Any?>()
         override fun getAll(): MutableMap<String, *> = data
