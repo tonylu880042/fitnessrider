@@ -1720,8 +1720,8 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(PaywallPricing.yearlyBadgeText.contains("NT$2,290"))
     }
 
-    func testCoachHostedRunIsNotRider3D() {
-        XCTAssertFalse(AppVariant.isRider3D)
+    func testRider3DFlagMatchesBundleIdentifier() {
+        XCTAssertEqual(AppVariant.isRider3D, Bundle.main.bundleIdentifier == "app.fitnessrider.rider3d")
     }
 }
 

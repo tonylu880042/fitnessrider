@@ -1710,8 +1710,8 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
-    fun testCoachBuildIsNotRider3D() {
-        org.junit.Assert.assertFalse(AppVariant.isRider3D)
+    fun testRider3DFlagMatchesApplicationId() {
+        org.junit.Assert.assertEquals(BuildConfig.APPLICATION_ID == "com.fitnessrider.rider3d", AppVariant.isRider3D)
     }
 
     private class FakeSharedPreferences : android.content.SharedPreferences {
