@@ -1683,8 +1683,8 @@ final class FitnessRiderTests: XCTestCase {
     }
 
     func testSegmentStepForSwipeVerticalPastThreshold() {
-        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -100, threshold: 80), 1)
-        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: 100, threshold: 80), -1)
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: 100, threshold: 80), 1)
+        XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -100, threshold: 80), -1)
         XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -60, threshold: 80), 0)
         XCTAssertEqual(segmentStepForSwipe(dx: 0, dy: -80, threshold: 80), 0)
         XCTAssertEqual(segmentStepForSwipe(dx: 200, dy: -100, threshold: 80), 0)

@@ -18,7 +18,7 @@ func segmentStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     let absDy = abs(dy)
     if absDy <= absDx * 1.5 { return 0 }
     if absDy <= threshold { return 0 }
-    return dy < 0 ? 1 : -1
+    return dy > 0 ? 1 : -1
 }
 
 public struct WorkoutHUDView: View {

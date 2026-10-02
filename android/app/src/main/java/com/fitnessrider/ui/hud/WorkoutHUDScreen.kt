@@ -64,7 +64,7 @@ fun segmentStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     val absDy = kotlin.math.abs(dy)
     if (absDy <= absDx * 1.5f) return 0
     if (absDy <= threshold) return 0
-    return if (dy < 0) 1 else -1
+    return if (dy > 0) 1 else -1
 }
 
 @Composable

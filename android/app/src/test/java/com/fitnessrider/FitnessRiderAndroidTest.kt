@@ -1661,8 +1661,8 @@ class FitnessRiderAndroidTest {
 
     @Test
     fun testSegmentStepForSwipeVerticalPastThreshold() {
-        assertEquals(1, segmentStepForSwipe(dx = 0f, dy = -100f, threshold = 80f))
-        assertEquals(-1, segmentStepForSwipe(dx = 0f, dy = 100f, threshold = 80f))
+        assertEquals(1, segmentStepForSwipe(dx = 0f, dy = 100f, threshold = 80f))
+        assertEquals(-1, segmentStepForSwipe(dx = 0f, dy = -100f, threshold = 80f))
         assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -60f, threshold = 80f))
         assertEquals(0, segmentStepForSwipe(dx = 0f, dy = -80f, threshold = 80f))
         assertEquals(0, segmentStepForSwipe(dx = 200f, dy = -100f, threshold = 80f))
