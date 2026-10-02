@@ -26,6 +26,7 @@
 		2D9634287CBAC104AF224967 /* CoachingReminderLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */; };
 		2F3C9D0D0E57E47EB1265A1C /* WorkoutSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B3E06E385637055E106E37 /* WorkoutSegment.swift */; };
 		3BC2BD2DECB8D08E33C2D48B /* HandPositionBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */; };
+		4275DF1B7D95B672AFFF7757 /* Assets3D.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 71ECF4CF414667D7C15DC6F8 /* Assets3D.xcassets */; };
 		44539CFDEB242255271A65AF /* AppVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14BD73D3885C9C222BBABDEA /* AppVariant.swift */; };
 		46388FA037A4438155652F8B /* ExternalMusicFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B4A3FA576F862F60998BAE /* ExternalMusicFolderStore.swift */; };
 		469804A0E83D611D5E1C8469 /* SQLiteDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041854F41C4E386ACEBE918F /* SQLiteDatabase.swift */; };
@@ -128,6 +129,7 @@
 		5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5F446F0156297E07B52E5C93 /* FitnessRider3D.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FitnessRider3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBackupView.swift; sourceTree = "<group>"; };
+		71ECF4CF414667D7C15DC6F8 /* Assets3D.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets3D.xcassets; sourceTree = "<group>"; };
 		743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CueAudioBeepPlayer.swift; sourceTree = "<group>"; };
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
 		7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassRepository.swift; sourceTree = "<group>"; };
@@ -243,6 +245,14 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		67808DA57C72A5721E64DB73 /* FitnessRider3D */ = {
+			isa = PBXGroup;
+			children = (
+				71ECF4CF414667D7C15DC6F8 /* Assets3D.xcassets */,
+			);
+			path = FitnessRider3D;
+			sourceTree = "<group>";
+		};
 		69C78532B0BFBC05EB8C216F /* Auth */ = {
 			isa = PBXGroup;
 			children = (
@@ -276,6 +286,7 @@
 			isa = PBXGroup;
 			children = (
 				96AD5903AF720AB957A25DB7 /* FitnessRider */,
+				67808DA57C72A5721E64DB73 /* FitnessRider3D */,
 				74E56BED35442320B7B1F71E /* FitnessRiderTests */,
 				7BF17A3FC8EFB8F69941011F /* Frameworks */,
 				0212F80A61CC1548C0B55578 /* Products */,
@@ -468,6 +479,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				70516C34D4429D27ACBA1D58 /* Assets.xcassets in Resources */,
+				4275DF1B7D95B672AFFF7757 /* Assets3D.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -590,7 +602,7 @@
 		A71151B744177CA30DDBA956 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon3D;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FitnessRider3D/Info.plist;
@@ -639,7 +651,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -653,7 +665,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -702,7 +714,7 @@
 		D339D1D7687B8942BE1C1CFA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon3D;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FitnessRider3D/Info.plist;
@@ -751,7 +763,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -771,7 +783,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
