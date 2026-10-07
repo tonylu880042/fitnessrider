@@ -138,14 +138,12 @@ fun ClassListScreen(
             }
         }
 
-        repairProgress?.let { (done, total) ->
-            Text(
-                text = "正在讀取曲目長度 $done/$total",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
+        Text(
+            text = repairProgress?.let { (done, total) -> "正在讀取曲目長度 $done/$total" } ?: " ",
+            fontSize = 12.sp,
+            color = TextSecondary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
 
         if (classes.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

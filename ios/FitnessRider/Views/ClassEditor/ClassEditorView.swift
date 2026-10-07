@@ -90,6 +90,11 @@ func selectedIndexAfterMove(_ selectedIndex: Int, movedFromIndex: Int, movedToIn
     return selectedIndex
 }
 
+func renamedSegmentTitle(_ original: String, _ input: String) -> String {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? original : trimmed
+}
+
 func selectedIndexAfterRemoval(_ selectedIndex: Int, removedIndex: Int, newSize: Int) -> Int {
     let adjusted = selectedIndex > removedIndex ? selectedIndex - 1 : selectedIndex
     return min(max(adjusted, 0), max(newSize - 1, 0))
@@ -116,6 +121,8 @@ public struct ClassEditorView: View {
     @State private var importErrorMessage: String?
     @State private var segmentPendingDeleteIndex: Int?
     @State private var isShowingDeleteSegmentAlert: Bool = false
+    @State private var segmentPendingRenameIndex: Int?
+    @State private var renameInput: String = ""
 
     public init(workoutClass: WorkoutClass, onSave: @escaping (WorkoutClass) -> Void) {
         self._workoutClass = State(initialValue: workoutClass)
@@ -155,8 +162,8 @@ public struct ClassEditorView: View {
                     .padding(.horizontal, 80)
             )
 
-            if let repairProgress {
-                Text("正在讀取曲目長度 \(repairProgress.done)/\(repairProgress.total)")
+            Group {
+                Text(repairProgress.map { "正在讀取曲目長度 \($0.done)/\($0.total)" } ?? " ")
                     .font(.system(size: 12))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,6 +299,22 @@ public struct ClassEditorView: View {
         } message: {
             Text(importErrorMessage ?? "")
         }
+        .alert(
+            "重新命名",
+            isPresented: Binding(
+                get: { segmentPendingRenameIndex != nil },
+                set: { isPresented in if !isPresented { segmentPendingRenameIndex = nil } }
+            )
+        ) {
+            TextField("段落名稱", text: $renameInput)
+            Button("取消", role: .cancel) {}
+            Button("儲存") {
+                if let index = segmentPendingRenameIndex, workoutClass.segments.indices.contains(index) {
+                    workoutClass.segments[index].title = renamedSegmentTitle(workoutClass.segments[index].title, renameInput)
+                }
+            }
+            .disabled(renameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
         .alert("刪除段落", isPresented: $isShowingDeleteSegmentAlert) {
             Button("取消", role: .cancel) {}
             Button("刪除", role: .destructive) {
@@ -305,6 +328,11 @@ public struct ClassEditorView: View {
             } ?? ""
             Text("確定要刪除「\(title)」嗎？段落內的動作提示會一併刪除，此動作無法復原。")
         }
+    }
+
+    private func beginRename(at index: Int) {
+        renameInput = workoutClass.segments[index].title
+        segmentPendingRenameIndex = index
     }
 
     private func segmentCard(_ segment: WorkoutSegment, index: Int) -> some View {
@@ -361,6 +389,14 @@ public struct ClassEditorView: View {
                 .disabled(index == workoutClass.segments.count - 1)
                 .foregroundColor(index == workoutClass.segments.count - 1 ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreenDark)
 
+                Button {
+                    beginRename(at: index)
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+
                 Spacer()
 
                 Button {
@@ -394,6 +430,7 @@ public struct ClassEditorView: View {
                     Text(segment.title)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .onTapGesture { beginRename(at: selectedSegmentIndex) }
 
                     Spacer()
 

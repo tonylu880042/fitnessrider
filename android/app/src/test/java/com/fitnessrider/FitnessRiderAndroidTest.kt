@@ -18,6 +18,7 @@ import com.fitnessrider.ui.editor.segmentWithAnalyzedTrack
 import com.fitnessrider.ui.editor.segmentsAfterMove
 import com.fitnessrider.ui.editor.segmentsAfterRemoval
 import com.fitnessrider.ui.editor.selectedIndexAfterMove
+import com.fitnessrider.ui.editor.renamedSegmentTitle
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.hudRequestedOrientation
 import com.fitnessrider.ui.hud.hudScale
@@ -1948,5 +1949,12 @@ class FitnessRiderAndroidTest {
         override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = prefs
         override fun getApplicationContext(): android.content.Context = this
     }
-}
 
+    @Test
+    fun testRenamedSegmentTitle() {
+        assertEquals("新名稱", renamedSegmentTitle("舊名稱", "  新名稱  "))
+        assertEquals("舊名稱", renamedSegmentTitle("舊名稱", "   "))
+        assertEquals("舊名稱", renamedSegmentTitle("舊名稱", ""))
+        assertEquals("Song", renamedSegmentTitle("舊名稱", "Song"))
+    }
+}

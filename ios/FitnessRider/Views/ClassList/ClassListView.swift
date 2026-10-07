@@ -92,8 +92,8 @@ public struct ClassListView: View {
                     .padding(.top, 8)
                 }
 
-                if let progress = trackRepair.progress {
-                    Text("正在讀取曲目長度 \(progress.done)/\(progress.total)")
+                Group {
+                    Text(trackRepair.progress.map { "正在讀取曲目長度 \($0.done)/\($0.total)" } ?? " ")
                         .font(.system(size: 12))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

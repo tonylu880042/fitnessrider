@@ -18,10 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
@@ -135,6 +139,11 @@ internal fun selectedIndexAfterMove(selectedIndex: Int, movedFromIndex: Int, mov
     }
 }
 
+internal fun renamedSegmentTitle(original: String, input: String): String {
+    val trimmed = input.trim()
+    return if (trimmed.isEmpty()) original else trimmed
+}
+
 internal fun selectedIndexAfterRemoval(selectedIndex: Int, removedIndex: Int, newSize: Int): Int {
     val shifted = if (selectedIndex > removedIndex) selectedIndex - 1 else selectedIndex
     return shifted.coerceIn(0, (newSize - 1).coerceAtLeast(0))
@@ -165,6 +174,8 @@ fun ClassEditorScreen(
     var currentEditingCue by remember { mutableStateOf<WorkoutCue?>(null) }
     var isBpmDialogVisible by remember { mutableStateOf(false) }
     var segmentPendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
+    var segmentPendingRenameIndex by remember { mutableStateOf<Int?>(null) }
+    var renameInput by remember { mutableStateOf(TextFieldValue("")) }
 
     var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
     var previewPlayheadMs by remember { mutableStateOf(0) }
@@ -305,14 +316,12 @@ fun ClassEditorScreen(
             }
         )
 
-        repairProgress?.let { (done, total) ->
-            Text(
-                text = "正在讀取曲目長度 $done/$total",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
+        Text(
+            text = repairProgress?.let { (done, total) -> "正在讀取曲目長度 $done/$total" } ?: " ",
+            fontSize = 12.sp,
+            color = TextSecondary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
 
         Row(
             modifier = Modifier
@@ -429,6 +438,20 @@ fun ClassEditorScreen(
                             )
                         }
                         IconButton(
+                            onClick = {
+                                renameInput = TextFieldValue(segment.title, TextRange(0, segment.title.length))
+                                segmentPendingRenameIndex = index
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "重新命名段落",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
                             onClick = { segmentPendingDeleteIndex = index },
                             modifier = Modifier.size(28.dp)
                         ) {
@@ -484,16 +507,17 @@ fun ClassEditorScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (MusicSource.isExternalUri(activeSegment.musicFileName)) {
-                                activeSegment.title
-                            } else {
-                                activeSegment.musicFileName.ifBlank { activeSegment.title }
-                            },
+                            text = activeSegment.title,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary,
                             maxLines = 1,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    renameInput = TextFieldValue(activeSegment.title, TextRange(0, activeSegment.title.length))
+                                    segmentPendingRenameIndex = selectedSegmentIndex
+                                }
                         )
                         val curSec = previewPlayheadMs / 1000
                         val totSec = activeSegment.durationMs / 1000
@@ -802,6 +826,41 @@ fun ClassEditorScreen(
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("匯入失敗：${failedLabels.joinToString("、")}")
                 }
+            }
+        )
+    }
+
+    segmentPendingRenameIndex?.let { idx ->
+        AlertDialog(
+            onDismissRequest = { segmentPendingRenameIndex = null },
+            title = { Text("重新命名", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                val focusRequester = remember { FocusRequester() }
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    singleLine = true,
+                    label = { Text("段落名稱") },
+                    modifier = Modifier.focusRequester(focusRequester)
+                )
+                LaunchedEffect(Unit) { focusRequester.requestFocus() }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameInput.text.isNotBlank(),
+                    onClick = {
+                        val target = workoutClass.segments.getOrNull(idx)
+                        if (target != null) {
+                            val updated = workoutClass.segments.toMutableList()
+                            updated[idx] = target.copy(title = renamedSegmentTitle(target.title, renameInput.text))
+                            workoutClass = workoutClass.copy(segments = updated)
+                        }
+                        segmentPendingRenameIndex = null
+                    }
+                ) { Text("儲存", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { segmentPendingRenameIndex = null }) { Text("取消") }
             }
         )
     }

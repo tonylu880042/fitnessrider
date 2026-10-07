@@ -1849,5 +1849,11 @@ final class FitnessRiderTests: XCTestCase {
     func testRider3DFlagMatchesBundleIdentifier() {
         XCTAssertEqual(AppVariant.isRider3D, Bundle.main.bundleIdentifier == "app.fitnessrider.rider3d")
     }
-}
 
+    func testRenamedSegmentTitle() {
+        XCTAssertEqual(renamedSegmentTitle("舊名稱", "  新名稱  "), "新名稱")
+        XCTAssertEqual(renamedSegmentTitle("舊名稱", "   "), "舊名稱")
+        XCTAssertEqual(renamedSegmentTitle("舊名稱", ""), "舊名稱")
+        XCTAssertEqual(renamedSegmentTitle("舊名稱", "Song"), "Song")
+    }
+}
