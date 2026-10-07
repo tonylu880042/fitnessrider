@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteOrder
+import java.nio.ShortBuffer
 import kotlin.math.*
 
 data class WaveformResult(
@@ -38,40 +39,41 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
     suspend fun analyzeWaveform(fileName: String, targetPoints: Int = 800): WaveformResult = withContext(Dispatchers.IO) {
         val cached = repository?.getWaveform(fileName)
-        if (cached != null) {
-            return@withContext WaveformResult(
-                samples = cached.first,
-                durationMs = cached.second,
-                bpm = cached.third
-            )
+        val cachedResult = cached?.let { WaveformResult(samples = it.first, durationMs = it.second, bpm = it.third) }
+        if (cachedResult != null && (repository?.getWaveformAnalysisVersion(fileName) ?: 0) >= ANALYSIS_VERSION) {
+            return@withContext cachedResult
+        }
+        val fallback = { cachedResult ?: generateFallbackResult(targetPoints) }
+        val tagBpm = repository?.let { repo ->
+            MusicSource.openInputStream(repo.context, repo, fileName)?.use { Id3BpmReader.read(it) }
         }
 
         if (MusicSource.isExternalUri(fileName)) {
             val context = repository?.context
-                ?: return@withContext generateFallbackResult(targetPoints)
+                ?: return@withContext fallback()
             return@withContext try {
-                val result = extractWaveformFromUri(context, Uri.parse(fileName), targetPoints)
-                repository.saveWaveform(fileName, result.samples, result.durationMs, result.bpm)
+                val result = extractWaveformFromUri(context, Uri.parse(fileName), targetPoints, tagBpm)
+                repository.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
                 result
             } catch (e: Exception) {
                 Log.e("WaveformAnalyzer", "Failed to decode external audio $fileName, using fallback", e)
-                generateFallbackResult(targetPoints)
+                fallback()
             }
         }
 
         val musicDir = repository?.musicDirectory
         val file = if (musicDir != null) File(musicDir, fileName) else File(fileName)
         if (!file.exists() || file.length() == 0L) {
-            return@withContext generateFallbackResult(targetPoints)
+            return@withContext fallback()
         }
 
         try {
-            val result = extractWaveformFromFile(file, targetPoints)
-            repository?.saveWaveform(fileName, result.samples, result.durationMs, result.bpm)
+            val result = extractWaveformFromFile(file, targetPoints, tagBpm)
+            repository?.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
             result
         } catch (e: Exception) {
             Log.e("WaveformAnalyzer", "Failed to decode audio file $fileName, using fallback", e)
-            generateFallbackResult(targetPoints)
+            fallback()
         }
     }
 
@@ -81,27 +83,27 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         bpm = 128.0
     )
 
-    fun extractWaveformFromFile(file: File, targetPoints: Int = 800): WaveformResult {
+    fun extractWaveformFromFile(file: File, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.absolutePath)
-            return decodeWaveform(extractor, targetPoints)
+            return decodeWaveform(extractor, targetPoints, tagBpm)
         } finally {
             try { extractor.release() } catch (_: Exception) {}
         }
     }
 
-    fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800): WaveformResult {
+    fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(context, uri, null)
-            return decodeWaveform(extractor, targetPoints)
+            return decodeWaveform(extractor, targetPoints, tagBpm)
         } finally {
             try { extractor.release() } catch (_: Exception) {}
         }
     }
 
-    private fun decodeWaveform(extractor: MediaExtractor, targetPoints: Int): WaveformResult {
+    private fun decodeWaveform(extractor: MediaExtractor, targetPoints: Int, tagBpm: Double?): WaveformResult {
         var codec: MediaCodec? = null
         try {
             var audioTrackIndex = -1
@@ -135,6 +137,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             var isInputEos = false
             var isOutputEos = false
             val kTimeoutUs = 5000L
+            var envelope: EnergyEnvelopeAccumulator? = null
 
             while (!isOutputEos) {
                 if (!isInputEos) {
@@ -178,6 +181,14 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
                             i += 4
                         }
                         bucketPeaks[bucketIdx] = maxPeak
+
+                        val accumulator = envelope ?: codec.outputFormat.let {
+                            EnergyEnvelopeAccumulator(
+                                it.getInteger(MediaFormat.KEY_SAMPLE_RATE),
+                                it.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            )
+                        }.also { envelope = it }
+                        accumulator.add(shortBuffer)
                     }
                     codec.releaseOutputBuffer(outputIndex, false)
                 }
@@ -189,7 +200,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
                 bucketPeaks[i] = (bucketPeaks[i] * scale).coerceIn(0.05f, 1.0f)
             }
 
-            val estimatedBpm = estimateBpm(bucketPeaks, durationMs)
+            val estimatedBpm = tagBpm ?: envelope?.let { estimateBpmFromEnvelope(it.toArray(), it.hopMs) } ?: 128.0
 
             return WaveformResult(bucketPeaks, durationMs, estimatedBpm)
         } finally {
@@ -200,42 +211,50 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         }
     }
 
-    fun estimateBpm(samples: FloatArray, durationMs: Int): Double {
-        if (durationMs < 10_000 || samples.size < 100) return 128.0
-        val durationSec = durationMs / 1000.0
+    fun estimateBpmFromEnvelope(envelope: FloatArray, hopMs: Double): Double {
+        val n = envelope.size
+        if (n * hopMs < 10_000.0) return 128.0
+        val mean = envelope.average()
+        if (mean <= 0.0) return 128.0
 
-        val maxVal = samples.maxOrNull() ?: 1.0f
-        val threshold = maxVal * 0.55f
-
-        val peakIndices = mutableListOf<Int>()
-        for (i in 1 until samples.size - 1) {
-            if (samples[i] > threshold && samples[i] >= samples[i - 1] && samples[i] >= samples[i + 1]) {
-                peakIndices.add(i)
+        val logEnergy = DoubleArray(n) { ln(1.0 + 0.3 * envelope[it] / mean) }
+        val onset = DoubleArray(n) { if (it == 0) 0.0 else max(0.0, logEnergy[it] - logEnergy[it - 1]) }
+        val kernel = doubleArrayOf(1.0, 2.0, 3.0, 2.0, 1.0)
+        val smoothed = DoubleArray(n) { i ->
+            var acc = 0.0
+            for (k in kernel.indices) {
+                val j = i + k - 2
+                if (j in 0 until n) acc += kernel[k] * onset[j]
             }
+            acc
+        }
+        val smoothedMean = smoothed.average()
+        for (i in 0 until n) smoothed[i] -= smoothedMean
+
+        val maxLag = (4.0 * 60_000.0 / (MIN_BPM * hopMs)).toInt() + 2
+        if (n <= maxLag * 2) return 128.0
+        val autocorrelation = DoubleArray(maxLag + 2) { lag ->
+            var acc = 0.0
+            for (i in 0 until n - lag) acc += smoothed[i] * smoothed[i + lag]
+            acc / (n - lag)
         }
 
-        if (peakIndices.size < 4) return 128.0
-
-        val intervals = mutableListOf<Double>()
-        for (i in 1 until peakIndices.size) {
-            val sampleDiff = peakIndices[i] - peakIndices[i - 1]
-            val timeDiff = (sampleDiff.toDouble() / samples.size) * durationSec
-            if (timeDiff in 0.25..1.2) {
-                var t = timeDiff
-                while (t > 1.05) t /= 2.0
-                while (t < 0.27) t *= 2.0
-                intervals.add(t)
-            }
+        fun autocorrelationAt(lag: Double): Double {
+            val index = lag.toInt()
+            val fraction = lag - index
+            return autocorrelation[index] * (1.0 - fraction) + autocorrelation[index + 1] * fraction
         }
 
-        if (intervals.isEmpty()) return 128.0
+        fun score(bpm: Double): Double {
+            val lag = 60_000.0 / (bpm * hopMs)
+            val periodicity = autocorrelationAt(lag) + autocorrelationAt(2 * lag) / 2.0 + autocorrelationAt(4 * lag) / 4.0
+            val octaves = ln(bpm / 120.0) / ln(2.0) / 0.8
+            return periodicity * exp(-0.5 * octaves * octaves)
+        }
 
-        val avgInterval = intervals.average()
-        if (avgInterval <= 0.0) return 128.0
-        var bpm = 60.0 / avgInterval
-        while (bpm < 65.0) bpm *= 2.0
-        while (bpm > 175.0) bpm /= 2.0
-        return ((bpm * 10.0).roundToInt() / 10.0)
+        var best = (MIN_BPM.toInt() * 2..MAX_BPM.toInt() * 2).map { it / 2.0 }.maxByOrNull { score(it) } ?: return 128.0
+        best = (-5..5).map { best + it / 10.0 }.filter { it in MIN_BPM..MAX_BPM }.maxByOrNull { score(it) } ?: best
+        return (best * 10.0).roundToInt() / 10.0
     }
 
     fun generateSyntheticWaveform(sampleCount: Int = 800): FloatArray {
@@ -252,6 +271,10 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
     }
 
     companion object {
+        const val ANALYSIS_VERSION = 1
+        private const val MIN_BPM = 65.0
+        private const val MAX_BPM = 175.0
+
         @Volatile
         private var INSTANCE: WaveformAnalyzer? = null
 
@@ -261,4 +284,28 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             }
         }
     }
+}
+
+class EnergyEnvelopeAccumulator(sampleRate: Int, private val channels: Int) {
+    private val hopFrames = (sampleRate / 100).coerceAtLeast(1)
+    val hopMs = hopFrames * 1000.0 / sampleRate
+    private val values = ArrayList<Float>()
+    private var energySum = 0.0
+    private var frames = 0
+
+    fun add(buffer: ShortBuffer) {
+        while (buffer.remaining() >= channels) {
+            var mixed = 0.0
+            repeat(channels) { mixed += buffer.get() }
+            mixed /= channels * 32768.0
+            energySum += mixed * mixed
+            if (++frames == hopFrames) {
+                values.add((energySum / hopFrames).toFloat())
+                energySum = 0.0
+                frames = 0
+            }
+        }
+    }
+
+    fun toArray(): FloatArray = values.toFloatArray()
 }

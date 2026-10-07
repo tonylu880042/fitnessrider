@@ -247,7 +247,13 @@ public struct ClassEditorView: View {
         }
         .sheet(isPresented: $isShowingBpmSheet) {
             if let segment = activeSegment {
-                BpmCalibrationSheet(initialBpm: segment.baseBpm) { newBpm in
+                BpmCalibrationSheet(
+                    initialBpm: segment.baseBpm,
+                    onDetect: {
+                        guard MusicSource.fileExists(for: segment.musicFileName) else { return nil }
+                        return await WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName).2
+                    }
+                ) { newBpm in
                     if selectedSegmentIndex < workoutClass.segments.count {
                         workoutClass.segments[selectedSegmentIndex].baseBpm = newBpm
                     }

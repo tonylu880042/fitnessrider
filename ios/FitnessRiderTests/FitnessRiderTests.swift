@@ -457,24 +457,87 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(firstCached, firstSample, accuracy: 0.0001)
     }
 
-    func testBpmEstimationFromWaveformEnvelope() {
-        let analyzer = WaveformAnalyzer.shared
-        let durationMs = 100_000
-        let sampleCount = 800
-        let beatsPerSec = 128.0 / 60.0
-        let totalBeats = Int(beatsPerSec * (Double(durationMs) / 1000.0))
-
-        var envelope = [Float](repeating: 0.2, count: sampleCount)
-        for b in 0..<totalBeats {
-            let beatTimeSec = Double(b) / beatsPerSec
-            let sampleIdx = Int((beatTimeSec / (Double(durationMs) / 1000.0)) * Double(sampleCount))
-            if sampleIdx < envelope.count {
-                envelope[sampleIdx] = 0.9
+    private func pulseEnvelope(bpm: Double, hopMs: Double = 10.0, seconds: Int = 60, hatLevel: Double = 0.0) -> [Float] {
+        var envelope = (0..<Int(Double(seconds) * 1000 / hopMs)).map { Float(0.01) + Float((($0 * 7919) % 100)) / 100 * 0.05 }
+        let periodMs = 60_000.0 / bpm
+        var beat = 0
+        while Double(beat) * periodMs < Double(seconds) * 1000 {
+            for (offset, level) in [(0.0, 1.0), (0.5, hatLevel)] {
+                let position = (Double(beat) + offset) * periodMs / hopMs
+                let base = Int(position)
+                let fraction = position - Double(base)
+                for k in 0..<8 {
+                    let decay = exp(-Double(k) / 2.0)
+                    if base + k < envelope.count { envelope[base + k] += Float(level * (1 - fraction) * decay) }
+                    if base + k + 1 < envelope.count { envelope[base + k + 1] += Float(level * fraction * decay) }
+                }
             }
+            beat += 1
+        }
+        return envelope
+    }
+
+    func testEstimateBpmFromEnvelopeKnownTempos() {
+        let analyzer = WaveformAnalyzer.shared
+        for bpm in [90.0, 100.0, 120.0, 128.0, 140.0, 150.0] {
+            XCTAssertEqual(analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm: bpm), hopMs: 10), bpm, accuracy: 1.0)
+            XCTAssertEqual(analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm: bpm, hatLevel: 0.5), hopMs: 10), bpm, accuracy: 1.0)
+        }
+    }
+
+    func testEstimateBpmFromEnvelopeHalfAndDoubleTime() {
+        let analyzer = WaveformAnalyzer.shared
+        XCTAssertEqual(analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm: 70), hopMs: 10), 70.0, accuracy: 1.0)
+        let ambiguous = analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm: 70, hatLevel: 0.5), hopMs: 10)
+        XCTAssertTrue(abs(ambiguous - 70.0) <= 1.0 || abs(ambiguous - 140.0) <= 1.0)
+        let tooFast = analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm: 200), hopMs: 10)
+        XCTAssertTrue(tooFast >= 65.0 && tooFast <= 175.0)
+        XCTAssertTrue(abs(tooFast - 100.0) <= 1.0 || abs(tooFast - 133.3) <= 1.5)
+        XCTAssertEqual(analyzer.estimateBpmFromEnvelope([Float](repeating: 0.5, count: 100), hopMs: 10), 128.0)
+        XCTAssertEqual(analyzer.estimateBpmFromEnvelope([Float](repeating: 0, count: 6000), hopMs: 10), 128.0)
+    }
+
+    func testClickTrackFileBpmDetectionAndStaleCacheRecompute() async throws {
+        let bpm = 126.0
+        let sampleRate = 44_100.0
+        let frames = Int(sampleRate * 60)
+        let fileName = "click_track_\(UUID().uuidString).wav"
+        let url = SQLiteDatabase.shared.musicDirectoryURL.appendingPathComponent(fileName)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 2, interleaved: false))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+        buffer.frameLength = AVAudioFrameCount(frames)
+        let beatFrames = sampleRate * 60.0 / bpm
+        var beat = 0
+        while Double(beat) * beatFrames < Double(frames) {
+            let start = Int(Double(beat) * beatFrames)
+            for k in 0..<1200 where start + k < frames {
+                let value = Float(sin(Double(k) * 0.15) * exp(-Double(k) / 300.0) * 0.6)
+                buffer.floatChannelData![0][start + k] = value
+                buffer.floatChannelData![1][start + k] = value
+            }
+            beat += 1
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false
+            ])
+            try file.write(from: buffer)
         }
 
-        let estimatedBpm = analyzer.estimateBpm(from: envelope, durationMs: durationMs)
-        XCTAssertEqual(estimatedBpm, 128.0, accuracy: 2.0)
+        let staleSamples = [Float](repeating: 0.5, count: 800)
+        ClassRepository.shared.saveWaveform(for: fileName, samples: staleSamples, durationMs: 60_000, bpm: 99.0)
+        XCTAssertEqual(ClassRepository.shared.fetchWaveform(for: fileName)?.analysisVersion, 0)
+
+        let (_, durationMs, detected) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
+        XCTAssertEqual(detected, bpm, accuracy: 1.0)
+        XCTAssertEqual(Double(durationMs), 60_000, accuracy: 100)
+        XCTAssertEqual(ClassRepository.shared.fetchWaveform(for: fileName)?.analysisVersion, WaveformAnalyzer.analysisVersion)
     }
 
     func testM4RealtimeCalorieAccumulationAndBounds() {

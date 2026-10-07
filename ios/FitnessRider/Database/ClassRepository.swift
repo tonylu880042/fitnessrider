@@ -267,11 +267,11 @@ public final class ClassRepository: @unchecked Sendable {
         return cues
     }
 
-    public func fetchWaveform(for fileName: String) -> (samples: [Float], durationMs: Int, bpm: Double)? {
+    public func fetchWaveform(for fileName: String) -> (samples: [Float], durationMs: Int, bpm: Double, analysisVersion: Int)? {
         guard let dbPtr = db.getDbPointer() else { return nil }
-        let sql = "SELECT samples_blob, sample_count, duration_ms, calculated_bpm FROM waveform_cache WHERE file_name = ? LIMIT 1;"
+        let sql = "SELECT samples_blob, sample_count, duration_ms, calculated_bpm, analysis_version FROM waveform_cache WHERE file_name = ? LIMIT 1;"
         var stmt: OpaquePointer?
-        var result: (samples: [Float], durationMs: Int, bpm: Double)?
+        var result: (samples: [Float], durationMs: Int, bpm: Double, analysisVersion: Int)?
 
         if sqlite3_prepare_v2(dbPtr, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, fileName, -1, SQLITE_TRANSIENT)
@@ -283,7 +283,7 @@ public final class ClassRepository: @unchecked Sendable {
                     let samples = Array(UnsafeBufferPointer(start: buffer, count: count))
                     let durationMs = Int(sqlite3_column_int(stmt, 2))
                     let bpm = sqlite3_column_double(stmt, 3)
-                    result = (samples: samples, durationMs: durationMs > 0 ? durationMs : 300_000, bpm: bpm > 0 ? bpm : 128.0)
+                    result = (samples: samples, durationMs: durationMs > 0 ? durationMs : 300_000, bpm: bpm > 0 ? bpm : 128.0, analysisVersion: Int(sqlite3_column_int(stmt, 4)))
                 }
             }
         }
@@ -291,11 +291,11 @@ public final class ClassRepository: @unchecked Sendable {
         return result
     }
 
-    public func saveWaveform(for fileName: String, samples: [Float], durationMs: Int, bpm: Double) {
+    public func saveWaveform(for fileName: String, samples: [Float], durationMs: Int, bpm: Double, analysisVersion: Int = 0) {
         guard let dbPtr = db.getDbPointer() else { return }
         let sql = """
-        INSERT OR REPLACE INTO waveform_cache (file_name, samples_blob, sample_count, duration_ms, calculated_bpm)
-        VALUES (?, ?, ?, ?, ?);
+        INSERT OR REPLACE INTO waveform_cache (file_name, samples_blob, sample_count, duration_ms, calculated_bpm, analysis_version)
+        VALUES (?, ?, ?, ?, ?, ?);
         """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(dbPtr, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -307,6 +307,7 @@ public final class ClassRepository: @unchecked Sendable {
             sqlite3_bind_int(stmt, 3, Int32(samples.count))
             sqlite3_bind_int(stmt, 4, Int32(durationMs))
             sqlite3_bind_double(stmt, 5, bpm)
+            sqlite3_bind_int(stmt, 6, Int32(analysisVersion))
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)

@@ -26,11 +26,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fitnessrider.audio.TapTempoDetector
 import com.fitnessrider.theme.*
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
 fun BpmCalibrationDialog(
     initialBpm: Double,
+    onDetectBpm: suspend () -> Double?,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit
 ) {
@@ -38,6 +40,9 @@ fun BpmCalibrationDialog(
     val tapDetector = remember { TapTempoDetector() }
     var tapCount by remember { mutableStateOf(0) }
     var isPressedAnim by remember { mutableStateOf(false) }
+    var isDetecting by remember { mutableStateOf(false) }
+    var detectFailed by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val scale by animateFloatAsState(
         targetValue = if (isPressedAnim) 0.93f else 1.0f,
@@ -152,6 +157,30 @@ fun BpmCalibrationDialog(
                     fontSize = 12.sp,
                     color = TextSecondary
                 )
+
+                OutlinedButton(
+                    enabled = !isDetecting,
+                    onClick = {
+                        isDetecting = true
+                        detectFailed = false
+                        coroutineScope.launch {
+                            val detected = onDetectBpm()
+                            if (detected != null) calibratedBpm = detected.coerceIn(50.0, 220.0) else detectFailed = true
+                            isDetecting = false
+                        }
+                    }
+                ) {
+                    if (isDetecting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = TopBarGreenDark)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("偵測中…", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    } else {
+                        Text("自動偵測", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                if (detectFailed) {
+                    Text(text = "無法偵測，請改用 TAP 測速", fontSize = 12.sp, color = AccentRed)
+                }
 
                 HorizontalDivider(color = CardBorder)
 

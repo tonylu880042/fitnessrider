@@ -421,14 +421,17 @@ class ClassRepository(val context: Context) {
         return Triple(floats, entity.durationMs, entity.calculatedBpm)
     }
 
-    suspend fun saveWaveform(fileName: String, samples: FloatArray, durationMs: Int, bpm: Double) {
+    suspend fun getWaveformAnalysisVersion(fileName: String): Int = dao.getWaveform(fileName)?.analysisVersion ?: 0
+
+    suspend fun saveWaveform(fileName: String, samples: FloatArray, durationMs: Int, bpm: Double, analysisVersion: Int = 0) {
         val bytes = floatArrayToByteArray(samples)
         val entity = WaveformEntity(
             fileName = fileName,
             samplesBlob = bytes,
             sampleCount = samples.size,
             durationMs = durationMs,
-            calculatedBpm = bpm
+            calculatedBpm = bpm,
+            analysisVersion = analysisVersion
         )
         dao.insertWaveform(entity)
     }

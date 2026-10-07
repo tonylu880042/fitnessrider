@@ -758,6 +758,11 @@ fun ClassEditorScreen(
     if (isBpmDialogVisible && activeSegment != null) {
         BpmCalibrationDialog(
             initialBpm = activeSegment.baseBpm,
+            onDetectBpm = {
+                if (MusicSource.exists(context, repository, activeSegment.musicFileName)) {
+                    WaveformAnalyzer.getInstance(context).analyzeWaveform(activeSegment.musicFileName).bpm
+                } else null
+            },
             onDismiss = { isBpmDialogVisible = false },
             onSave = { newBpm ->
                 val updatedSeg = activeSegment.copy(baseBpm = newBpm)

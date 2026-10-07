@@ -1,5 +1,6 @@
 package com.fitnessrider.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -69,5 +70,6 @@ data class WaveformEntity(
     val samplesBlob: ByteArray,
     val sampleCount: Int,
     val durationMs: Int,
-    val calculatedBpm: Double
+    val calculatedBpm: Double,
+    @ColumnInfo(defaultValue = "0") val analysisVersion: Int = 0
 )

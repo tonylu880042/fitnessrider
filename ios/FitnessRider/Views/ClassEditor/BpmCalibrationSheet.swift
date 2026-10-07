@@ -5,11 +5,15 @@ public struct BpmCalibrationSheet: View {
     @State private var bpm: Double
     @State private var tapCount: Int = 0
     @State private var isPulsing: Bool = false
+    @State private var isDetecting: Bool = false
+    @State private var detectFailed: Bool = false
     private let detector = TapTempoDetector()
+    public let onDetect: () async -> Double?
     public let onSave: (Double) -> Void
 
-    public init(initialBpm: Double, onSave: @escaping (Double) -> Void) {
+    public init(initialBpm: Double, onDetect: @escaping () async -> Double?, onSave: @escaping (Double) -> Void) {
         self._bpm = State(initialValue: max(40.0, min(240.0, initialBpm)))
+        self.onDetect = onDetect
         self.onSave = onSave
     }
 
@@ -80,6 +84,45 @@ public struct BpmCalibrationSheet: View {
                 Text("請隨音樂重拍連續點擊 3 次以上自動計算")
                     .font(.system(size: 13))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
+
+                Button {
+                    isDetecting = true
+                    detectFailed = false
+                    Task { @MainActor in
+                        if let detected = await onDetect() {
+                            bpm = max(50.0, min(220.0, detected))
+                        } else {
+                            detectFailed = true
+                        }
+                        isDetecting = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isDetecting {
+                            ProgressView()
+                            Text("偵測中…")
+                        } else {
+                            Text("自動偵測")
+                        }
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(FitnessRiderTheme.cardBackground)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
+                    )
+                }
+                .disabled(isDetecting)
+
+                if detectFailed {
+                    Text("無法偵測，請改用 TAP 測速")
+                        .font(.system(size: 13))
+                        .foregroundColor(FitnessRiderTheme.accentRed)
+                }
 
                 Divider()
                     .padding(.horizontal, 24)

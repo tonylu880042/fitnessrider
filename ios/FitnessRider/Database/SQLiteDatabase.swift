@@ -136,6 +136,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
 
         _ = executeRaw("ALTER TABLE cues ADD COLUMN hand_position INTEGER NOT NULL DEFAULT 1;")
         _ = executeRaw("ALTER TABLE cues ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]';")
+        _ = executeRaw("ALTER TABLE waveform_cache ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0;")
     }
 
     public func createHotBackup(to destinationURL: URL) -> Bool {

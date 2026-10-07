@@ -1802,6 +1802,130 @@ class FitnessRiderAndroidTest {
         }
     }
 
+    private fun pulseEnvelope(bpm: Double, hopMs: Double = 10.0, seconds: Int = 60, hatLevel: Double = 0.0): FloatArray {
+        val envelope = FloatArray((seconds * 1000 / hopMs).toInt()) { 0.01f + ((it * 7919) % 100) / 100f * 0.05f }
+        val periodMs = 60_000.0 / bpm
+        var beat = 0
+        while (beat * periodMs < seconds * 1000) {
+            for ((offset, level) in listOf(0.0 to 1.0, 0.5 to hatLevel)) {
+                val position = (beat + offset) * periodMs / hopMs
+                val base = position.toInt()
+                val fraction = position - base
+                for (k in 0 until 8) {
+                    val decay = Math.exp(-k / 2.0)
+                    if (base + k < envelope.size) envelope[base + k] += (level * (1 - fraction) * decay).toFloat()
+                    if (base + k + 1 < envelope.size) envelope[base + k + 1] += (level * fraction * decay).toFloat()
+                }
+            }
+            beat++
+        }
+        return envelope
+    }
+
+    @Test
+    fun testEstimateBpmFromEnvelopeKnownTempos() {
+        val analyzer = com.fitnessrider.audio.WaveformAnalyzer()
+        for (bpm in listOf(90.0, 100.0, 120.0, 128.0, 140.0, 150.0)) {
+            assertEquals("bpm $bpm", bpm, analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm), 10.0), 1.0)
+            assertEquals("bpm $bpm with hats", bpm, analyzer.estimateBpmFromEnvelope(pulseEnvelope(bpm, hatLevel = 0.5), 10.0), 1.0)
+        }
+    }
+
+    @Test
+    fun testEstimateBpmFromEnvelopeHalfAndDoubleTime() {
+        val analyzer = com.fitnessrider.audio.WaveformAnalyzer()
+        val slow = analyzer.estimateBpmFromEnvelope(pulseEnvelope(70.0), 10.0)
+        assertEquals(70.0, slow, 1.0)
+        val ambiguous = analyzer.estimateBpmFromEnvelope(pulseEnvelope(70.0, hatLevel = 0.5), 10.0)
+        assertTrue(Math.abs(ambiguous - 70.0) <= 1.0 || Math.abs(ambiguous - 140.0) <= 1.0)
+        val tooFast = analyzer.estimateBpmFromEnvelope(pulseEnvelope(200.0), 10.0)
+        assertTrue(tooFast in 65.0..175.0)
+        assertTrue(Math.abs(tooFast - 100.0) <= 1.0 || Math.abs(tooFast - 133.3) <= 1.5)
+        assertEquals(128.0, analyzer.estimateBpmFromEnvelope(FloatArray(100) { 0.5f }, 10.0), 0.0)
+        assertEquals(128.0, analyzer.estimateBpmFromEnvelope(FloatArray(6000), 10.0), 0.0)
+    }
+
+    @Test
+    fun testClickTrackPcmThroughEnergyAccumulator() {
+        val sampleRate = 22050
+        val channels = 2
+        val bpm = 126.0
+        val seconds = 60
+        val frames = sampleRate * seconds
+        val pcm = ShortArray(frames * channels)
+        val beatFrames = sampleRate * 60.0 / bpm
+        var beat = 0
+        while (beat * beatFrames < frames) {
+            val start = (beat * beatFrames).toInt()
+            for (k in 0 until 600) {
+                if (start + k >= frames) break
+                val value = (Math.sin(k * 0.3) * Math.exp(-k / 150.0) * 20000).toInt().toShort()
+                pcm[(start + k) * channels] = value
+                pcm[(start + k) * channels + 1] = value
+            }
+            beat++
+        }
+        val accumulator = com.fitnessrider.audio.EnergyEnvelopeAccumulator(sampleRate, channels)
+        var offset = 0
+        while (offset < pcm.size) {
+            val end = minOf(pcm.size, offset + 4097)
+            accumulator.add(java.nio.ShortBuffer.wrap(pcm, offset, end - offset))
+            offset = end
+        }
+        val envelope = accumulator.toArray()
+        assertTrue(envelope.size in 6000..6030)
+        val detected = com.fitnessrider.audio.WaveformAnalyzer().estimateBpmFromEnvelope(envelope, accumulator.hopMs)
+        assertEquals(bpm, detected, 1.0)
+    }
+
+    private fun id3Tag(version: Int, frames: List<ByteArray>, extendedHeader: ByteArray = ByteArray(0), padding: Int = 0): ByteArray {
+        val body = frames.fold(extendedHeader) { acc, frame -> acc + frame } + ByteArray(padding)
+        val size = body.size
+        val syncsafe = byteArrayOf(((size shr 21) and 0x7F).toByte(), ((size shr 14) and 0x7F).toByte(), ((size shr 7) and 0x7F).toByte(), (size and 0x7F).toByte())
+        val flags = if (extendedHeader.isNotEmpty()) 0x40 else 0
+        return "ID3".toByteArray() + byteArrayOf(version.toByte(), 0, flags.toByte()) + syncsafe + body
+    }
+
+    private fun id3Frame(version: Int, id: String, payload: ByteArray): ByteArray {
+        val size = payload.size
+        val sizeBytes = if (version == 4) {
+            byteArrayOf(((size shr 21) and 0x7F).toByte(), ((size shr 14) and 0x7F).toByte(), ((size shr 7) and 0x7F).toByte(), (size and 0x7F).toByte())
+        } else {
+            byteArrayOf((size shr 24).toByte(), (size shr 16).toByte(), (size shr 8).toByte(), size.toByte())
+        }
+        return id.toByteArray(Charsets.ISO_8859_1) + sizeBytes + byteArrayOf(0, 0) + payload
+    }
+
+    @Test
+    fun testId3BpmReaderParsesTbpm() {
+        val title = id3Frame(3, "TIT2", byteArrayOf(0) + "Song".toByteArray())
+        val v23 = id3Tag(3, listOf(title, id3Frame(3, "TBPM", byteArrayOf(0) + "128".toByteArray())), padding = 16)
+        assertEquals(128.0, com.fitnessrider.audio.Id3BpmReader.parse(v23)!!, 0.0)
+
+        val v24 = id3Tag(4, listOf(title, id3Frame(4, "TBPM", byteArrayOf(3) + "127.5".toByteArray())))
+        assertEquals(127.5, com.fitnessrider.audio.Id3BpmReader.parse(v24)!!, 0.0)
+
+        val utf16 = id3Tag(3, listOf(id3Frame(3, "TBPM", byteArrayOf(1, 0xFF.toByte(), 0xFE.toByte()) + "140".toByteArray(Charsets.UTF_16LE) + byteArrayOf(0, 0))))
+        assertEquals(140.0, com.fitnessrider.audio.Id3BpmReader.parse(utf16)!!, 0.0)
+
+        val extended = id3Tag(4, listOf(id3Frame(4, "TBPM", byteArrayOf(0) + "100".toByteArray())), extendedHeader = byteArrayOf(0, 0, 0, 6, 1, 0))
+        assertEquals(100.0, com.fitnessrider.audio.Id3BpmReader.parse(extended)!!, 0.0)
+
+        assertEquals(128.0, com.fitnessrider.audio.Id3BpmReader.read(java.io.ByteArrayInputStream(v23 + ByteArray(100)))!!, 0.0)
+    }
+
+    @Test
+    fun testId3BpmReaderRejectsMissingOrInvalidTags() {
+        val title = id3Frame(3, "TIT2", byteArrayOf(0) + "Song".toByteArray())
+        assertNull(com.fitnessrider.audio.Id3BpmReader.parse(id3Tag(3, listOf(title), padding = 8)))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.parse(id3Tag(3, listOf(id3Frame(3, "TBPM", byteArrayOf(0) + "fast".toByteArray())))))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.parse(id3Tag(3, listOf(id3Frame(3, "TBPM", byteArrayOf(0) + "0".toByteArray())))))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.parse(id3Tag(3, listOf(id3Frame(3, "TBPM", byteArrayOf(0) + "999".toByteArray())))))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.parse("RIFFxxxxxxxxxxxx".toByteArray()))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.read(java.io.ByteArrayInputStream(ByteArray(3))))
+        assertNull(com.fitnessrider.audio.Id3BpmReader.read(java.io.ByteArrayInputStream("ID3".toByteArray() + byteArrayOf(3, 0, 0, 0, 0, 0, 0))))
+    }
+
     private class MockContext(private val prefs: android.content.SharedPreferences) : android.content.ContextWrapper(null) {
         override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences = prefs
         override fun getApplicationContext(): android.content.Context = this
