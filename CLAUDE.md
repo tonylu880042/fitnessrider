@@ -472,7 +472,7 @@ iOS `Views/ClassEditor/MusicLibraryView.swift` 同名函式。音樂庫列表中
 - **既存課表修復**：編輯器開啟時，在背景對所有有音檔的段落跑分析，套用與「選中段落」**同一條**寫回規則
   （長度不同就寫回；BPM 只有在仍是 128 時才寫回，教練手動校正過的值不覆蓋）。把這條規則抽成純函式雙端同名
   （例如 `segmentWithAnalyzedTrack(segment, durationMs, bpm)`），選中段落與背景修復都呼叫它，不要寫兩份。
-  修復結果跟一般編輯一樣，要教練按儲存才寫入（不要偷偷存檔）。
+  ~~修復結果要教練按儲存才寫入~~ —— 2026-10-07 實測無效（直接進 HUD 不會觸發、72 首要分析數分鐘且無進度），已由 U5 取代。
 - 測試：外部資料夾建段落時使用傳入的分析結果；`segmentWithAnalyzedTrack` 的長度寫回、BPM 128 才覆蓋、非 128 保留、fallback 不覆蓋。
 
 ### U2 — 平板倒過來時，實體音量鍵上下要跟著翻（Android 限定）
@@ -522,3 +522,48 @@ iOS `Views/ClassEditor/MusicLibraryView.swift` 同名函式。音樂庫列表中
 - 既有段落的 BPM 不自動覆蓋（可能是教練校正過的值），只有仍為 128 的才會在 U1 的修復流程中更新。
 - 測試：程式產生已知節拍的合成脈衝包絡（120、128、140、半速/倍速情境）誤差 ±1 以內；
   Android 用寫死的 ID3v2 位元組測 `TBPM` 解析（含無標籤、標籤非數字）。
+
+### U5 — 既存課表的曲目長度自動修正並直接存檔（U1 補強，雙端）
+
+客戶更新 v1.0.10 後 HUD 清單仍大多是 05:00：U1 的修復只在編輯器跑、且要按儲存，教練直接進 HUD 就永遠不會修。
+**產品決策（Tony，2026-10-07）：曲目長度是音檔事實，不是教練的編排選擇，修正後直接寫回資料庫，不必等教練按儲存。**
+BPM 規則不變（只有仍為 128 才覆蓋），其他欄位一律不動。
+
+- **背景修復＋直接存檔**：課表清單畫面出現時，對所有課表中「有音檔且 `durationMs == 300_000`」的段落，
+  依序在背景跑 `WaveformAnalyzer.analyzeWaveform`（有快取），套 `segmentWithAnalyzedTrack`，有變更就只更新該段落並存回 DB
+  （不要整份課表 `saveClass` 覆蓋，避免和編輯器同時開啟時互相蓋掉；若 repository 沒有單段更新函式就加一個最小的）。
+  同一時間只跑一個修復工作，離開畫面不必取消（存檔是冪等的）。進 HUD 時同樣對該課表啟動一次（HUD 路徑不得等待它）。
+- **HUD 播放時校正**：引擎載入某段落的音檔後，若播放器回報的實際長度與 `durationMs` 差超過 1 秒，
+  更新該段落長度（清單、總時間即時反映）並存回 DB。只動長度。Android ExoPlayer `duration`、iOS `AVAudioFile` length/sampleRate。
+- **進度可見**：課表清單在修復進行中顯示一行「正在讀取曲目長度 N/M」；編輯器的背景修復也顯示同樣文字。完成後消失。
+- 編輯器的背景修復（U1）同樣改為：寫回 in-memory 之外也直接存該段落的長度到 DB。
+- 雙端同名純函式 `segmentsNeedingDurationRepair(segments)`（有音檔且 300_000）與
+  `shouldCorrectDuration(segmentDurationMs, playerDurationMs)`（差 > 1000ms 且 player > 0）＋測試；
+  Android 加一個 repository 單段長度更新的測試（若現有測試基礎設施做得到，否則以純函式覆蓋並說明）。
+
+### U6 — 段落（歌曲）重新命名（雙端，U5 commit 後才開始）
+
+教練回報：原檔名太長，HUD 左側清單與編輯器段落卡片塞不下，看不到歌名。HUD 與編輯器顯示的是 `segment.title`
+（匯入時取檔名去副檔名），目前沒有任何地方能改。
+
+- **只改段落標題，不改音檔檔名**：外部資料夾檔案 App 無權改名，且同一音檔可能被多份課表引用；改檔名會讓其他課表找不到音樂。
+- 編輯器中目前選中段落的資訊區（波形上方顯示曲名處，Android `ClassEditorScreen.kt` 約 `activeSegment.title` 附近、
+  iOS `ClassEditorView.swift` 對應位置）加一個「重新命名」入口（鉛筆圖示），開對話框：TextField 預填目前標題、
+  「確定」／「取消」，以及「還原為檔名」（用既有 `musicTitleFromFileName` 從 `musicFileName` 算回；外部資料夾 Uri 時用其顯示名稱）。
+- 去除前後空白；空字串不接受（確定鍵 disable）。改完寫回 `workoutClass.segments[selectedIndex].title`，照一般編輯流程按儲存存檔。
+- 新標題要出現在：編輯器段落卡片、HUD 左側清單、HUD 其他顯示曲名處、匯出的 `.riderclass`（本來就帶 title，確認即可）。
+- 雙端同名純函式 `renamedSegmentTitle(input)`（trim、空→null）＋測試。
+
+### R1 — 段落（歌曲）重新命名（雙端，U5 commit 後才做）
+
+教練回報：原檔名太長，HUD 左側清單塞不下、看不到歌名。HUD 顯示的是段落 `title`（匯入時由檔名帶入），
+但編輯器目前只能改課表名稱，不能改段落標題。
+
+- **改的是段落 `title`，不是音檔檔名**：外部資料夾曲目的 `musicFileName` 是 content Uri／`extfolder://` 路徑，
+  改檔名會讓段落找不到檔案；同一首歌在不同課表也可以有不同名稱。
+- 入口：編輯器中每張段落卡片加一顆「重新命名」（鉛筆）按鈕，和上移／下移／刪除同一排；
+  另外選中段落時，波形區上方的標題也可點擊開同一個對話框。對話框：文字欄預填目前標題、全選，
+  「取消／儲存」；空白（trim 後）不可儲存。只改 in-memory，跟其他編輯一樣按課表「儲存」才寫入。
+- HUD、編輯器清單、匯出 `.riderclass` 都直接沿用 `title`，不需另外改。
+- 純函式雙端同名 `renamedSegmentTitle(original, input)`：trim 後空白回傳原標題、否則回傳 trim 後的字串；
+  測試含前後空白、全空白、正常。
