@@ -1,6 +1,7 @@
 package com.fitnessrider.ui.hud
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
@@ -51,6 +52,9 @@ private val RATE_SWIPE_THRESHOLD_DP = 60.dp
 
 private val SEGMENT_SWIPE_THRESHOLD_DP = 80.dp
 
+fun hudRequestedOrientation(isInHud: Boolean): Int =
+    if (isInHud) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
 fun rateStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     val absDx = kotlin.math.abs(dx)
     val absDy = kotlin.math.abs(dy)
@@ -81,10 +85,12 @@ fun WorkoutHUDScreen(
         if (settings.keepScreenAwakeInHUD) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+        activity?.requestedOrientation = hudRequestedOrientation(true)
         audioManager.loadClass(workoutClass)
         audioManager.play()
 
         onDispose {
+            activity?.requestedOrientation = hudRequestedOrientation(false)
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             audioManager.pause()
         }
