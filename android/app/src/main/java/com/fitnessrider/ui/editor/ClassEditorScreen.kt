@@ -97,6 +97,17 @@ internal fun buildSegmentsForImportedTracks(
     }
 }
 
+internal fun segmentWithAnalyzedTrack(segment: WorkoutSegment, durationMs: Int, bpm: Double): WorkoutSegment {
+    if (durationMs == 300_000 && bpm == 128.0) return segment
+    val needsBpmUpdate = segment.baseBpm == 128.0 && bpm != 128.0
+    val needsDurationUpdate = durationMs > 0 && durationMs != segment.durationMs
+    if (!needsBpmUpdate && !needsDurationUpdate) return segment
+    return segment.copy(
+        baseBpm = if (needsBpmUpdate) bpm else segment.baseBpm,
+        durationMs = if (needsDurationUpdate) durationMs else segment.durationMs
+    )
+}
+
 internal fun reindexedSegments(segments: List<WorkoutSegment>): List<WorkoutSegment> =
     segments.mapIndexed { index, seg -> seg.copy(orderIndex = index) }
 
@@ -174,6 +185,22 @@ fun ClassEditorScreen(
         selectedSegmentIndex = workoutClass.segments.size - 1
     }
 
+    LaunchedEffect(Unit) {
+        val analyzer = WaveformAnalyzer.getInstance(context)
+        initialClass.segments.filter { it.musicFileName.isNotBlank() }.forEach { original ->
+            val result = analyzer.analyzeWaveform(original.musicFileName)
+            val index = workoutClass.segments.indexOfFirst { it.id == original.id }
+            if (index >= 0) {
+                val current = workoutClass.segments[index]
+                val updated = segmentWithAnalyzedTrack(current, result.durationMs, result.bpm)
+                if (updated != current) {
+                    val updatedSegs = workoutClass.segments.toMutableList().also { it[index] = updated }
+                    workoutClass = workoutClass.copy(segments = updatedSegs).withRecalculatedTotals()
+                }
+            }
+        }
+    }
+
     LaunchedEffect(activeSegment?.id, activeSegment?.musicFileName) {
         if (activeSegment != null) {
             previewPlayheadMs = 0
@@ -188,13 +215,8 @@ fun ClassEditorScreen(
             val analyzer = WaveformAnalyzer.getInstance(context)
             val result = analyzer.analyzeWaveform(activeSegment.musicFileName)
             waveformSamples = result.samples
-            val needsBpmUpdate = activeSegment.baseBpm == 128.0 && result.bpm != 128.0
-            val needsDurationUpdate = result.durationMs > 0 && result.durationMs != activeSegment.durationMs
-            if (needsBpmUpdate || needsDurationUpdate) {
-                val updatedSeg = activeSegment.copy(
-                    baseBpm = if (needsBpmUpdate) result.bpm else activeSegment.baseBpm,
-                    durationMs = if (needsDurationUpdate) result.durationMs else activeSegment.durationMs
-                )
+            val updatedSeg = segmentWithAnalyzedTrack(activeSegment, result.durationMs, result.bpm)
+            if (updatedSeg != activeSegment) {
                 val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
                 workoutClass = workoutClass.copy(segments = updatedSegs).withRecalculatedTotals()
             }

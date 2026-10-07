@@ -453,3 +453,72 @@ log 一行警告然後回 200——錢收了、授權沒開。
 - iOS 匯出／匯入把整個音檔讀進記憶體（`Data(contentsOf:)`）：有人回報大課表閃退再改串流。
 - M5.4 純 JSON 輕量分享：`.riderclass` 缺音檔時本來就會降級，不另做。
 - 外部資料夾曲目不打包：見 Layer 3 最後一點，刻意不擴充。
+
+## 開發清單：客戶回報（2026-10-07，教練回饋＋HUD 截圖）
+
+四個單元依序做，**前一個 commit 前不要動下一個**（U1、U4 都改 `WaveformAnalyzer`／編輯器，U3 改 HUD）。
+
+### U1 — 曲目長度一律 05:00（bug，雙端）
+
+從「音樂資料夾」分頁加歌時，段落長度與 BPM 是寫死的預設值，不是實際音檔：
+Android `ui/musiclibrary/MusicLibraryScreen.kt` 的 `buildSegmentsFromExternalSelection`（`durationMs = 300_000, bpm = 128.0`）、
+iOS `Views/ClassEditor/MusicLibraryView.swift` 同名函式。音樂庫列表中沒有快取的曲目也退回 `300_000`
+（Android 同檔 `cached?.first ... ?: 300_000`、iOS `MusicLibraryView.swift` 開頭）。
+編輯器只在「選中段落」時分析並寫回，所以沒點過的段落永遠停在 5:00，總時間、卡路里、進度、Crossfade 時間點全錯。
+
+- 從資料夾或音樂庫加歌時，先對每首跑 `WaveformAnalyzer.analyzeWaveform`（有快取，同首只算一次），
+  用實際 `durationMs`／`bpm` 建段落；分析期間顯示進度（沿用音樂庫既有的 importing 狀態樣式），不要卡 UI 執行緒。
+- 分析失敗（`generateFallbackResult`，檔案讀不到）才退回 300_000／128，行為不變。
+- **既存課表修復**：編輯器開啟時，在背景對所有有音檔的段落跑分析，套用與「選中段落」**同一條**寫回規則
+  （長度不同就寫回；BPM 只有在仍是 128 時才寫回，教練手動校正過的值不覆蓋）。把這條規則抽成純函式雙端同名
+  （例如 `segmentWithAnalyzedTrack(segment, durationMs, bpm)`），選中段落與背景修復都呼叫它，不要寫兩份。
+  修復結果跟一般編輯一樣，要教練按儲存才寫入（不要偷偷存檔）。
+- 測試：外部資料夾建段落時使用傳入的分析結果；`segmentWithAnalyzedTrack` 的長度寫回、BPM 128 才覆蓋、非 128 保留、fallback 不覆蓋。
+
+### U2 — 平板倒過來時，實體音量鍵上下要跟著翻（Android 限定）
+
+舊版每個 Activity 都是 `android:screenOrientation="sensorLandscape"`：**即使系統鎖定自動旋轉，畫面仍會在兩種橫向間翻轉**，
+而系統依畫面方向調換音量鍵上下，所以「音量鍵跟著轉」其實是畫面跟著轉的副作用（舊版沒有攔截任何音量鍵）。
+新版沒有鎖方向，完全跟系統自動旋轉設定，教練關掉自動旋轉後畫面不翻、音量鍵也不換。
+
+- **只在 HUD 期間**把 `MainActivity` 的 `requestedOrientation` 設為 `SCREEN_ORIENTATION_SENSOR_LANDSCAPE`，
+  離開 HUD 復原為 `SCREEN_ORIENTATION_UNSPECIFIED`（其他畫面與手機直向行為不變）。Compose 用 `DisposableEffect`。
+- **不要自己攔截音量鍵對調**：系統本身已依畫面方向處理，App 再對調一次會在部分機型變成雙重反轉。
+- 已知天花板：`targetSdk` 升到 36 後，Android 16 在大螢幕（sw ≥ 600dp）會忽略方向鎖定，屆時要重新評估。
+- **iOS 不做（刻意的平台例外）**：iOS App 無法覆寫系統旋轉鎖定，也無法攔截實體音量鍵；iPad 本來就只支援橫向。
+- 測試：方向值的選擇抽成純函式（`hudRequestedOrientation(isInHud)`）並測試。
+
+### U3 — HUD 字太小、看不清（雙端，不改深色主題）
+
+**產品決策（Tony，2026-10-07）：維持現有白底主題，不改深色。**
+舊版 HUD 以 1920×1080 為基準依螢幕高度等比縮放（`original/.../ui/FitScreen.java`），新版全部固定 sp/pt，
+在 10 吋平板上關鍵資訊太小，且大量用灰字 `TextSecondary`。換算到約 800dp 高的平板：
+舊版動作倒數平常約 74dp、最後 5 秒換成約 207dp 的大數字並縮放動畫；動作名稱約 36dp；新版倒數只有 32sp、動作名稱 15～22。
+
+- HUD 字級改為「基準值 × `hudScale`」，`hudScale = clamp(HUD 可用高度 / 800, 0.7, 1.6)`，雙端同名純函式＋測試。
+  Android 用 `BoxWithConstraints`、iOS 用 `GeometryReader`。
+- 在 800 高（scale 1.0）時的基準值調大，至少：動作倒數 32→64、騎乘姿勢名稱→30、握把把位名稱→30、
+  cue 說明列→20、下一動作提示列→20、左側清單曲名 14→18／時長 BPM 11→14、課程時間 13→20。
+  目標轉速大數字已夠大，維持 82×scale。
+- **最後 5 秒大倒數**：動作倒數剩 ≤5 秒時，在中央圓形儀表內顯示佔 HUD 高度約 25% 的秒數（沿用 `AccentRed`），
+  每秒有縮放動畫，對應舊版 `FragClassProgress.java` 的 `countDownForCue`。不擋任何按鈕或手勢（`rateStepForSwipe`／`segmentStepForSwipe` 行為不變）。
+- 關鍵資訊（數字、姿勢、cue 文字、清單曲名）改用 `TextPrimary`／粗體；灰字只留給次要標籤。顏色只用既有 token。
+- 不能溢位：在 1280×800dp 平板與手機橫向（約 390pt 高）都要排得下，長文字用 `maxLines`＋省略號。
+
+### U4 — 自動計算 BPM（雙端）
+
+新版其實有自動估算，但不準：`WaveformAnalyzer.estimateBpm` 拿的是畫波形用的 800 點，一首 5 分鐘的歌每點 375ms，
+128 BPM 每拍才 469ms，解析度根本分不出拍子。舊版是先讀 ID3 `TBPM` 標籤，沒有才用高解析度能量分析
+（`original/.../musicplayer/GetBpmTask.java`、`Mp3TagReadWrite.java`）。
+
+- **先讀標籤**：iOS 用 AVFoundation metadata（ID3 `TBPM`、iTunes `tmpo`）；Android 的 `MediaMetadataRetriever` 沒有 BPM，
+  自己解析檔頭 ID3v2 的 `TBPM` frame（數十行，不加套件；外部 content Uri 一樣透過 `MusicSource` 開串流）。
+- **沒有標籤才分析**：在既有的解碼迴圈裡**同時**累積約 10ms 一格的能量包絡（不要再解碼第二次），
+  onset strength（能量正向差分）做自相關，範圍 65～175 BPM（沿用既有倍頻折疊），四捨五入到 0.1。
+  雙端同名純函式 `estimateBpmFromEnvelope(envelope, hopMs)`。
+- 快取：波形快取表的 BPM 是舊演算法算的，加一個分析版本欄位（或等效方式），版本舊的重算 BPM；長度與波形可沿用。
+- BPM 校正視窗（Android `ui/editor/BpmCalibrationDialog.kt`、iOS `Views/ClassEditor/BpmCalibrationSheet.swift`）
+  加一顆「自動偵測」按鈕，結果填入目前數值，教練可再用 TAP／±1／±5 微調後套用。
+- 既有段落的 BPM 不自動覆蓋（可能是教練校正過的值），只有仍為 128 的才會在 U1 的修復流程中更新。
+- 測試：程式產生已知節拍的合成脈衝包絡（120、128、140、半速/倍速情境）誤差 ±1 以內；
+  Android 用寫死的 ID3v2 位元組測 `TBPM` 解析（含無標籤、標籤非數字）。

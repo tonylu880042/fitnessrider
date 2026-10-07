@@ -14,6 +14,7 @@ import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
 import com.fitnessrider.ui.editor.musicTitleFromFileName
 import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
 import com.fitnessrider.ui.editor.reindexedSegments
+import com.fitnessrider.ui.editor.segmentWithAnalyzedTrack
 import com.fitnessrider.ui.editor.segmentsAfterMove
 import com.fitnessrider.ui.editor.segmentsAfterRemoval
 import com.fitnessrider.ui.editor.selectedIndexAfterMove
@@ -1025,6 +1026,10 @@ class FitnessRiderAndroidTest {
 
         val segments = buildSegmentsFromExternalSelection(
             entries = entries,
+            analyzed = mapOf(
+                "content://docs/tree/1/document/warmup.mp3" to (212_000 to 118.5),
+                "content://docs/tree/1/document/sprint.mp3" to (187_500 to 140.0)
+            ),
             classId = "class-external",
             startOrderIndex = 2
         )
@@ -1036,9 +1041,45 @@ class FitnessRiderAndroidTest {
         assertEquals("content://docs/tree/1/document/sprint.mp3", segments[1].musicFileName)
         assertEquals("warmup", segments[0].title)
         assertEquals("sprint", segments[1].title)
+        assertEquals(212_000, segments[0].durationMs)
+        assertEquals(118.5, segments[0].baseBpm, 0.001)
+        assertEquals(187_500, segments[1].durationMs)
+        assertEquals(140.0, segments[1].baseBpm, 0.001)
+        assertTrue(MusicSource.isExternalUri(segments[0].musicFileName))
+    }
+
+    @Test
+    fun testBuildSegmentsFromExternalSelectionFallsBackWhenNotAnalyzed() {
+        val segments = buildSegmentsFromExternalSelection(
+            entries = listOf(ExternalMusicEntry("content://docs/1", "a.mp3")),
+            analyzed = emptyMap(),
+            classId = "c",
+            startOrderIndex = 0
+        )
         assertEquals(300_000, segments[0].durationMs)
         assertEquals(128.0, segments[0].baseBpm, 0.001)
-        assertTrue(MusicSource.isExternalUri(segments[0].musicFileName))
+    }
+
+    @Test
+    fun testSegmentWithAnalyzedTrackWriteBackRules() {
+        val base = WorkoutSegment(
+            id = "s", classId = "c", orderIndex = 0, title = "t", musicFileName = "t.mp3",
+            durationMs = 300_000, baseBpm = 128.0, cues = emptyList()
+        )
+        val updated = segmentWithAnalyzedTrack(base, 201_000, 120.0)
+        assertEquals(201_000, updated.durationMs)
+        assertEquals(120.0, updated.baseBpm, 0.001)
+
+        val calibrated = base.copy(baseBpm = 100.0)
+        val keptBpm = segmentWithAnalyzedTrack(calibrated, 201_000, 120.0)
+        assertEquals(201_000, keptBpm.durationMs)
+        assertEquals(100.0, keptBpm.baseBpm, 0.001)
+
+        val real = base.copy(durationMs = 201_000, baseBpm = 120.0)
+        assertEquals(real, segmentWithAnalyzedTrack(real, 201_000, 120.0))
+
+        val fallback = base.copy(durationMs = 201_000, baseBpm = 128.0)
+        assertEquals(fallback, segmentWithAnalyzedTrack(fallback, 300_000, 128.0))
     }
 
     @Test

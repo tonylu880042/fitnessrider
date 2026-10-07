@@ -48,6 +48,18 @@ func buildSegmentsForImportedTracks(
     }
 }
 
+func segmentWithAnalyzedTrack(_ segment: WorkoutSegment, durationMs: Int, bpm: Double) -> WorkoutSegment {
+    if durationMs == 300_000 && bpm == 128.0 { return segment }
+    var updated = segment
+    if segment.baseBpm == 128.0 && bpm != 128.0 {
+        updated.baseBpm = bpm
+    }
+    if durationMs > 0 && durationMs != segment.durationMs {
+        updated.durationMs = durationMs
+    }
+    return updated
+}
+
 func reindexedSegments(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
     segments.enumerated().map { index, seg in
         var s = seg
@@ -219,6 +231,7 @@ public struct ClassEditorView: View {
         .background(FitnessRiderTheme.canvasWhite)
         .onAppear {
             loadWaveformForActiveSegment()
+            repairSegmentsFromAnalysis()
         }
         .onDisappear {
             stopPreview(resetPlayhead: true)
@@ -593,6 +606,22 @@ public struct ClassEditorView: View {
         previewPlayer?.rate = Float(rounded)
     }
 
+    private func repairSegmentsFromAnalysis() {
+        let originals = workoutClass.segments.filter { !$0.musicFileName.isEmpty }
+        Task { @MainActor in
+            for original in originals {
+                let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: original.musicFileName)
+                guard let index = workoutClass.segments.firstIndex(where: { $0.id == original.id }) else { continue }
+                let current = workoutClass.segments[index]
+                let updated = segmentWithAnalyzedTrack(current, durationMs: durationMs, bpm: bpm)
+                if updated != current {
+                    workoutClass.segments[index] = updated
+                    workoutClass.recalculateTotals()
+                }
+            }
+        }
+    }
+
     private func loadWaveformForActiveSegment() {
         guard let segment = activeSegment else { return }
         isAnalyzingWaveform = true
@@ -601,16 +630,10 @@ public struct ClassEditorView: View {
                 self.waveformSamples = samples
                 self.isAnalyzingWaveform = false
                 guard self.selectedSegmentIndex < self.workoutClass.segments.count else { return }
-                var didChange = false
-                if segment.baseBpm == 128.0 && bpm != 128.0 {
-                    self.workoutClass.segments[self.selectedSegmentIndex].baseBpm = bpm
-                    didChange = true
-                }
-                if durationMs > 0 && durationMs != segment.durationMs {
-                    self.workoutClass.segments[self.selectedSegmentIndex].durationMs = durationMs
-                    didChange = true
-                }
-                if didChange {
+                let current = self.workoutClass.segments[self.selectedSegmentIndex]
+                let updated = segmentWithAnalyzedTrack(current, durationMs: durationMs, bpm: bpm)
+                if updated != current {
+                    self.workoutClass.segments[self.selectedSegmentIndex] = updated
                     self.workoutClass.recalculateTotals()
                 }
             }

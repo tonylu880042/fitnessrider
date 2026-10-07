@@ -102,14 +102,16 @@ internal fun buildSegmentsFromLibrarySelection(
 
 internal fun buildSegmentsFromExternalSelection(
     entries: List<ExternalMusicEntry>,
+    analyzed: Map<String, Pair<Int, Double>>,
     classId: String,
     startOrderIndex: Int
 ): List<WorkoutSegment> {
     val importInfos = entries.map {
+        val result = analyzed[it.documentUriString]
         ImportedTrackInfo(
             fileName = it.documentUriString,
-            durationMs = 300_000,
-            bpm = 128.0,
+            durationMs = result?.first ?: 300_000,
+            bpm = result?.second ?: 128.0,
             displayTitle = musicTitleFromFileName(it.displayName)
         )
     }
@@ -445,31 +447,49 @@ fun MusicLibraryScreen(
             ) {
                 Button(
                     onClick = {
+                        val analyzer = WaveformAnalyzer.getInstance(context)
                         if (selectedTabIndex == 0) {
                             val selectedTracks = allTracks.filter { selectedFileNames.contains(it.fileName) }
                             if (selectedTracks.isNotEmpty()) {
-                                onSegmentsCreated(
-                                    buildSegmentsFromLibrarySelection(
-                                        tracks = selectedTracks,
-                                        classId = classId,
-                                        startOrderIndex = startOrderIndex
+                                isImporting = true
+                                coroutineScope.launch {
+                                    val analyzedTracks = selectedTracks.map {
+                                        val result = analyzer.analyzeWaveform(it.fileName)
+                                        it.copy(durationMs = result.durationMs, bpm = result.bpm)
+                                    }
+                                    isImporting = false
+                                    onSegmentsCreated(
+                                        buildSegmentsFromLibrarySelection(
+                                            tracks = analyzedTracks,
+                                            classId = classId,
+                                            startOrderIndex = startOrderIndex
+                                        )
                                     )
-                                )
-                                onDismiss()
+                                    onDismiss()
+                                }
                             }
                         } else {
                             val selectedEntries = externalEntries.filter {
                                 selectedExternalUris.contains(it.documentUriString)
                             }
                             if (selectedEntries.isNotEmpty()) {
-                                onSegmentsCreated(
-                                    buildSegmentsFromExternalSelection(
-                                        entries = selectedEntries,
-                                        classId = classId,
-                                        startOrderIndex = startOrderIndex
+                                isImporting = true
+                                coroutineScope.launch {
+                                    val analyzed = selectedEntries.associate {
+                                        val result = analyzer.analyzeWaveform(it.documentUriString)
+                                        it.documentUriString to (result.durationMs to result.bpm)
+                                    }
+                                    isImporting = false
+                                    onSegmentsCreated(
+                                        buildSegmentsFromExternalSelection(
+                                            entries = selectedEntries,
+                                            analyzed = analyzed,
+                                            classId = classId,
+                                            startOrderIndex = startOrderIndex
+                                        )
                                     )
-                                )
-                                onDismiss()
+                                    onDismiss()
+                                }
                             }
                         }
                     },

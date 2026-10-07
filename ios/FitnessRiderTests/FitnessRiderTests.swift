@@ -709,7 +709,15 @@ final class FitnessRiderTests: XCTestCase {
             ExternalMusicEntry(relativePath: "sprint.mp3", displayName: "sprint.mp3")
         ]
 
-        let segments = buildSegmentsFromExternalSelection(entries: entries, classId: classId, startOrderIndex: 2)
+        let segments = buildSegmentsFromExternalSelection(
+            entries: entries,
+            analyzed: [
+                "extfolder://Coach/warmup.mp3": (durationMs: 212_000, bpm: 118.5),
+                "extfolder://sprint.mp3": (durationMs: 187_500, bpm: 140.0)
+            ],
+            classId: classId,
+            startOrderIndex: 2
+        )
 
         XCTAssertEqual(segments.count, 2)
         XCTAssertEqual(segments[0].orderIndex, 2)
@@ -718,9 +726,40 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(segments[1].musicFileName, "extfolder://sprint.mp3")
         XCTAssertEqual(segments[0].title, "warmup")
         XCTAssertEqual(segments[1].title, "sprint")
+        XCTAssertEqual(segments[0].durationMs, 212_000)
+        XCTAssertEqual(segments[0].baseBpm, 118.5, accuracy: 0.001)
+        XCTAssertEqual(segments[1].durationMs, 187_500)
+        XCTAssertEqual(segments[1].baseBpm, 140.0, accuracy: 0.001)
+        XCTAssertTrue(MusicSource.isExternal(segments[0].musicFileName))
+    }
+
+    func testBuildSegmentsFromExternalSelectionFallsBackWhenNotAnalyzed() {
+        let segments = buildSegmentsFromExternalSelection(
+            entries: [ExternalMusicEntry(relativePath: "a.mp3", displayName: "a.mp3")],
+            analyzed: [:],
+            classId: UUID(),
+            startOrderIndex: 0
+        )
         XCTAssertEqual(segments[0].durationMs, 300_000)
         XCTAssertEqual(segments[0].baseBpm, 128.0, accuracy: 0.001)
-        XCTAssertTrue(MusicSource.isExternal(segments[0].musicFileName))
+    }
+
+    func testSegmentWithAnalyzedTrackWriteBackRules() {
+        var base = WorkoutSegment(title: "t", musicFileName: "t.mp3", durationMs: 300_000, baseBpm: 128.0)
+        let updated = segmentWithAnalyzedTrack(base, durationMs: 201_000, bpm: 120.0)
+        XCTAssertEqual(updated.durationMs, 201_000)
+        XCTAssertEqual(updated.baseBpm, 120.0, accuracy: 0.001)
+
+        base.baseBpm = 100.0
+        let keptBpm = segmentWithAnalyzedTrack(base, durationMs: 201_000, bpm: 120.0)
+        XCTAssertEqual(keptBpm.durationMs, 201_000)
+        XCTAssertEqual(keptBpm.baseBpm, 100.0, accuracy: 0.001)
+
+        var real = WorkoutSegment(title: "t", musicFileName: "t.mp3", durationMs: 201_000, baseBpm: 120.0)
+        XCTAssertEqual(segmentWithAnalyzedTrack(real, durationMs: 201_000, bpm: 120.0), real)
+
+        real.baseBpm = 128.0
+        XCTAssertEqual(segmentWithAnalyzedTrack(real, durationMs: 300_000, bpm: 128.0), real)
     }
 
     func testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {

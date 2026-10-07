@@ -50,14 +50,16 @@ func buildSegmentsFromLibrarySelection(
 
 func buildSegmentsFromExternalSelection(
     entries: [ExternalMusicEntry],
+    analyzed: [String: (durationMs: Int, bpm: Double)],
     classId: UUID,
     startOrderIndex: Int
 ) -> [WorkoutSegment] {
     let importInfos = entries.map {
-        ImportedTrackInfo(
-            fileName: MusicSource.externalPrefix + $0.relativePath,
-            durationMs: 300_000,
-            bpm: 128.0,
+        let fileName = MusicSource.externalPrefix + $0.relativePath
+        return ImportedTrackInfo(
+            fileName: fileName,
+            durationMs: analyzed[fileName]?.durationMs ?? 300_000,
+            bpm: analyzed[fileName]?.bpm ?? 128.0,
             displayTitle: musicTitleFromFileName($0.displayName)
         )
     }
@@ -241,24 +243,28 @@ struct MusicLibraryView: View {
         if selectedTab == 0 {
             let selected = allTracks.filter { selectedFileNames.contains($0.fileName) }
             guard !selected.isEmpty else { return }
-            let newSegments = buildSegmentsFromLibrarySelection(
-                tracks: selected,
-                classId: classId,
-                startOrderIndex: startOrderIndex
-            )
             stopPreview()
-            onSegmentsCreated(newSegments)
-            onDismiss()
+            isImporting = true
+            Task { @MainActor in
+                var analyzedTracks: [MusicLibraryTrack] = []
+                for track in selected {
+                    let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: track.fileName)
+                    analyzedTracks.append(MusicLibraryTrack(fileName: track.fileName, title: track.title, durationMs: durationMs, bpm: bpm))
+                }
+                isImporting = false
+                onSegmentsCreated(buildSegmentsFromLibrarySelection(
+                    tracks: analyzedTracks,
+                    classId: classId,
+                    startOrderIndex: startOrderIndex
+                ))
+                onDismiss()
+            }
         } else {
             let selected = externalEntries.filter { selectedExternalPaths.contains($0.relativePath) }
             guard !selected.isEmpty else { return }
             stopPreview()
 
             let pending = selected.filter { $0.isCloudPlaceholder }
-            guard !pending.isEmpty else {
-                finishExternalSelection(selected)
-                return
-            }
 
             isImporting = true
             Task { @MainActor in
@@ -269,21 +275,31 @@ struct MusicLibraryView: View {
                     )
                     if !available { failedNames.insert(entry.displayName) }
                 }
-                isImporting = false
 
                 if !failedNames.isEmpty {
                     onImportFailed(failedNames.sorted().map { "\($0)（iCloud 尚未下載完成）" })
                 }
                 let usable = selected.filter { !failedNames.contains($0.displayName) }
-                guard !usable.isEmpty else { return }
-                finishExternalSelection(usable)
+                guard !usable.isEmpty else {
+                    isImporting = false
+                    return
+                }
+                var analyzed: [String: (durationMs: Int, bpm: Double)] = [:]
+                for entry in usable {
+                    let fileName = MusicSource.externalPrefix + entry.relativePath
+                    let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
+                    analyzed[fileName] = (durationMs, bpm)
+                }
+                isImporting = false
+                finishExternalSelection(usable, analyzed: analyzed)
             }
         }
     }
 
-    private func finishExternalSelection(_ entries: [ExternalMusicEntry]) {
+    private func finishExternalSelection(_ entries: [ExternalMusicEntry], analyzed: [String: (durationMs: Int, bpm: Double)]) {
         let newSegments = buildSegmentsFromExternalSelection(
             entries: entries,
+            analyzed: analyzed,
             classId: classId,
             startOrderIndex: startOrderIndex
         )
