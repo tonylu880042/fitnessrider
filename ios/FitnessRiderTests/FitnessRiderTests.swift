@@ -1703,6 +1703,14 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(selectedIndexAfterRemoval(3, removedIndex: 3, newSize: 3), 2)
     }
 
+    func testHudScaleClampsAroundEightHundredBase() {
+        XCTAssertEqual(hudScale(availableHeight: 800), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 744), 0.93, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 330), 0.7, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 2000), 1.6, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 960), 1.2, accuracy: 0.0001)
+    }
+
     func testRateStepForSwipeHorizontalPastThreshold() {
         XCTAssertEqual(rateStepForSwipe(dx: 80, dy: 0, threshold: 60), 1)
         XCTAssertEqual(rateStepForSwipe(dx: -80, dy: 0, threshold: 60), -1)

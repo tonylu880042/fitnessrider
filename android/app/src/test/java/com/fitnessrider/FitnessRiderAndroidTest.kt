@@ -20,6 +20,7 @@ import com.fitnessrider.ui.editor.segmentsAfterRemoval
 import com.fitnessrider.ui.editor.selectedIndexAfterMove
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.hudRequestedOrientation
+import com.fitnessrider.ui.hud.hudScale
 import com.fitnessrider.ui.hud.rateStepForSwipe
 import com.fitnessrider.ui.hud.segmentStepForSwipe
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
@@ -1684,6 +1685,15 @@ class FitnessRiderAndroidTest {
     fun testHudRequestedOrientationLocksLandscapeOnlyInHud() {
         assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, hudRequestedOrientation(true))
         assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, hudRequestedOrientation(false))
+    }
+
+    @Test
+    fun testHudScaleClampsAroundEightHundredBase() {
+        assertEquals(1.0f, hudScale(800f), 0.0001f)
+        assertEquals(0.93f, hudScale(744f), 0.0001f)
+        assertEquals(0.7f, hudScale(330f), 0.0001f)
+        assertEquals(1.6f, hudScale(2000f), 0.0001f)
+        assertEquals(1.2f, hudScale(960f), 0.0001f)
     }
 
     @Test

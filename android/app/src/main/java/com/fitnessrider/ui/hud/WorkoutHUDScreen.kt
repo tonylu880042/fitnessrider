@@ -25,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -70,6 +72,8 @@ fun segmentStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     if (absDy <= threshold) return 0
     return if (dy > 0) 1 else -1
 }
+
+fun hudScale(availableHeight: Float): Float = (availableHeight / 800f).coerceIn(0.7f, 1.6f)
 
 @Composable
 fun WorkoutHUDScreen(
@@ -250,437 +254,470 @@ fun WorkoutHUDScreen(
             }
         )
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (isDrawerOpen) {
-                Column(
-                    modifier = Modifier
-                        .width(280.dp)
-                        .fillMaxHeight()
-                        .background(CardBackground)
-                        .border(1.dp, CardBorder)
-                ) {
-                    Row(
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val hudHeight = maxHeight.value
+            val s = hudScale(hudHeight)
+            Row(modifier = Modifier.fillMaxSize()) {
+                if (isDrawerOpen) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CardHeaderBackground)
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .width((300 * s).dp)
+                            .fillMaxHeight()
+                            .background(CardBackground)
+                            .border(1.dp, CardBorder)
                     ) {
-                        Text(
-                            text = "課堂播放清單",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "${workoutClass.segments.size} 首",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary
-                        )
-                    }
-                    HorizontalDivider(color = CardBorder)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CardHeaderBackground)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "課堂播放清單",
+                                fontSize = (18 * s).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "${workoutClass.segments.size} 首",
+                                fontSize = (14 * s).sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary
+                            )
+                        }
+                        HorizontalDivider(color = CardBorder)
 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        itemsIndexed(workoutClass.segments) { index, segment ->
-                            val isCurrent = index == currentSegmentIndex
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        audioManager.jumpToSegment(index)
-                                        audioManager.play()
-                                    }
-                                    .background(if (isCurrent) TopBarGreen.copy(alpha = 0.12f) else Color.Transparent)
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            itemsIndexed(workoutClass.segments) { index, segment ->
+                                val isCurrent = index == currentSegmentIndex
+                                Row(
                                     modifier = Modifier
-                                        .size(24.dp)
-                                        .background(if (isCurrent) TopBarGreenDark else Color.Transparent, CircleShape),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            audioManager.jumpToSegment(index)
+                                            audioManager.play()
+                                        }
+                                        .background(if (isCurrent) TopBarGreen.copy(alpha = 0.12f) else Color.Transparent)
+                                        .padding(horizontal = 14.dp, vertical = (10 * s).dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "${index + 1}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isCurrent) Color.White else TextSecondary
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = segment.title,
-                                        fontSize = 13.sp,
-                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isCurrent) TopBarGreenDark else TextPrimary,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = "${segment.formattedDuration} • ${segment.effectiveBpm.toInt()} BPM",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size((28 * s).dp)
+                                            .background(if (isCurrent) TopBarGreenDark else Color.Transparent, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}",
+                                            fontSize = (14 * s).sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCurrent) Color.White else TextSecondary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = segment.title,
+                                            fontSize = (18 * s).sp,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (isCurrent) TopBarGreenDark else TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${segment.formattedDuration} • ${segment.effectiveBpm.toInt()} BPM",
+                                            fontSize = (14 * s).sp,
+                                            color = TextSecondary,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.weight(1f))
-
-                Row(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = {
-                                    totalDragX = 0f
-                                    totalDragY = 0f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    totalDragX += dragAmount.x
-                                    totalDragY += dragAmount.y
-                                },
-                                onDragEnd = {
-                                    val rateStep = rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
-                                    if (rateStep != 0) {
-                                        audioManager.adjustRatePercent(rateStep * 2.0)
-                                        HapticFeedbackManager.playCountdownTick(context)
-                                    } else {
-                                        val segmentStep = segmentStepForSwipe(totalDragX, totalDragY, segmentSwipeThresholdPx)
-                                        if (segmentStep > 0) {
-                                            audioManager.nextSegment()
-                                        } else if (segmentStep < 0) {
-                                            audioManager.previousSegment()
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        totalDragX = 0f
+                                        totalDragY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        totalDragX += dragAmount.x
+                                        totalDragY += dragAmount.y
+                                    },
+                                    onDragEnd = {
+                                        val rateStep = rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
+                                        if (rateStep != 0) {
+                                            audioManager.adjustRatePercent(rateStep * 2.0)
+                                            HapticFeedbackManager.playCountdownTick(context)
+                                        } else {
+                                            val segmentStep = segmentStepForSwipe(totalDragX, totalDragY, segmentSwipeThresholdPx)
+                                            if (segmentStep > 0) {
+                                                audioManager.nextSegment()
+                                            } else if (segmentStep < 0) {
+                                                audioManager.previousSegment()
+                                            }
+                                        }
+                                    }
+                                )
+                            },
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        HandPositionCockpitCard(cue = activeCue, scale = s)
+
+                        Spacer(modifier = Modifier.width(28.dp))
+
+                        val currentZoneColor = colorForZone(activeSegment?.intensityZone ?: 2)
+                        CircleProgressBar(
+                            progress = progressRatio,
+                            strokeWidth = (20 * s).dp,
+                            ringColor = currentZoneColor,
+                            trackColor = CardBorder,
+                            modifier = Modifier
+                                .size((340 * s).dp)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onDoubleTap = {
+                                            audioManager.togglePlayPause()
+                                        }
+                                    )
+                                }
+                        ) {
+                            if (remainingCueSec <= 5) {
+                                val pulse = remember { Animatable(1f) }
+                                LaunchedEffect(remainingCueSec) {
+                                    pulse.snapTo(1.4f)
+                                    pulse.animateTo(1f, tween(durationMillis = 800))
+                                }
+                                Text(
+                                    text = "$remainingCueSec",
+                                    fontSize = (hudHeight * 0.25f).sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = AccentRed,
+                                    modifier = Modifier.graphicsLayer {
+                                        scaleX = pulse.value
+                                        scaleY = pulse.value
+                                    }
+                                )
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Surface(
+                                        color = currentZoneColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "ZONE ${activeSegment?.intensityZone ?: 2}",
+                                            fontSize = (14 * s).sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Text(
+                                        text = "目標轉速",
+                                        fontSize = (16 * s).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextSecondary
+                                    )
+
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            text = "${activeCue?.targetRpm ?: 85}",
+                                            fontSize = (82 * s).sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = TextPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "RPM",
+                                            fontSize = (24 * s).sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(bottom = 14.dp)
+                                        )
+                                    }
+
+                                    if (activeSegment != null) {
+                                        Text(
+                                            text = "♫ ${activeSegment.effectiveBpm.toInt()} BPM",
+                                            fontSize = (18 * s).sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TextSecondary
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    val min = remainingCueSec / 60
+                                    val sec = remainingCueSec % 60
+                                    Text(
+                                        text = String.format("%02d:%02d", min, sec),
+                                        fontSize = (64 * s).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = TopBarGreenDark
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(28.dp))
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .width((216 * s).dp)
+                                    .border(1.dp, CardBorder, RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White,
+                                shadowElevation = 3.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size((28 * s).dp)
+                                            .background(TopBarGreen.copy(alpha = 0.15f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = "課程進行時間",
+                                            tint = TopBarGreenDark,
+                                            modifier = Modifier.size((18 * s).dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "課程時間",
+                                            fontSize = (14 * s).sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TextSecondary
+                                        )
+                                        Row(verticalAlignment = Alignment.Bottom) {
+                                            Text(
+                                                text = formattedTotalElapsed,
+                                                fontSize = (20 * s).sp,
+                                                fontWeight = FontWeight.Black,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = TextPrimary
+                                            )
+                                            Text(
+                                                text = " / $formattedTotalDuration",
+                                                fontSize = (14 * s).sp,
+                                                fontWeight = FontWeight.Medium,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(bottom = 1.dp)
+                                            )
                                         }
                                     }
                                 }
-                            )
-                        },
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    HandPositionCockpitCard(cue = activeCue)
-
-                    Spacer(modifier = Modifier.width(28.dp))
-
-                    val currentZoneColor = colorForZone(activeSegment?.intensityZone ?: 2)
-                    CircleProgressBar(
-                        progress = progressRatio,
-                        strokeWidth = 20.dp,
-                        ringColor = currentZoneColor,
-                        trackColor = CardBorder,
-                        modifier = Modifier
-                            .size(300.dp)
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onDoubleTap = {
-                                        audioManager.togglePlayPause()
-                                    }
-                                )
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            PostureFigureCockpitCard(
+                                cue = activeCue,
+                                onInfoClick = { isShowingPostureInfo = true },
+                                scale = s
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Surface(
+                        color = TopBarGreen.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.FormatQuote,
+                                contentDescription = null,
+                                tint = TopBarGreenDark,
+                                modifier = Modifier.size((22 * s).dp)
+                            )
+                            Text(
+                                text = currentCoachingPrompt,
+                                fontSize = (20 * s).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Surface(
-                                color = currentZoneColor,
-                                shape = RoundedCornerShape(12.dp)
+                                color = TopBarGreenDark,
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.padding(vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "ZONE ${activeSegment?.intensityZone ?: 2}",
-                                    fontSize = 11.sp,
+                                    text = activeCue?.resistanceLevel ?: "LEVEL 5",
+                                    fontSize = (18 * s).sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            if (resistanceDelta != null) {
+                                Surface(
+                                    color = if (resistanceDelta.second) AccentRed.copy(alpha = 0.15f) else TopBarGreen.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = resistanceDelta.first,
+                                        fontSize = (16 * s).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (resistanceDelta.second) AccentRed else TopBarGreenDark,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { audioManager.adjustRatePercent(-2.0) },
+                                colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(text = "-2%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+
+                            Button(
+                                onClick = { audioManager.resetRate() },
+                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(text = "100%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+
+                            Button(
+                                onClick = { audioManager.adjustRatePercent(2.0) },
+                                colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(text = "+2%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
 
                             Text(
-                                text = "目標轉速",
-                                fontSize = 14.sp,
+                                text = "${(currentRate * 100).toInt()}%",
+                                fontSize = (18 * s).sp,
                                 fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
                                 color = TextSecondary
                             )
-
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(
-                                    text = "${activeCue?.targetRpm ?: 85}",
-                                    fontSize = 82.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = TextPrimary
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "RPM",
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextSecondary,
-                                    modifier = Modifier.padding(bottom = 14.dp)
-                                )
-                            }
-
-                            if (activeSegment != null) {
-                                Text(
-                                    text = "♫ ${activeSegment.effectiveBpm.toInt()} BPM",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TextSecondary
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            val min = remainingCueSec / 60
-                            val sec = remainingCueSec % 60
-                            Text(
-                                text = String.format("%02d:%02d", min, sec),
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (remainingCueSec <= 5) AccentRed else TopBarGreen
-                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(28.dp))
+                    Spacer(modifier = Modifier.weight(1f))
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .width(170.dp)
-                                .border(1.dp, CardBorder, RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.White,
-                            shadowElevation = 3.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .background(TopBarGreen.copy(alpha = 0.15f), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Schedule,
-                                        contentDescription = "課程進行時間",
-                                        tint = TopBarGreenDark,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Column {
-                                    Text(
-                                        text = "課程時間",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextSecondary
-                                    )
-                                    Row(verticalAlignment = Alignment.Bottom) {
-                                        Text(
-                                            text = formattedTotalElapsed,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Black,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = TextPrimary
-                                        )
-                                        Text(
-                                            text = " / $formattedTotalDuration",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(bottom = 1.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        PostureFigureCockpitCard(
-                            cue = activeCue,
-                            onInfoClick = { isShowingPostureInfo = true }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Surface(
-                    color = TopBarGreen.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.FormatQuote,
-                            contentDescription = null,
-                            tint = TopBarGreenDark,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = currentCoachingPrompt,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            color = TopBarGreenDark,
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = activeCue?.resistanceLevel ?: "LEVEL 5",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
-                            )
-                        }
-
-                        if (resistanceDelta != null) {
-                            Surface(
-                                color = if (resistanceDelta.second) AccentRed.copy(alpha = 0.15f) else TopBarGreen.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(
-                                    text = resistanceDelta.first,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (resistanceDelta.second) AccentRed else TopBarGreenDark,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = { audioManager.adjustRatePercent(-2.0) },
-                            colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(text = "-2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        }
-
-                        Button(
-                            onClick = { audioManager.resetRate() },
-                            colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(text = "100%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-
-                        Button(
-                            onClick = { audioManager.adjustRatePercent(2.0) },
-                            colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(text = "+2%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        }
-
-                        Text(
-                            text = "${(currentRate * 100).toInt()}%",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                val isNextCueWarning = remainingCueSec <= 5 && nextCue != null
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            2.dp,
-                            if (isNextCueWarning) AccentRed.copy(alpha = pulseAlpha) else TopBarGreen,
-                            RoundedCornerShape(12.dp)
-                        ),
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isNextCueWarning) AccentRed.copy(alpha = 0.10f * pulseAlpha) else Color.White,
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
+                    val isNextCueWarning = remainingCueSec <= 5 && nextCue != null
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .border(
+                                2.dp,
+                                if (isNextCueWarning) AccentRed.copy(alpha = pulseAlpha) else TopBarGreen,
+                                RoundedCornerShape(12.dp)
+                            ),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isNextCueWarning) AccentRed.copy(alpha = 0.10f * pulseAlpha) else Color.White,
+                        shadowElevation = 2.dp
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = if (isNextCueWarning) AccentRed else TopBarGreenDark,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = if (isNextCueWarning) AccentRed else TopBarGreenDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
 
-                        if (nextCue != null) {
-                            Text(text = "下一動作: ", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                            Text(text = nextCue.posture.localizedName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "(${nextCue.targetRpm} RPM, ${nextCue.resistanceLevel}, ${nextCue.handPosition.shortTitle})",
-                                fontSize = 13.sp,
-                                color = if (isNextCueWarning) AccentRed else TopBarGreenDark
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "$remainingCueSec 秒後轉換",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isNextCueWarning) AccentRed else TopBarGreenDark
-                            )
-                        } else {
-                            Text(text = "此段落最後動作，堅持踩到底！", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                            Spacer(modifier = Modifier.weight(1f))
+                            if (nextCue != null) {
+                                Text(text = "下一動作: ", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
+                                Text(text = nextCue.posture.localizedName, fontSize = (20 * s).sp, fontWeight = FontWeight.Black, color = TextPrimary, maxLines = 1)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "(${nextCue.targetRpm} RPM, ${nextCue.resistanceLevel}, ${nextCue.handPosition.shortTitle})",
+                                    fontSize = (17 * s).sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isNextCueWarning) AccentRed else TopBarGreenDark,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "$remainingCueSec 秒後轉換",
+                                    fontSize = (20 * s).sp,
+                                    maxLines = 1,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (isNextCueWarning) AccentRed else TopBarGreenDark
+                                )
+                            } else {
+                                Text(text = "此段落最後動作，堅持踩到底！", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -786,11 +823,12 @@ fun WorkoutHUDScreen(
 @Composable
 private fun HandPositionCockpitCard(
     cue: WorkoutCue?,
+    scale: Float,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
-            .width(170.dp)
+            .width((216 * scale).dp)
             .border(1.dp, CardBorder, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
@@ -803,7 +841,7 @@ private fun HandPositionCockpitCard(
         ) {
             Text(
                 text = "握把把位",
-                fontSize = 13.sp,
+                fontSize = (16 * scale).sp,
                 fontWeight = FontWeight.Bold,
                 color = TextSecondary
             )
@@ -814,12 +852,12 @@ private fun HandPositionCockpitCard(
                 Image(
                     painter = painterResource(id = getHandPositionDrawableRes(cue.handPosition)),
                     contentDescription = cue.handPosition.localizedName,
-                    modifier = Modifier.size(105.dp)
+                    modifier = Modifier.size((120 * scale).dp)
                 )
             } else {
                 Box(
                     modifier = Modifier
-                        .size(105.dp)
+                        .size((120 * scale).dp)
                         .background(CardBorder.copy(alpha = 0.3f), CircleShape)
                 )
             }
@@ -828,9 +866,11 @@ private fun HandPositionCockpitCard(
 
             Text(
                 text = cue?.handPosition?.shortTitle ?: "1 號位",
-                fontSize = 17.sp,
+                fontSize = (30 * scale).sp,
                 fontWeight = FontWeight.Black,
-                color = TopBarGreenDark
+                color = TopBarGreenDark,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Text(
@@ -840,9 +880,11 @@ private fun HandPositionCockpitCard(
                     HandPosition.POSITION_3 -> "前端牛角"
                     null -> "平把中段"
                 },
-                fontSize = 13.sp,
+                fontSize = (16 * scale).sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Spacer(modifier = Modifier.height(2.dp))
@@ -854,9 +896,10 @@ private fun HandPositionCockpitCard(
                     HandPosition.POSITION_3 -> "雙手扣住前端牛角"
                     null -> "雙手放近身平把"
                 },
-                fontSize = 11.sp,
+                fontSize = (14 * scale).sp,
                 color = TextSecondary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -866,11 +909,12 @@ private fun HandPositionCockpitCard(
 private fun PostureFigureCockpitCard(
     cue: WorkoutCue?,
     onInfoClick: () -> Unit,
+    scale: Float,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
-            .width(170.dp)
+            .width((216 * scale).dp)
             .border(1.dp, CardBorder, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
@@ -891,7 +935,7 @@ private fun PostureFigureCockpitCard(
             ) {
                 Text(
                     text = "騎乘姿勢",
-                    fontSize = 13.sp,
+                    fontSize = (16 * scale).sp,
                     fontWeight = FontWeight.Bold,
                     color = TextSecondary
                 )
@@ -910,12 +954,12 @@ private fun PostureFigureCockpitCard(
                 Image(
                     painter = painterResource(id = getPostureDrawableRes(cue.posture)),
                     contentDescription = cue.posture.localizedName,
-                    modifier = Modifier.size(105.dp)
+                    modifier = Modifier.size((120 * scale).dp)
                 )
             } else {
                 Box(
                     modifier = Modifier
-                        .size(105.dp)
+                        .size((120 * scale).dp)
                         .background(CardBorder.copy(alpha = 0.3f), CircleShape)
                 )
             }
@@ -924,16 +968,20 @@ private fun PostureFigureCockpitCard(
 
             Text(
                 text = cue?.posture?.localizedName ?: "坐姿平路",
-                fontSize = 17.sp,
+                fontSize = (30 * scale).sp,
                 fontWeight = FontWeight.Black,
-                color = TopBarGreenDark
+                color = TopBarGreenDark,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Text(
                 text = "建議 ${cue?.targetRpm ?: 85} RPM",
-                fontSize = 13.sp,
+                fontSize = (16 * scale).sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Spacer(modifier = Modifier.height(2.dp))
@@ -949,9 +997,10 @@ private fun PostureFigureCockpitCard(
                     PostureType.RECOVERY -> "緩和放鬆心率"
                     null -> "基礎體能建立"
                 },
-                fontSize = 11.sp,
+                fontSize = (14 * scale).sp,
                 color = TextSecondary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

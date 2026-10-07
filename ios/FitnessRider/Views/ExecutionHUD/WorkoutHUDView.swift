@@ -21,6 +21,10 @@ func segmentStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     return dy > 0 ? 1 : -1
 }
 
+func hudScale(availableHeight: CGFloat) -> CGFloat {
+    min(max(availableHeight / 800, 0.7), 1.6)
+}
+
 public struct WorkoutHUDView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var audioManager = AudioEngineManager.shared
@@ -32,6 +36,7 @@ public struct WorkoutHUDView: View {
     @State private var isShowingPostureInfoSheet: Bool = false
     @State private var reminderRotationTick: Int = 0
     @State private var pulseAlpha: CGFloat = 1.0
+    @State private var countdownPulse: CGFloat = 1.0
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
@@ -129,6 +134,8 @@ public struct WorkoutHUDView: View {
     public var body: some View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
+            let hudHeight = geo.size.height - 60
+            let scale = hudScale(availableHeight: hudHeight)
 
             VStack(spacing: 0) {
                 cockpitHeader
@@ -136,18 +143,18 @@ public struct WorkoutHUDView: View {
                 if isLandscape {
                     HStack(spacing: 0) {
                         if isPlaylistDrawerOpen {
-                            playlistDrawer
+                            playlistDrawer(scale: scale)
                                 .frame(width: geo.size.width * 0.28)
                                 .transition(.move(edge: .leading))
                             Divider()
                         }
 
-                        cockpitCore(isLandscape: true)
+                        cockpitCore(isLandscape: true, scale: scale, hudHeight: hudHeight)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     VStack(spacing: 0) {
-                        cockpitCore(isLandscape: false)
+                        cockpitCore(isLandscape: false, scale: scale, hudHeight: hudHeight)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -265,15 +272,15 @@ public struct WorkoutHUDView: View {
         .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
     }
 
-    private var playlistDrawer: some View {
+    private func playlistDrawer(scale: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("課堂曲目清單")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 18 * scale, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.textPrimary)
                 Spacer()
                 Text("\(workoutClass.segments.count) 首")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14 * scale, weight: .semibold))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
             }
             .padding(.horizontal, 16)
@@ -289,15 +296,15 @@ public struct WorkoutHUDView: View {
 
                         HStack(spacing: 12) {
                             Text("\(index + 1)")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.system(size: 14 * scale, weight: .bold))
                                 .foregroundColor(isCurrent ? .white : FitnessRiderTheme.textSecondary)
-                                .frame(width: 24, height: 24)
+                                .frame(width: 28 * scale, height: 28 * scale)
                                 .background(isCurrent ? FitnessRiderTheme.topBarGreenDark : Color.clear)
                                 .clipShape(Circle())
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(segment.title)
-                                    .font(.system(size: 14, weight: isCurrent ? .bold : .medium))
+                                    .font(.system(size: 18 * scale, weight: isCurrent ? .bold : .semibold))
                                     .foregroundColor(isCurrent ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.textPrimary)
                                     .lineLimit(1)
 
@@ -306,8 +313,9 @@ public struct WorkoutHUDView: View {
                                     Text("•")
                                     Text("\(Int(segment.effectiveBpm)) BPM")
                                 }
-                                .font(.system(size: 11))
+                                .font(.system(size: 14 * scale))
                                 .foregroundColor(FitnessRiderTheme.textSecondary)
+                                .lineLimit(1)
                             }
 
                             Spacer()
@@ -335,27 +343,27 @@ public struct WorkoutHUDView: View {
         .background(FitnessRiderTheme.cardBackground)
     }
 
-    private func cockpitCore(isLandscape: Bool) -> some View {
+    private func cockpitCore(isLandscape: Bool, scale: CGFloat, hudHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
             Spacer()
 
             if isLandscape {
                 HStack(alignment: .bottom, spacing: 28) {
-                    handPositionCockpitCard
-                    circleProgressGauge(isLandscape: true)
+                    handPositionCockpitCard(scale: scale)
+                    circleProgressGauge(isLandscape: true, scale: scale, hudHeight: hudHeight)
                     VStack(spacing: 8) {
-                        totalElapsedTimeBadge
-                        postureFigureCockpitCard
+                        totalElapsedTimeBadge(scale: scale)
+                        postureFigureCockpitCard(scale: scale)
                     }
                 }
             } else {
                 VStack(spacing: 8) {
-                    totalElapsedTimeBadge
-                    circleProgressGauge(isLandscape: false)
+                    totalElapsedTimeBadge(scale: scale)
+                    circleProgressGauge(isLandscape: false, scale: scale, hudHeight: hudHeight)
                 }
             }
 
-            coachingPromptBanner
+            coachingPromptBanner(scale: scale)
 
             HStack(spacing: 20) {
                 HStack(spacing: 8) {
@@ -363,7 +371,7 @@ public struct WorkoutHUDView: View {
                         Image(systemName: "gauge.with.needle.fill")
                         Text(activeCue?.resistanceLevel ?? "LEVEL 5")
                     }
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 18 * scale, weight: .bold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -372,7 +380,7 @@ public struct WorkoutHUDView: View {
 
                     if let delta = resistanceDelta {
                         Text(delta.text)
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 16 * scale, weight: .bold))
                             .foregroundColor(delta.isUp ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -385,27 +393,27 @@ public struct WorkoutHUDView: View {
                     Button("-2%") {
                         audioManager.adjustRatePercent(by: -2.0)
                     }
-                    .buttonStyle(HUDTempoButtonStyle())
+                    .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
 
                     Button("100%") {
                         audioManager.resetRate()
                     }
-                    .buttonStyle(HUDTempoButtonStyle(isPrimary: true))
+                    .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 16 * scale))
 
                     Button("+2%") {
                         audioManager.adjustRatePercent(by: 2.0)
                     }
-                    .buttonStyle(HUDTempoButtonStyle())
+                    .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
 
                     Text(String(format: "%.0f%%", audioManager.currentRate * 100))
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .font(.system(size: 18 * scale, weight: .bold, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
             }
 
             Spacer()
 
-            nextCueBanner
+            nextCueBanner(scale: scale)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
@@ -442,87 +450,106 @@ public struct WorkoutHUDView: View {
         }
     }
 
-    private func circleProgressGauge(isLandscape: Bool) -> some View {
-        CircleProgressBar(
+    private func circleProgressGauge(isLandscape: Bool, scale: CGFloat, hudHeight: CGFloat) -> some View {
+        let dialSize = (isLandscape ? 340 : 300) * scale
+        return CircleProgressBar(
             progress: progressRatio,
-            strokeWidth: 18.0,
+            strokeWidth: 18.0 * scale,
             ringColor: currentZoneColor,
             trackColor: FitnessRiderTheme.cardBorder
         ) {
-            VStack(spacing: 4) {
-                Text("ZONE \(activeSegment?.intensityZone ?? 2)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 2)
-                    .background(currentZoneColor)
-                    .cornerRadius(12)
+            if remainingCueSeconds <= 5 {
+                Text("\(remainingCueSeconds)")
+                    .font(.system(size: hudHeight * 0.25, weight: .black, design: .monospaced))
+                    .foregroundColor(FitnessRiderTheme.accentRed)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .scaleEffect(countdownPulse)
+            } else {
+                VStack(spacing: 4) {
+                    Text("ZONE \(activeSegment?.intensityZone ?? 2)")
+                        .font(.system(size: 14 * scale, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 2)
+                        .background(currentZoneColor)
+                        .cornerRadius(12)
 
-                Text("目標轉速")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
-
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(activeCue?.targetRpm ?? 85)")
-                        .font(.system(size: 80, weight: .black, design: .rounded))
-                        .foregroundColor(FitnessRiderTheme.textPrimary)
-
-                    Text("RPM")
-                        .font(.system(size: 24, weight: .bold))
+                    Text("目標轉速")
+                        .font(.system(size: 16 * scale, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
-                }
 
-                if let segment = activeSegment {
-                    HStack(spacing: 4) {
-                        Image(systemName: "metronome.fill")
-                        Text(String(format: "%.0f BPM", segment.effectiveBpm))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(activeCue?.targetRpm ?? 85)")
+                            .font(.system(size: 82 * scale, weight: .black, design: .rounded))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                        Text("RPM")
+                            .font(.system(size: 24 * scale, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
                     }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
-                }
 
-                let minutes = remainingCueSeconds / 60
-                let seconds = remainingCueSeconds % 60
-                Text(String(format: "%02d:%02d", minutes, seconds))
-                    .font(.system(size: 32, weight: .bold, design: .monospaced))
-                    .foregroundColor(remainingCueSeconds <= 5 ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreen)
+                    if let segment = activeSegment {
+                        HStack(spacing: 4) {
+                            Image(systemName: "metronome.fill")
+                            Text(String(format: "%.0f BPM", segment.effectiveBpm))
+                        }
+                        .font(.system(size: 18 * scale, weight: .semibold))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    }
+
+                    let minutes = remainingCueSeconds / 60
+                    let seconds = remainingCueSeconds % 60
+                    Text(String(format: "%02d:%02d", minutes, seconds))
+                        .font(.system(size: 64 * scale, weight: .bold, design: .monospaced))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
             }
         }
-        .frame(width: isLandscape ? 300 : 250, height: isLandscape ? 300 : 250)
+        .frame(width: dialSize, height: dialSize)
         .contentShape(Circle())
         .onTapGesture(count: 2) {
             audioManager.togglePlayPause()
         }
+        .onChange(of: remainingCueSeconds) { newValue in
+            guard newValue <= 5 else { return }
+            countdownPulse = 1.4
+            withAnimation(.easeOut(duration: 0.8)) {
+                countdownPulse = 1.0
+            }
+        }
     }
 
-    private var totalElapsedTimeBadge: some View {
+    private func totalElapsedTimeBadge(scale: CGFloat) -> some View {
         HStack(spacing: 6) {
             ZStack {
                 Circle()
                     .fill(FitnessRiderTheme.topBarGreen.opacity(0.15))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 28 * scale, height: 28 * scale)
                 Image(systemName: "timer")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 15 * scale, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.topBarGreenDark)
             }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("課程時間")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 14 * scale, weight: .semibold))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
 
                 HStack(alignment: .lastTextBaseline, spacing: 2) {
                     Text(formattedTotalElapsed)
-                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .font(.system(size: 20 * scale, weight: .black, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
 
                     Text("/ \(formattedTotalDuration)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.system(size: 14 * scale, weight: .medium, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                 }
             }
         }
-        .frame(width: 170)
+        .frame(width: 216 * scale)
         .padding(.vertical, 6)
         .background(Color.white)
         .cornerRadius(12)
@@ -533,56 +560,59 @@ public struct WorkoutHUDView: View {
         .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
     }
 
-    private var handPositionCockpitCard: some View {
+    private func handPositionCockpitCard(scale: CGFloat) -> some View {
         VStack(spacing: 8) {
             Text("握把把位")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 16 * scale, weight: .bold))
                 .foregroundColor(FitnessRiderTheme.textSecondary)
 
             if let cue = activeCue {
                 Image(cue.handPosition.assetImageName)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 105, height: 105)
+                    .frame(width: 120 * scale, height: 120 * scale)
             } else {
                 Circle()
                     .fill(FitnessRiderTheme.cardBorder.opacity(0.3))
-                    .frame(width: 105, height: 105)
+                    .frame(width: 120 * scale, height: 120 * scale)
             }
 
             Text(activeCue?.handPosition.shortTitle ?? "1 號位")
-                .font(.system(size: 17, weight: .heavy))
+                .font(.system(size: 30 * scale, weight: .heavy))
                 .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
 
             Text(activeCue?.handPosition == .position1 ? "平把中段" : (activeCue?.handPosition == .position2 ? "橫桿轉折" : "前端牛角"))
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 16 * scale, weight: .bold))
                 .foregroundColor(FitnessRiderTheme.textPrimary)
+                .lineLimit(1)
 
             Text(activeCue?.handPosition == .position1 ? "雙手放近身平把" : (activeCue?.handPosition == .position2 ? "手握橫桿轉折處" : "雙手扣住前端牛角"))
-                .font(.system(size: 11))
+                .font(.system(size: 14 * scale))
                 .foregroundColor(FitnessRiderTheme.textSecondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 14)
-        .frame(width: 170)
+        .frame(width: 216 * scale)
         .background(Color.white)
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
     }
 
-    private var postureFigureCockpitCard: some View {
+    private func postureFigureCockpitCard(scale: CGFloat) -> some View {
         VStack(spacing: 8) {
             Button {
                 isShowingPostureInfoSheet = true
             } label: {
                 HStack(spacing: 4) {
                     Text("騎乘姿勢")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 16 * scale, weight: .bold))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
                     Image(systemName: "info.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 15 * scale))
                         .foregroundColor(FitnessRiderTheme.topBarGreenDark)
                 }
             }
@@ -591,45 +621,48 @@ public struct WorkoutHUDView: View {
                 Image(cue.posture.assetImageName)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 105, height: 105)
+                    .frame(width: 120 * scale, height: 120 * scale)
             } else {
                 Circle()
                     .fill(FitnessRiderTheme.cardBorder.opacity(0.3))
-                    .frame(width: 105, height: 105)
+                    .frame(width: 120 * scale, height: 120 * scale)
             }
 
             Text(activeCue?.posture.localizedName ?? "坐姿平路")
-                .font(.system(size: 17, weight: .heavy))
+                .font(.system(size: 30 * scale, weight: .heavy))
                 .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
 
             Text("建議 \(activeCue?.targetRpm ?? 85) RPM")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 16 * scale, weight: .bold))
                 .foregroundColor(FitnessRiderTheme.textPrimary)
+                .lineLimit(1)
 
             Text(activeCue?.posture == .seatedFlat ? "基礎體能建立" : (activeCue?.posture == .standingFlat ? "核心穩定鍛鍊" : (activeCue?.posture == .seatedClimb ? "臀腿阻力爬坡" : (activeCue?.posture == .standingClimb ? "重阻力站立攀登" : (activeCue?.posture == .jumps ? "動態抽車跳躍" : (activeCue?.posture == .sprint ? "極限全力衝刺" : "緩和放鬆心率"))))))
-                .font(.system(size: 11))
+                .font(.system(size: 14 * scale))
                 .foregroundColor(FitnessRiderTheme.textSecondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 14)
-        .frame(width: 170)
+        .frame(width: 216 * scale)
         .background(Color.white)
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(FitnessRiderTheme.cardBorder, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
     }
 
-    private var coachingPromptBanner: some View {
+    private func coachingPromptBanner(scale: CGFloat) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "quote.bubble.fill")
-                .font(.system(size: 14))
+                .font(.system(size: 20 * scale))
                 .foregroundColor(FitnessRiderTheme.topBarGreenDark)
 
             Text(currentCoachingPrompt)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 20 * scale, weight: .bold))
                 .foregroundColor(FitnessRiderTheme.textPrimary)
-                .lineLimit(1)
+                .lineLimit(2)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -709,37 +742,43 @@ public struct WorkoutHUDView: View {
         }
     }
 
-    private var nextCueBanner: some View {
+    private func nextCueBanner(scale: CGFloat) -> some View {
         let isWarning = remainingCueSeconds <= 5 && nextCue != nil
         return HStack(spacing: 12) {
             Image(systemName: "arrow.right.circle.fill")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 26 * scale, weight: .bold))
                 .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
 
             if let next = nextCue {
                 HStack(spacing: 6) {
                     Text("下一動作:")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                        .font(.system(size: 20 * scale, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .lineLimit(1)
 
                     Text(next.posture.localizedName)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 20 * scale, weight: .black))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .lineLimit(1)
 
                     Text("(\(next.targetRpm) RPM, \(next.resistanceLevel), \(next.handPosition.shortTitle))")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 17 * scale, weight: .semibold))
                         .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
                     Spacer()
 
                     Text("\(remainingCueSeconds) 秒後轉換")
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .font(.system(size: 20 * scale, weight: .bold, design: .monospaced))
+                        .lineLimit(1)
                         .foregroundColor(isWarning ? FitnessRiderTheme.accentRed : FitnessRiderTheme.topBarGreenDark)
                 }
             } else {
                 Text("此段落最後動作，堅持踩到底！")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                    .font(.system(size: 20 * scale, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                    .lineLimit(1)
                 Spacer()
             }
         }
@@ -757,10 +796,11 @@ public struct WorkoutHUDView: View {
 
 struct HUDTempoButtonStyle: ButtonStyle {
     var isPrimary: Bool = false
+    var fontSize: CGFloat = 14
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .bold))
+            .font(.system(size: fontSize, weight: .bold))
             .foregroundColor(isPrimary ? .white : FitnessRiderTheme.textPrimary)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
