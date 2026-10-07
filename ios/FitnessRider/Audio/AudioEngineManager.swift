@@ -128,7 +128,7 @@ public final class AudioEngineManager: ObservableObject {
     @Published public private(set) var currentDurationSeconds: Double = 0.0
     @Published public private(set) var currentSegmentIndex: Int = 0
 
-    public private(set) var currentClass: WorkoutClass?
+    @Published public private(set) var currentClass: WorkoutClass?
     public private(set) var currentSegment: WorkoutSegment?
 
     private var displayLinkTimer: Timer?
@@ -201,6 +201,7 @@ public final class AudioEngineManager: ObservableObject {
             deck.audioLengthSamples = file.length
             deck.sampleRate = file.processingFormat.sampleRate
             deck.currentDurationSeconds = Double(file.length) / deck.sampleRate
+            correctSegmentDurationIfNeeded(segmentIndex: segmentIndex, playerDurationMs: Int(deck.currentDurationSeconds * 1000))
             deck.currentOffsetSeconds = 0.0
             scheduleBuffer(on: deck, fromSample: 0)
         } else {
@@ -210,12 +211,23 @@ public final class AudioEngineManager: ObservableObject {
         }
 
         if deck === activeDeck {
-            self.currentSegment = segment
+            self.currentSegment = self.currentClass?.segments[segmentIndex] ?? segment
             self.currentRate = segment.playbackRate
             self.currentDurationSeconds = deck.currentDurationSeconds
             self.currentOffsetSeconds = 0.0
             updateNowPlayingInfo()
         }
+    }
+
+    private func correctSegmentDurationIfNeeded(segmentIndex: Int, playerDurationMs: Int) {
+        guard var workoutClass = currentClass,
+              segmentIndex >= 0 && segmentIndex < workoutClass.segments.count else { return }
+        let segment = workoutClass.segments[segmentIndex]
+        guard shouldCorrectDuration(segmentDurationMs: segment.durationMs, playerDurationMs: playerDurationMs) else { return }
+        workoutClass.segments[segmentIndex].durationMs = playerDurationMs
+        workoutClass.recalculateTotals()
+        currentClass = workoutClass
+        ClassRepository.shared.updateSegmentTrack(segmentId: segment.id, durationMs: playerDurationMs, baseBpm: nil)
     }
 
     private func scheduleBuffer(on deck: AudioDeck, fromSample sample: AVAudioFramePosition) {

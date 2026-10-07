@@ -104,6 +104,7 @@ public struct ClassEditorView: View {
     @State private var selectedSegmentIndex: Int = 0
     @State private var waveformSamples: [Float] = []
     @State private var isAnalyzingWaveform: Bool = false
+    @State private var repairProgress: (done: Int, total: Int)?
     @State private var isShowingCueSheet: Bool = false
     @State private var isShowingBpmSheet: Bool = false
     @State private var editingCue: WorkoutCue?
@@ -153,6 +154,15 @@ public struct ClassEditorView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 80)
             )
+
+            if let repairProgress {
+                Text("正在讀取曲目長度 \(repairProgress.done)/\(repairProgress.total)")
+                    .font(.system(size: 12))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+            }
 
             HStack(spacing: 24) {
                 Label("總時長: \(workoutClass.formattedDuration)", systemImage: "clock")
@@ -615,7 +625,8 @@ public struct ClassEditorView: View {
     private func repairSegmentsFromAnalysis() {
         let originals = workoutClass.segments.filter { !$0.musicFileName.isEmpty }
         Task { @MainActor in
-            for original in originals {
+            for (position, original) in originals.enumerated() {
+                repairProgress = (position + 1, originals.count)
                 let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: original.musicFileName)
                 guard let index = workoutClass.segments.firstIndex(where: { $0.id == original.id }) else { continue }
                 let current = workoutClass.segments[index]
@@ -623,8 +634,14 @@ public struct ClassEditorView: View {
                 if updated != current {
                     workoutClass.segments[index] = updated
                     workoutClass.recalculateTotals()
+                    ClassRepository.shared.updateSegmentTrack(
+                        segmentId: current.id,
+                        durationMs: updated.durationMs,
+                        baseBpm: updated.baseBpm != current.baseBpm ? updated.baseBpm : nil
+                    )
                 }
             }
+            repairProgress = nil
         }
     }
 

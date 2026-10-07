@@ -22,6 +22,7 @@
 		1F5A7CFC35F04172180EF7FE /* ExternalMusicFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B4A3FA576F862F60998BAE /* ExternalMusicFolderStore.swift */; };
 		2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */; };
 		2B2D7D9A75049400DD2996C3 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */; };
+		A1B2C3D4E5F60718293A4B5D /* TrackDurationRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* TrackDurationRepair.swift */; };
 		2CB0A7080D3BE040DED7EA09 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D113BD85C1082DDCF7F6B3DF /* TopNavBar.swift */; };
 		2D9634287CBAC104AF224967 /* CoachingReminderLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239767BB16C6D5D042CBB20E /* CoachingReminderLibrary.swift */; };
 		2F3C9D0D0E57E47EB1265A1C /* WorkoutSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B3E06E385637055E106E37 /* WorkoutSegment.swift */; };
@@ -46,6 +47,7 @@
 		70516C34D4429D27ACBA1D58 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5E4C7BA538AC2D5CCC98FE8A /* Assets.xcassets */; };
 		7142845C6DA90D28C203E9DD /* SettingsBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AF5915821D104ABB34CD73 /* SettingsBackupView.swift */; };
 		7157B3699498D4D743AA18E2 /* TapTempoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */; };
+		A1B2C3D4E5F60718293A4B5E /* TrackDurationRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* TrackDurationRepair.swift */; };
 		71F2B150C2304D2B628B4935 /* LicenseVerificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4236271B7A4EFA9C32B4B507 /* LicenseVerificationService.swift */; };
 		7BC7B878861A3FD7903474F2 /* FitnessRiderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD9DF65222DF574532D752 /* FitnessRiderTests.swift */; };
 		80455490167853B04B9D9475 /* HandPositionBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D6867C5B0E1D82F2132D97 /* HandPositionBadge.swift */; };
@@ -134,6 +136,7 @@
 		754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformAnalyzer.swift; sourceTree = "<group>"; };
 		7CF8EF81BE31942ACC0A3E4D /* ClassRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassRepository.swift; sourceTree = "<group>"; };
 		7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTempoDetector.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5C /* TrackDurationRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackDurationRepair.swift; sourceTree = "<group>"; };
 		8658E75B1768A837AD8F0211 /* SegmentProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentProgressBar.swift; sourceTree = "<group>"; };
 		98018669BA114F7F3866B19A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		998E959DCF787BBF19BA2073 /* WorkoutCue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCue.swift; sourceTree = "<group>"; };
@@ -343,6 +346,7 @@
 				743FC840B94BAFDA571068E6 /* CueAudioBeepPlayer.swift */,
 				32B5C651FDE0ADBE3FFB5279 /* MusicSource.swift */,
 				7FE3BFD9C9A6F79697C1A0B7 /* TapTempoDetector.swift */,
+				A1B2C3D4E5F60718293A4B5C /* TrackDurationRepair.swift */,
 				754661A49CCB68155B9D9DAD /* WaveformAnalyzer.swift */,
 			);
 			path = Audio;
@@ -528,6 +532,7 @@
 				DDC23308CAA1D29EC31B7E12 /* SegmentProgressBar.swift in Sources */,
 				7142845C6DA90D28C203E9DD /* SettingsBackupView.swift in Sources */,
 				2B2D7D9A75049400DD2996C3 /* TapTempoDetector.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5D /* TrackDurationRepair.swift in Sources */,
 				2CB0A7080D3BE040DED7EA09 /* TopNavBar.swift in Sources */,
 				516DE07C7EF9C3F41F473523 /* VersionExpiredView.swift in Sources */,
 				C20190E1C22C5417A213D16C /* VersionLifecycleManager.swift in Sources */,
@@ -575,6 +580,7 @@
 				999093BC9A827D1AB76E8B3D /* SegmentProgressBar.swift in Sources */,
 				2A6F3E6D8CA4BF65D132D48E /* SettingsBackupView.swift in Sources */,
 				7157B3699498D4D743AA18E2 /* TapTempoDetector.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5E /* TrackDurationRepair.swift in Sources */,
 				F29D968D1B95640F911C9860 /* TopNavBar.swift in Sources */,
 				11D9D263BDEE1690DDBAC4D3 /* VersionExpiredView.swift in Sources */,
 				0F9F9158EE392A8CE334B2EC /* VersionLifecycleManager.swift in Sources */,

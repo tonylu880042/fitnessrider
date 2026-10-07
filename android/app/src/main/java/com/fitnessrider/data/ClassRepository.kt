@@ -164,6 +164,17 @@ class ClassRepository(val context: Context) {
         dao.insertCues(cueEntities)
     }
 
+    suspend fun updateSegmentTrack(segmentId: String, durationMs: Int, baseBpm: Double?) {
+        val segment = dao.getSegment(segmentId) ?: return
+        dao.updateSegmentTrack(segmentId, durationMs, baseBpm ?: segment.baseBpm)
+        val totals = WorkoutClass(
+            segments = dao.getSegmentsForClass(segment.classId).map {
+                WorkoutSegment(durationMs = it.durationMs, intensityZone = it.intensityZone)
+            }
+        ).withRecalculatedTotals()
+        dao.updateClassTotals(segment.classId, totals.totalDurationMs, totals.estimatedCalories)
+    }
+
     suspend fun deleteClass(id: String) {
         dao.deleteClass(id)
     }

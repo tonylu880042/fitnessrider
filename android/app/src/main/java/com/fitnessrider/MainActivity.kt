@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.fitnessrider.audio.AudioEngineManager
 import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.data.RiderClassArchiveService
+import com.fitnessrider.data.TrackDurationRepair
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.theme.FitnessRiderTheme
 import com.fitnessrider.ui.classlist.ClassListScreen
@@ -134,8 +135,11 @@ class MainActivity : ComponentActivity() {
 
                         ScreenState.HUD -> {
                             activeClassForHUD?.let { wc ->
+                                LaunchedEffect(wc.id) {
+                                    TrackDurationRepair.start(this@MainActivity, wc.segments)
+                                }
                                 WorkoutHUDScreen(
-                                    workoutClass = wc,
+                                    workoutClass = classes.firstOrNull { it.id == wc.id } ?: wc,
                                     audioManager = audioEngine,
                                     onExitClick = {
                                         audioEngine.pause()

@@ -10,6 +10,8 @@ import com.fitnessrider.data.MusicSource
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutSegment
+import com.fitnessrider.model.shouldCorrectDuration
+import com.fitnessrider.model.withRecalculatedTotals
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -600,6 +602,9 @@ class AudioEngineManager(private val context: Context) {
 
                 _currentOffsetSeconds.value = currentSec
                 _currentDurationSeconds.value = totalSec
+                if (activePlayer.mediaItemCount > 0) {
+                    correctSegmentDurationIfNeeded(activePlayer.duration)
+                }
 
                 if (manualTailPlayerIndex != null) {
                     updateManualTail()
@@ -633,6 +638,18 @@ class AudioEngineManager(private val context: Context) {
                 delay(100)
             }
         }
+    }
+
+    private fun correctSegmentDurationIfNeeded(playerDurationMs: Long) {
+        val workoutClass = currentClass ?: return
+        val index = _currentSegmentIndex.value
+        val segment = workoutClass.segments.getOrNull(index) ?: return
+        if (playerDurationMs > Int.MAX_VALUE || !shouldCorrectDuration(segment.durationMs, playerDurationMs.toInt())) return
+        val correctedDuration = playerDurationMs.toInt()
+        currentClass = workoutClass.copy(
+            segments = workoutClass.segments.toMutableList().also { it[index] = segment.copy(durationMs = correctedDuration) }
+        ).withRecalculatedTotals()
+        scope.launch(Dispatchers.IO) { repository.updateSegmentTrack(segment.id, correctedDuration, null) }
     }
 
     private fun stopProgressTracking() {

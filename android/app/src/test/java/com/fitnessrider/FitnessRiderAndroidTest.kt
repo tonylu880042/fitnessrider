@@ -1085,6 +1085,24 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testSegmentsNeedingDurationRepairPicksOnlyPlaceholderDurationWithMusic() {
+        val needs = WorkoutSegment(id = "a", musicFileName = "a.mp3", durationMs = 300_000)
+        val fixed = WorkoutSegment(id = "b", musicFileName = "b.mp3", durationMs = 201_000)
+        val noMusic = WorkoutSegment(id = "c", musicFileName = "", durationMs = 300_000)
+        assertEquals(listOf(needs), segmentsNeedingDurationRepair(listOf(needs, fixed, noMusic)))
+    }
+
+    @Test
+    fun testShouldCorrectDurationRequiresMoreThanOneSecondDifference() {
+        assertEquals(true, shouldCorrectDuration(300_000, 201_000))
+        assertEquals(false, shouldCorrectDuration(201_500, 201_000))
+        assertEquals(false, shouldCorrectDuration(201_000, 202_000))
+        assertEquals(true, shouldCorrectDuration(201_000, 202_001))
+        assertEquals(false, shouldCorrectDuration(300_000, 0))
+        assertEquals(false, shouldCorrectDuration(300_000, -1))
+    }
+
+    @Test
     fun testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {
         val entries = listOf(
             ExternalMusicEntry("content://docs/1", "Sprint Fire.mp3"),

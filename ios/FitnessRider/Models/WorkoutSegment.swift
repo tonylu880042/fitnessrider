@@ -47,3 +47,11 @@ public struct WorkoutSegment: Identifiable, Codable, Equatable, Sendable {
         self.cues = cues
     }
 }
+
+func segmentsNeedingDurationRepair(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
+    segments.filter { !$0.musicFileName.isEmpty && $0.durationMs == 300_000 }
+}
+
+func shouldCorrectDuration(segmentDurationMs: Int, playerDurationMs: Int) -> Bool {
+    playerDurationMs > 0 && abs(playerDurationMs - segmentDurationMs) > 1000
+}

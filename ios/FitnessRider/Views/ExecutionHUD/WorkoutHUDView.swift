@@ -44,8 +44,12 @@ public struct WorkoutHUDView: View {
         self.workoutClass = workoutClass
     }
 
+    private var liveClass: WorkoutClass {
+        audioManager.currentClass ?? workoutClass
+    }
+
     private var activeSegment: WorkoutSegment? {
-        audioManager.currentSegment ?? workoutClass.segments.first
+        audioManager.currentSegment ?? liveClass.segments.first
     }
 
     private var currentZoneColor: Color {
@@ -101,21 +105,21 @@ public struct WorkoutHUDView: View {
     }
 
     private var totalElapsedSeconds: Int {
-        let priorMs = workoutClass.segments.prefix(audioManager.currentSegmentIndex).reduce(0) { $0 + $1.durationMs }
+        let priorMs = liveClass.segments.prefix(audioManager.currentSegmentIndex).reduce(0) { $0 + $1.durationMs }
         return (priorMs / 1000) + Int(audioManager.currentOffsetSeconds)
     }
 
     private var totalClassSeconds: Int {
-        if workoutClass.totalDurationMs > 0 {
-            return workoutClass.totalDurationMs / 1000
+        if liveClass.totalDurationMs > 0 {
+            return liveClass.totalDurationMs / 1000
         }
-        return workoutClass.segments.reduce(0) { $0 + $1.durationMs } / 1000
+        return liveClass.segments.reduce(0) { $0 + $1.durationMs } / 1000
     }
 
     private var realtimeCalories: Int {
         guard totalClassSeconds > 0 else { return 0 }
         let ratio = min(1.0, max(0.0, Double(totalElapsedSeconds) / Double(totalClassSeconds)))
-        return Int(workoutClass.estimatedCalories * ratio)
+        return Int(liveClass.estimatedCalories * ratio)
     }
 
     private var formattedTotalElapsed: String {
@@ -170,6 +174,7 @@ public struct WorkoutHUDView: View {
                 }
                 audioManager.loadClass(workoutClass)
                 audioManager.play()
+                TrackDurationRepair.shared.start(segments: liveClass.segments)
             }
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false
@@ -208,12 +213,12 @@ public struct WorkoutHUDView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(workoutClass.title)
+                Text(liveClass.title)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                     .lineLimit(1)
 
-                Text("即時消耗: \(realtimeCalories) / \(Int(workoutClass.estimatedCalories)) kcal")
+                Text("即時消耗: \(realtimeCalories) / \(Int(liveClass.estimatedCalories)) kcal")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
             }
@@ -279,7 +284,7 @@ public struct WorkoutHUDView: View {
                     .font(.system(size: 18 * scale, weight: .bold))
                     .foregroundColor(FitnessRiderTheme.textPrimary)
                 Spacer()
-                Text("\(workoutClass.segments.count) 首")
+                Text("\(liveClass.segments.count) 首")
                     .font(.system(size: 14 * scale, weight: .semibold))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
             }
@@ -291,7 +296,7 @@ public struct WorkoutHUDView: View {
 
             ScrollView {
                 LazyVStack(spacing: 4) {
-                    ForEach(Array(workoutClass.segments.enumerated()), id: \.element.id) { index, segment in
+                    ForEach(Array(liveClass.segments.enumerated()), id: \.element.id) { index, segment in
                         let isCurrent = index == audioManager.currentSegmentIndex
 
                         HStack(spacing: 12) {

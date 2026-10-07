@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fitnessrider.data.TrackDurationRepair
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.SegmentProgressBar
@@ -42,6 +43,11 @@ fun ClassListScreen(
     val context = LocalContext.current
     var isWarningDismissed by rememberSaveable { mutableStateOf(false) }
     val remainingDays = remember { VersionLifecycleManager.getRemainingDays(context) }
+    val repairProgress by TrackDurationRepair.progress.collectAsState()
+
+    LaunchedEffect(classes) {
+        TrackDurationRepair.start(context, classes.flatMap { it.segments })
+    }
 
     Column(
         modifier = Modifier
@@ -130,6 +136,15 @@ fun ClassListScreen(
                     }
                 }
             }
+        }
+
+        repairProgress?.let { (done, total) ->
+            Text(
+                text = "正在讀取曲目長度 $done/$total",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
 
         if (classes.isEmpty()) {

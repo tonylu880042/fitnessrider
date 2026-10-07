@@ -825,6 +825,22 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(segmentWithAnalyzedTrack(real, durationMs: 300_000, bpm: 128.0), real)
     }
 
+    func testSegmentsNeedingDurationRepairPicksOnlyPlaceholderDurationWithMusic() {
+        let needs = WorkoutSegment(title: "a", musicFileName: "a.mp3", durationMs: 300_000)
+        let fixed = WorkoutSegment(title: "b", musicFileName: "b.mp3", durationMs: 201_000)
+        let noMusic = WorkoutSegment(title: "c", musicFileName: "", durationMs: 300_000)
+        XCTAssertEqual(segmentsNeedingDurationRepair([needs, fixed, noMusic]), [needs])
+    }
+
+    func testShouldCorrectDurationRequiresMoreThanOneSecondDifference() {
+        XCTAssertTrue(shouldCorrectDuration(segmentDurationMs: 300_000, playerDurationMs: 201_000))
+        XCTAssertFalse(shouldCorrectDuration(segmentDurationMs: 201_500, playerDurationMs: 201_000))
+        XCTAssertFalse(shouldCorrectDuration(segmentDurationMs: 201_000, playerDurationMs: 202_000))
+        XCTAssertTrue(shouldCorrectDuration(segmentDurationMs: 201_000, playerDurationMs: 202_001))
+        XCTAssertFalse(shouldCorrectDuration(segmentDurationMs: 300_000, playerDurationMs: 0))
+        XCTAssertFalse(shouldCorrectDuration(segmentDurationMs: 300_000, playerDurationMs: -1))
+    }
+
     func testFilterExternalMusicEntriesMatchesDisplayNameCaseInsensitive() {
         let entries = [
             ExternalMusicEntry(relativePath: "a", displayName: "Sprint Fire.mp3"),

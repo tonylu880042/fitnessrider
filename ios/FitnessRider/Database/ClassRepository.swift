@@ -160,6 +160,59 @@ public final class ClassRepository: @unchecked Sendable {
         }
     }
 
+    public func updateSegmentTrack(segmentId: UUID, durationMs: Int, baseBpm: Double?) {
+        guard let dbPtr = db.getDbPointer() else { return }
+
+        var classIdText: String?
+        var lookup: OpaquePointer?
+        if sqlite3_prepare_v2(dbPtr, "SELECT class_id FROM segments WHERE id = ? LIMIT 1;", -1, &lookup, nil) == SQLITE_OK {
+            sqlite3_bind_text(lookup, 1, segmentId.uuidString, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(lookup) == SQLITE_ROW {
+                classIdText = String(cString: sqlite3_column_text(lookup, 0))
+            }
+        }
+        sqlite3_finalize(lookup)
+        guard let classIdText else { return }
+
+        try? db.executeWithTransaction {
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(dbPtr, "UPDATE segments SET duration_ms = ?, base_bpm = COALESCE(?, base_bpm) WHERE id = ?;", -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_int(stmt, 1, Int32(durationMs))
+                if let baseBpm {
+                    sqlite3_bind_double(stmt, 2, baseBpm)
+                } else {
+                    sqlite3_bind_null(stmt, 2)
+                }
+                sqlite3_bind_text(stmt, 3, segmentId.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+
+            var totals = WorkoutClass(segments: [])
+            var select: OpaquePointer?
+            if sqlite3_prepare_v2(dbPtr, "SELECT duration_ms, intensity_zone FROM segments WHERE class_id = ?;", -1, &select, nil) == SQLITE_OK {
+                sqlite3_bind_text(select, 1, classIdText, -1, SQLITE_TRANSIENT)
+                while sqlite3_step(select) == SQLITE_ROW {
+                    totals.segments.append(WorkoutSegment(
+                        durationMs: Int(sqlite3_column_int(select, 0)),
+                        intensityZone: Int(sqlite3_column_int(select, 1))
+                    ))
+                }
+            }
+            sqlite3_finalize(select)
+            totals.recalculateTotals()
+
+            var update: OpaquePointer?
+            if sqlite3_prepare_v2(dbPtr, "UPDATE classes SET total_duration_ms = ?, estimated_calories = ? WHERE id = ?;", -1, &update, nil) == SQLITE_OK {
+                sqlite3_bind_int(update, 1, Int32(totals.totalDurationMs))
+                sqlite3_bind_double(update, 2, totals.estimatedCalories)
+                sqlite3_bind_text(update, 3, classIdText, -1, SQLITE_TRANSIENT)
+                sqlite3_step(update)
+            }
+            sqlite3_finalize(update)
+        }
+    }
+
     public func deleteClass(byId id: UUID) {
         guard let dbPtr = db.getDbPointer() else { return }
         let sql = "DELETE FROM classes WHERE id = ?;"

@@ -185,9 +185,13 @@ fun ClassEditorScreen(
         selectedSegmentIndex = workoutClass.segments.size - 1
     }
 
+    var repairProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
     LaunchedEffect(Unit) {
         val analyzer = WaveformAnalyzer.getInstance(context)
-        initialClass.segments.filter { it.musicFileName.isNotBlank() }.forEach { original ->
+        val targets = initialClass.segments.filter { it.musicFileName.isNotBlank() }
+        targets.forEachIndexed { position, original ->
+            repairProgress = (position + 1) to targets.size
             val result = analyzer.analyzeWaveform(original.musicFileName)
             val index = workoutClass.segments.indexOfFirst { it.id == original.id }
             if (index >= 0) {
@@ -196,9 +200,15 @@ fun ClassEditorScreen(
                 if (updated != current) {
                     val updatedSegs = workoutClass.segments.toMutableList().also { it[index] = updated }
                     workoutClass = workoutClass.copy(segments = updatedSegs).withRecalculatedTotals()
+                    repository.updateSegmentTrack(
+                        current.id,
+                        updated.durationMs,
+                        updated.baseBpm.takeIf { it != current.baseBpm }
+                    )
                 }
             }
         }
+        repairProgress = null
     }
 
     LaunchedEffect(activeSegment?.id, activeSegment?.musicFileName) {
@@ -294,6 +304,15 @@ fun ClassEditorScreen(
                 )
             }
         )
+
+        repairProgress?.let { (done, total) ->
+            Text(
+                text = "正在讀取曲目長度 $done/$total",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
 
         Row(
             modifier = Modifier

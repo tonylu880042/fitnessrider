@@ -73,3 +73,9 @@ fun WorkoutClass.withRecalculatedTotals(): WorkoutClass {
     val roundedCalories = (calories * 10.0).roundToInt() / 10.0
     return copy(totalDurationMs = totalMs, estimatedCalories = roundedCalories)
 }
+
+fun segmentsNeedingDurationRepair(segments: List<WorkoutSegment>): List<WorkoutSegment> =
+    segments.filter { it.musicFileName.isNotBlank() && it.durationMs == 300_000 }
+
+fun shouldCorrectDuration(segmentDurationMs: Int, playerDurationMs: Int): Boolean =
+    playerDurationMs > 0 && kotlin.math.abs(playerDurationMs - segmentDurationMs) > 1000

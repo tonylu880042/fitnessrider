@@ -20,6 +20,15 @@ interface ClassDao {
     @Query("SELECT * FROM cues WHERE segmentId = :segmentId ORDER BY offsetMs ASC")
     suspend fun getCuesForSegment(segmentId: String): List<CueEntity>
 
+    @Query("SELECT * FROM segments WHERE id = :id LIMIT 1")
+    suspend fun getSegment(id: String): SegmentEntity?
+
+    @Query("UPDATE segments SET durationMs = :durationMs, baseBpm = :baseBpm WHERE id = :id")
+    suspend fun updateSegmentTrack(id: String, durationMs: Int, baseBpm: Double)
+
+    @Query("UPDATE classes SET totalDurationMs = :totalDurationMs, estimatedCalories = :estimatedCalories WHERE id = :id")
+    suspend fun updateClassTotals(id: String, totalDurationMs: Int, estimatedCalories: Double)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertClass(classEntity: ClassEntity)
 

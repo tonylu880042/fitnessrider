@@ -13,6 +13,7 @@ public struct ClassListView: View {
     @State private var isWarningDismissed: Bool = false
     @State private var isShowingShareErrorAlert: Bool = false
     @State private var shareErrorMessage: String = ""
+    @ObservedObject private var trackRepair = TrackDurationRepair.shared
 
     private var remainingDays: Int {
         VersionLifecycleManager.shared.remainingDays()
@@ -91,6 +92,15 @@ public struct ClassListView: View {
                     .padding(.top, 8)
                 }
 
+                if let progress = trackRepair.progress {
+                    Text("正在讀取曲目長度 \(progress.done)/\(progress.total)")
+                        .font(.system(size: 12))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
+                }
+
                 if classes.isEmpty {
                     emptyStateView
                 } else {
@@ -107,8 +117,15 @@ public struct ClassListView: View {
             .background(FitnessRiderTheme.canvasWhite)
             .onAppear {
                 loadClasses()
+                TrackDurationRepair.shared.start(segments: classes.flatMap { $0.segments })
             }
-            .fullScreenCover(item: $selectedClassForHUD) { workoutClass in
+            .onChange(of: trackRepair.persistedCount) { _ in
+                loadClasses()
+            }
+            .onChange(of: trackRepair.progress == nil) { _ in
+                loadClasses()
+            }
+            .fullScreenCover(item: $selectedClassForHUD, onDismiss: { loadClasses() }) { workoutClass in
                 WorkoutHUDView(workoutClass: workoutClass)
             }
             .sheet(item: $selectedClassForEdit) { workoutClass in
