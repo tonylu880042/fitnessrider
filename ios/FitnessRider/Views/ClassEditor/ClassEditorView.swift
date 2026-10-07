@@ -315,6 +315,10 @@ public struct ClassEditorView: View {
             }
             .disabled(renameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { notification in
+            guard segmentPendingRenameIndex != nil, let textField = notification.object as? UITextField else { return }
+            DispatchQueue.main.async { textField.selectAll(nil) }
+        }
         .alert("刪除段落", isPresented: $isShowingDeleteSegmentAlert) {
             Button("取消", role: .cancel) {}
             Button("刪除", role: .destructive) {
@@ -370,12 +374,14 @@ public struct ClassEditorView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 4) {
                 Button {
                     moveSegmentInEditor(at: index, offset: -1)
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 13, weight: .bold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .disabled(index == 0)
                 .foregroundColor(index == 0 ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreenDark)
@@ -385,6 +391,8 @@ public struct ClassEditorView: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .bold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .disabled(index == workoutClass.segments.count - 1)
                 .foregroundColor(index == workoutClass.segments.count - 1 ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreenDark)
@@ -394,6 +402,8 @@ public struct ClassEditorView: View {
                 } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 13, weight: .bold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .foregroundColor(FitnessRiderTheme.topBarGreenDark)
 
@@ -405,6 +415,8 @@ public struct ClassEditorView: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .bold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .foregroundColor(FitnessRiderTheme.accentRed)
             }
