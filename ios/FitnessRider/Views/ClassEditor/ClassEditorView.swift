@@ -435,6 +435,92 @@ public struct ClassEditorView: View {
         }
     }
 
+    private func previewPlayButton(for segment: WorkoutSegment) -> some View {
+        Button {
+            togglePreview(for: segment)
+        } label: {
+            Image(systemName: isPreviewPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(FitnessRiderTheme.topBarGreen)
+                .clipShape(Circle())
+        }
+    }
+
+    private func rateButtons(for segment: WorkoutSegment) -> some View {
+        HStack(spacing: 8) {
+            Button("-2%") {
+                adjustRate(for: segment, delta: -0.02)
+            }
+            .buttonStyle(SpeedButtonStyle())
+
+            Button("100%") {
+                setRate(for: segment, rate: 1.0)
+            }
+            .buttonStyle(SpeedButtonStyle(isPrimary: true))
+
+            Button("+2%") {
+                adjustRate(for: segment, delta: 0.02)
+            }
+            .buttonStyle(SpeedButtonStyle())
+        }
+    }
+
+    private func bpmCalibrationButton(for segment: WorkoutSegment) -> some View {
+        Button {
+            isShowingBpmSheet = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "metronome.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                Text(String(format: "%.0f%% (%.1f BPM)", segment.playbackRate * 100, segment.effectiveBpm))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                Text("校正")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
+                    .cornerRadius(4)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(FitnessRiderTheme.cardBackground)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func markCueButton(for segment: WorkoutSegment) -> some View {
+        Button {
+            let newCue = WorkoutCue(
+                id: UUID(),
+                segmentId: segment.id,
+                offsetMs: previewPlayheadMs,
+                posture: .standingClimb,
+                targetRpm: 65,
+                resistanceLevel: "LEVEL 6",
+                message: "起立站姿爬坡"
+            )
+            editingCue = newCue
+        } label: {
+            Label("標記 Cue 點", systemImage: "pin.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(FitnessRiderTheme.topBarGreenDark)
+                .cornerRadius(8)
+        }
+    }
+
     private func waveformEditorSection(for segment: WorkoutSegment) -> some View {
         VStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
@@ -472,85 +558,24 @@ public struct ClassEditorView: View {
             }
             .padding(.horizontal, 20)
 
-            HStack(spacing: 16) {
-                Button {
-                    togglePreview(for: segment)
-                } label: {
-                    Image(systemName: isPreviewPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(FitnessRiderTheme.topBarGreen)
-                        .clipShape(Circle())
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    previewPlayButton(for: segment)
+                    rateButtons(for: segment)
+                    bpmCalibrationButton(for: segment)
+                    Spacer()
+                    markCueButton(for: segment)
                 }
-
-                HStack(spacing: 8) {
-                    Button("-2%") {
-                        adjustRate(for: segment, delta: -0.02)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 16) {
+                        previewPlayButton(for: segment)
+                        rateButtons(for: segment)
                     }
-                    .buttonStyle(SpeedButtonStyle())
-
-                    Button("100%") {
-                        setRate(for: segment, rate: 1.0)
+                    HStack(spacing: 12) {
+                        bpmCalibrationButton(for: segment)
+                        Spacer()
+                        markCueButton(for: segment)
                     }
-                    .buttonStyle(SpeedButtonStyle(isPrimary: true))
-
-                    Button("+2%") {
-                        adjustRate(for: segment, delta: 0.02)
-                    }
-                    .buttonStyle(SpeedButtonStyle())
-                }
-
-                Button {
-                    isShowingBpmSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "metronome.fill")
-                            .font(.system(size: 13))
-                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
-                        Text(String(format: "%.0f%% (%.1f BPM)", segment.playbackRate * 100, segment.effectiveBpm))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(FitnessRiderTheme.textPrimary)
-                        Text("校正")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
-                            .cornerRadius(4)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(FitnessRiderTheme.cardBackground)
-                    .cornerRadius(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button {
-                    let newCue = WorkoutCue(
-                        id: UUID(),
-                        segmentId: segment.id,
-                        offsetMs: previewPlayheadMs,
-                        posture: .standingClimb,
-                        targetRpm: 65,
-                        resistanceLevel: "LEVEL 6",
-                        message: "起立站姿爬坡"
-                    )
-                    editingCue = newCue
-                } label: {
-                    Label("標記 Cue 點", systemImage: "pin.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(FitnessRiderTheme.topBarGreenDark)
-                        .cornerRadius(8)
                 }
             }
             .padding(.horizontal, 20)
@@ -579,24 +604,41 @@ public struct ClassEditorView: View {
                 .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(cue.posture.localizedName)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                let postureName = Text(cue.posture.localizedName)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                    .fixedSize()
+                let handBadge = HandPositionBadge(position: cue.handPosition, isCompact: true, showTitle: false)
+                let rpmTag = Text("\(cue.targetRpm) RPM")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(FitnessRiderTheme.topBarGreen)
+                    .cornerRadius(4)
+                    .fixedSize()
+                let resistance = Text(cue.resistanceLevel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                    .fixedSize()
 
-                    HandPositionBadge(position: cue.handPosition, isCompact: true, showTitle: false)
-
-                    Text("\(cue.targetRpm) RPM")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(FitnessRiderTheme.topBarGreen)
-                        .cornerRadius(4)
-
-                    Text(cue.resistanceLevel)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        postureName
+                        handBadge
+                        rpmTag
+                        resistance
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            postureName
+                            handBadge
+                        }
+                        HStack(spacing: 8) {
+                            rpmTag
+                            resistance
+                        }
+                    }
                 }
 
                 if !cue.reminders.isEmpty {
@@ -624,6 +666,8 @@ public struct ClassEditorView: View {
                 Image(systemName: "pencil")
                     .font(.system(size: 15))
                     .foregroundColor(FitnessRiderTheme.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
 
             Button {
@@ -632,6 +676,8 @@ public struct ClassEditorView: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(FitnessRiderTheme.accentRed)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
         }
         .padding(12)
