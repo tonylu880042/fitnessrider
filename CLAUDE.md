@@ -567,3 +567,66 @@ BPM 規則不變（只有仍為 128 才覆蓋），其他欄位一律不動。
 - HUD、編輯器清單、匯出 `.riderclass` 都直接沿用 `title`，不需另外改。
 - 純函式雙端同名 `renamedSegmentTitle(original, input)`：trim 後空白回傳原標題、否則回傳 trim 後的字串；
   測試含前後空白、全空白、正常。
+
+## 開發清單：加歌卡在「匯入中...」（2026-10-13，教練回報＋截圖）
+
+教練從「音樂資料夾」勾 2 首 MP3 按「加入 2 首到課表」，等 3 分鐘畫面仍停在「匯入中...」。
+原因：加歌會先對每首跑 `WaveformAnalyzer.analyzeWaveform`（整首解碼算波形＋BPM），解完才建段落，期間沒有進度、逾時或取消。
+v1.0.10 的分析版本欄位讓舊快取全部失效；編輯器背景修復（U1）、課表清單修復（U5）、選中段落分析又各自同時解碼，
+互搶 CPU 且同一首可能解兩次；解碼迴圈不可取消，教練每點一個段落就多一條跑到底的解碼；Firebase 發的是 debug 版，逐取樣迴圈更慢。
+另外 Android 解碼迴圈 `while (!isOutputEos)` 沒有停滯保護，解碼器不回報結束就永遠卡住（無法在客戶裝置上確認是哪一種）。
+
+三個單元依序做，**前一個 commit 前不要動下一個**（W1、W2 都改 `WaveformAnalyzer`，W1、W3 都改音樂庫畫面）。
+
+### W1 — 加歌與長度修復不再解碼（雙端）
+
+**產品決策（Tony，2026-10-13）：加歌只需要長度，長度讀檔頭就有，不解碼。**
+沒有 BPM 標籤的歌先顯示 128，等編輯器的背景分析或選中段落分析跑到才更新（既有「仍是 128 才覆蓋」規則）；
+課表清單的修復不再順便更新沒有標籤的 BPM。這是刻意的取捨，不要為了補 BPM 把解碼加回加歌路徑。
+
+- `WaveformAnalyzer` 雙端各加一個不解碼的 `readTrackInfo(fileName)`，回傳長度與 BPM：
+  - 長度：快取有就用快取（不論分析版本，U4 已定「長度可沿用」）；否則讀檔頭
+    （Android `MediaExtractor` 的 `KEY_DURATION`，**不建立 `MediaCodec`**；iOS `AVURLAsset` 的 duration，
+    外部資料夾一律經 `MusicSource`／`withResolvedFileURL`）；讀不到才退回 300_000。
+  - BPM：快取是目前分析版本才用快取；否則讀標籤（Android `Id3BpmReader`、iOS 既有的 `bpmTag`）；都沒有就 128。
+  - 不寫波形快取（沒有波形可存）。Android 在 IO dispatcher、iOS 在背景佇列，不卡主執行緒。
+- 上面的取捨規則抽成雙端同名純函式
+  `quickTrackInfo(cachedDurationMs, cachedBpm, cacheIsCurrent, headerDurationMs, tagBpm)`，`readTrackInfo` 只負責讀值後呼叫它。
+- 改用 `readTrackInfo` 的呼叫端（原本都是 `analyzeWaveform`）：
+  - 音樂庫「加入 N 首到課表」兩個分頁、以及「＋匯入新檔」複製完成後
+    （Android `ui/musiclibrary/MusicLibraryScreen.kt`、iOS `Views/ClassEditor/MusicLibraryView.swift`）。
+  - `TrackDurationRepair`（雙端，課表清單與進 HUD 時的長度修復）。寫回仍只走 `segmentWithAnalyzedTrack`，不另寫規則。
+- **不改**：編輯器開啟時的背景分析（U1）與選中段落分析仍跑完整 `analyzeWaveform`——波形與估算 BPM 只能靠解碼。
+  HUD 播放時的長度校正（`shouldCorrectDuration`）不變，檔頭長度不準的 VBR 檔由它收尾。
+- 測試（雙端同名）：`quickTrackInfo`——快取為目前版本→長度與 BPM 都用快取；快取版本舊→長度用快取、BPM 用標籤；
+  快取版本舊且無標籤→128；無快取有檔頭→檔頭長度；全無→300_000／128；檔頭長度 ≤ 0 視為讀不到。
+
+### W2 — 完整分析排隊＋防卡死（Android 限定）
+
+- `WaveformAnalyzer.analyzeWaveform` 的解碼段用一把 `Mutex` 包住，同一時間只解一首；
+  拿到鎖後**再查一次快取**，已是目前版本就直接回傳，避免同一首被兩條路各解一次。
+- 解碼迴圈每圈檢查協程是否仍 active，被取消就立刻釋放 codec 並拋出取消（不要吞成 fallback、不要寫快取）。
+  這樣教練切換段落時舊的解碼會停，不再堆出多條解碼。
+- 停滯保護：連續 10 秒既沒有送出 input 也沒有拿到 output，就視為卡死，中止並走既有的 fallback（不寫快取）。
+  判斷抽成純函式 `isDecodeStalled(lastProgressAtMs, nowMs)`，不要用圈數估時間。
+- 已知取捨：選中段落的波形要排在背景修復「正在解的那一首」後面，最多多等一首歌的解碼時間。不做優先佇列。
+- **iOS 不做（刻意的平台例外）**：`AVAssetReader` 讀完或失敗會自己結束，沒有無界迴圈；
+  iOS 改成序列佇列反而會讓連點段落時最後選中的那首排在最後面。有人回報 iPad 也卡再處理。
+- 測試：`isDecodeStalled`（未滿 10 秒否、滿 10 秒是、時間倒退否）。
+
+### W3 — 加歌進度對話框（雙端）
+
+W1 之後本機加歌幾乎瞬間完成，但「＋匯入新檔」的複製、iOS 的 iCloud 曲目下載、SD 卡／雲端資料夾仍可能要等。
+
+- 按下「加入 N 首到課表」或選完「＋匯入新檔」後，處理**超過 500ms 仍未完成**才顯示對話框
+  （常數雙端同值：Android `IMPORT_PROGRESS_DELAY_MS`、iOS `importProgressDelayMs`），避免每次閃一下。
+- 對話框內容：標題「正在加入歌曲」、「done / total」、進度條、目前曲名（單行，過長省略）、一顆「取消」。
+  不能點外面或按返回關閉，只能等完成或按取消。顏色只用既有 token。
+- 處理期間清單、勾選框、分頁、搜尋一律不可操作（現況「匯入中...」時勾選框仍點得動）。
+- **取消＝這次一首都不加**：不呼叫 `onSegmentsCreated`、不關閉音樂庫、勾選保留，可直接重試。
+  「＋匯入新檔」已複製進音樂庫的檔案留著並重新整理清單，不回收。
+  iOS 進行中的 iCloud 下載若無法中斷，等它回來後丟棄結果即可，不可在取消後仍加入段落。
+- 失敗的歌沿用既有的 `onImportFailed` 提示，結束後一次列出，不放進對話框。
+- 底部按鈕的「匯入中...」文字保留（對話框出現前的那 500ms 仍需要狀態）。
+- 背景的波形／BPM 分析不進這個對話框，維持既有那行「正在讀取曲目長度 N/M」。
+- 純函式雙端同名 `importProgressFraction(done, total)`：total ≤ 0 → 0，其餘 clamp 在 0…1；有測試。
