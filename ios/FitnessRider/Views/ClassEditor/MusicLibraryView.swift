@@ -248,7 +248,7 @@ struct MusicLibraryView: View {
             Task { @MainActor in
                 var analyzedTracks: [MusicLibraryTrack] = []
                 for track in selected {
-                    let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: track.fileName)
+                    let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: track.fileName)
                     analyzedTracks.append(MusicLibraryTrack(fileName: track.fileName, title: track.title, durationMs: durationMs, bpm: bpm))
                 }
                 isImporting = false
@@ -287,7 +287,7 @@ struct MusicLibraryView: View {
                 var analyzed: [String: (durationMs: Int, bpm: Double)] = [:]
                 for entry in usable {
                     let fileName = MusicSource.externalPrefix + entry.relativePath
-                    let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
+                    let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
                     analyzed[fileName] = (durationMs, bpm)
                 }
                 isImporting = false
@@ -630,7 +630,7 @@ struct MusicLibraryView: View {
                     continue
                 }
 
-                let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: fileName)
+                let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
                 importedTracks.append(ImportedTrackInfo(fileName: fileName, durationMs: durationMs, bpm: bpm))
             }
 

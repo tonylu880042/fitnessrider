@@ -4,6 +4,8 @@ import com.fitnessrider.audio.CrossfadeCalculator
 import com.fitnessrider.audio.CrossfadeFinishCoordinator
 import com.fitnessrider.audio.HapticFeedbackManager
 import com.fitnessrider.audio.SynchronizedOnceCache
+import com.fitnessrider.audio.QuickTrackInfo
+import com.fitnessrider.audio.quickTrackInfo
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.MusicSource
 import com.fitnessrider.data.RiderClassArchiveService
@@ -1956,5 +1958,37 @@ class FitnessRiderAndroidTest {
         assertEquals("舊名稱", renamedSegmentTitle("舊名稱", "   "))
         assertEquals("舊名稱", renamedSegmentTitle("舊名稱", ""))
         assertEquals("Song", renamedSegmentTitle("舊名稱", "Song"))
+    }
+
+    @Test
+    fun testQuickTrackInfoSelectionRules() {
+        assertEquals(
+            QuickTrackInfo(200_000, 120.0),
+            quickTrackInfo(200_000, 120.0, true, 199_000, 100.0)
+        )
+        assertEquals(
+            QuickTrackInfo(200_000, 100.0),
+            quickTrackInfo(200_000, 120.0, false, 199_000, 100.0)
+        )
+        assertEquals(
+            QuickTrackInfo(200_000, 128.0),
+            quickTrackInfo(200_000, 120.0, false, 199_000, null)
+        )
+        assertEquals(
+            QuickTrackInfo(199_000, 128.0),
+            quickTrackInfo(null, null, false, 199_000, null)
+        )
+        assertEquals(
+            QuickTrackInfo(300_000, 128.0),
+            quickTrackInfo(null, null, false, null, null)
+        )
+        assertEquals(
+            QuickTrackInfo(300_000, 128.0),
+            quickTrackInfo(null, null, false, 0, null)
+        )
+        assertEquals(
+            QuickTrackInfo(300_000, 128.0),
+            quickTrackInfo(null, null, false, -5, null)
+        )
     }
 }

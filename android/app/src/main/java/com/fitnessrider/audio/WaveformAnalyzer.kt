@@ -35,7 +35,62 @@ data class WaveformResult(
     }
 }
 
+data class QuickTrackInfo(val durationMs: Int, val bpm: Double)
+
+fun quickTrackInfo(
+    cachedDurationMs: Int?,
+    cachedBpm: Double?,
+    cacheIsCurrent: Boolean,
+    headerDurationMs: Int?,
+    tagBpm: Double?
+): QuickTrackInfo {
+    val durationMs = cachedDurationMs?.takeIf { it > 0 }
+        ?: headerDurationMs?.takeIf { it > 0 }
+        ?: 300_000
+    val bpm = if (cacheIsCurrent && cachedBpm != null) cachedBpm else tagBpm ?: 128.0
+    return QuickTrackInfo(durationMs, bpm)
+}
+
 class WaveformAnalyzer(private val repository: ClassRepository? = null) {
+
+    suspend fun readTrackInfo(fileName: String): QuickTrackInfo = withContext(Dispatchers.IO) {
+        val cached = repository?.getWaveform(fileName)
+        val cacheIsCurrent = cached != null &&
+            (repository?.getWaveformAnalysisVersion(fileName) ?: 0) >= ANALYSIS_VERSION
+        val tagBpm = repository?.let { repo ->
+            MusicSource.openInputStream(repo.context, repo, fileName)?.use { Id3BpmReader.read(it) }
+        }
+        quickTrackInfo(
+            cachedDurationMs = cached?.second,
+            cachedBpm = cached?.third,
+            cacheIsCurrent = cacheIsCurrent,
+            headerDurationMs = readHeaderDurationMs(fileName),
+            tagBpm = tagBpm
+        )
+    }
+
+    private fun readHeaderDurationMs(fileName: String): Int? {
+        val repo = repository ?: return null
+        val extractor = MediaExtractor()
+        return try {
+            if (MusicSource.isExternalUri(fileName)) {
+                extractor.setDataSource(repo.context, Uri.parse(fileName), null)
+            } else {
+                val file = File(repo.musicDirectory, fileName)
+                if (!file.exists() || file.length() == 0L) return null
+                extractor.setDataSource(file.absolutePath)
+            }
+            (0 until extractor.trackCount)
+                .map { extractor.getTrackFormat(it) }
+                .firstOrNull { (it.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/") }
+                ?.takeIf { it.containsKey(MediaFormat.KEY_DURATION) }
+                ?.let { (it.getLong(MediaFormat.KEY_DURATION) / 1000).toInt() }
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { extractor.release() } catch (_: Exception) {}
+        }
+    }
 
     suspend fun analyzeWaveform(fileName: String, targetPoints: Int = 800): WaveformResult = withContext(Dispatchers.IO) {
         val cached = repository?.getWaveform(fileName)

@@ -296,7 +296,7 @@ fun MusicLibraryScreen(
                     continue
                 }
 
-                val waveform = analyzer.analyzeWaveform(fileName)
+                val waveform = analyzer.readTrackInfo(fileName)
                 importedTracks.add(
                     ImportedTrackInfo(
                         fileName = fileName,
@@ -454,7 +454,7 @@ fun MusicLibraryScreen(
                                 isImporting = true
                                 coroutineScope.launch {
                                     val analyzedTracks = selectedTracks.map {
-                                        val result = analyzer.analyzeWaveform(it.fileName)
+                                        val result = analyzer.readTrackInfo(it.fileName)
                                         it.copy(durationMs = result.durationMs, bpm = result.bpm)
                                     }
                                     isImporting = false
@@ -476,7 +476,7 @@ fun MusicLibraryScreen(
                                 isImporting = true
                                 coroutineScope.launch {
                                     val analyzed = selectedEntries.associate {
-                                        val result = analyzer.analyzeWaveform(it.documentUriString)
+                                        val result = analyzer.readTrackInfo(it.documentUriString)
                                         it.documentUriString to (result.durationMs to result.bpm)
                                     }
                                     isImporting = false

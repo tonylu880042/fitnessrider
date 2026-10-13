@@ -18,7 +18,7 @@ public final class TrackDurationRepair: ObservableObject {
         Task { @MainActor in
             for (index, segment) in targets.enumerated() {
                 progress = (index + 1, targets.count)
-                let (_, durationMs, bpm) = await WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName)
+                let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: segment.musicFileName)
                 let updated = segmentWithAnalyzedTrack(segment, durationMs: durationMs, bpm: bpm)
                 if updated != segment {
                     ClassRepository.shared.updateSegmentTrack(

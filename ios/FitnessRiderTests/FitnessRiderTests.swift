@@ -1856,4 +1856,32 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(renamedSegmentTitle("舊名稱", ""), "舊名稱")
         XCTAssertEqual(renamedSegmentTitle("舊名稱", "Song"), "Song")
     }
+
+    func testQuickTrackInfoSelectionRules() {
+        var info = quickTrackInfo(cachedDurationMs: 200_000, cachedBpm: 120.0, cacheIsCurrent: true, headerDurationMs: 199_000, tagBpm: 100.0)
+        XCTAssertEqual(info.durationMs, 200_000)
+        XCTAssertEqual(info.bpm, 120.0)
+
+        info = quickTrackInfo(cachedDurationMs: 200_000, cachedBpm: 120.0, cacheIsCurrent: false, headerDurationMs: 199_000, tagBpm: 100.0)
+        XCTAssertEqual(info.durationMs, 200_000)
+        XCTAssertEqual(info.bpm, 100.0)
+
+        info = quickTrackInfo(cachedDurationMs: 200_000, cachedBpm: 120.0, cacheIsCurrent: false, headerDurationMs: 199_000, tagBpm: nil)
+        XCTAssertEqual(info.durationMs, 200_000)
+        XCTAssertEqual(info.bpm, 128.0)
+
+        info = quickTrackInfo(cachedDurationMs: nil, cachedBpm: nil, cacheIsCurrent: false, headerDurationMs: 199_000, tagBpm: nil)
+        XCTAssertEqual(info.durationMs, 199_000)
+        XCTAssertEqual(info.bpm, 128.0)
+
+        info = quickTrackInfo(cachedDurationMs: nil, cachedBpm: nil, cacheIsCurrent: false, headerDurationMs: nil, tagBpm: nil)
+        XCTAssertEqual(info.durationMs, 300_000)
+        XCTAssertEqual(info.bpm, 128.0)
+
+        info = quickTrackInfo(cachedDurationMs: nil, cachedBpm: nil, cacheIsCurrent: false, headerDurationMs: 0, tagBpm: nil)
+        XCTAssertEqual(info.durationMs, 300_000)
+
+        info = quickTrackInfo(cachedDurationMs: nil, cachedBpm: nil, cacheIsCurrent: false, headerDurationMs: -5, tagBpm: nil)
+        XCTAssertEqual(info.durationMs, 300_000)
+    }
 }

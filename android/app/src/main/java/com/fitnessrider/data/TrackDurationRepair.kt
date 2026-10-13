@@ -31,7 +31,7 @@ object TrackDurationRepair {
                 targets.forEachIndexed { index, segment ->
                     _progress.value = (index + 1) to targets.size
                     runCatching {
-                        val result = analyzer.analyzeWaveform(segment.musicFileName)
+                        val result = analyzer.readTrackInfo(segment.musicFileName)
                         val updated = segmentWithAnalyzedTrack(segment, result.durationMs, result.bpm)
                         if (updated != segment) {
                             repository.updateSegmentTrack(

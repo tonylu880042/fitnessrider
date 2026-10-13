@@ -1,6 +1,25 @@
 import Foundation
 import AVFoundation
 
+public func quickTrackInfo(
+    cachedDurationMs: Int?,
+    cachedBpm: Double?,
+    cacheIsCurrent: Bool,
+    headerDurationMs: Int?,
+    tagBpm: Double?
+) -> (durationMs: Int, bpm: Double) {
+    let durationMs = cachedDurationMs.flatMap { $0 > 0 ? $0 : nil }
+        ?? headerDurationMs.flatMap { $0 > 0 ? $0 : nil }
+        ?? 300_000
+    let bpm: Double
+    if cacheIsCurrent, let cachedBpm {
+        bpm = cachedBpm
+    } else {
+        bpm = tagBpm ?? 128.0
+    }
+    return (durationMs, bpm)
+}
+
 public final class WaveformAnalyzer: Sendable {
     public static let shared = WaveformAnalyzer()
 
@@ -131,6 +150,27 @@ public final class WaveformAnalyzer: Sendable {
         await withCheckedContinuation { continuation in
             analyzeWaveform(for: fileName) { samples, durationMs, bpm in
                 continuation.resume(returning: (samples, durationMs, bpm))
+            }
+        }
+    }
+
+    public func readTrackInfo(for fileName: String) async -> (durationMs: Int, bpm: Double) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let cached = ClassRepository.shared.fetchWaveform(for: fileName)
+                let header: (durationMs: Int?, tagBpm: Double?) = MusicSource.withResolvedFileURL(for: fileName) { fileURL in
+                    let asset = AVURLAsset(url: fileURL)
+                    let seconds = CMTimeGetSeconds(asset.duration)
+                    let durationMs = seconds.isFinite ? Int(seconds * 1000) : nil
+                    return (durationMs, self.bpmTag(in: asset))
+                } ?? (nil, nil)
+                continuation.resume(returning: quickTrackInfo(
+                    cachedDurationMs: cached?.durationMs,
+                    cachedBpm: cached?.bpm,
+                    cacheIsCurrent: (cached?.analysisVersion ?? 0) >= Self.analysisVersion,
+                    headerDurationMs: header.durationMs,
+                    tagBpm: header.tagBpm
+                ))
             }
         }
     }
