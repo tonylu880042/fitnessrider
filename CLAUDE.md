@@ -708,6 +708,12 @@ FitnessRider 只管課表、時間與 HUD，聲音由教練自己的串流 App �
 - **先驗證再做**：iOS 在我們自己的 session 啟用中（`.playback`＋`.mixWithOthers`）時，`isOtherAudioPlaying` 是否仍正確反映其他 App。
   在模擬器用 Safari 播一段音訊驗證；不可靠就停下來回報，不要硬做，由 Tony 決定 iOS 是否記為例外。
 - 測試：未滿 800ms 不動作；滿了之後否→是＝播放、是→否＝暫停；抖動（真 300ms 又回假）不動作；初始狀態不動作。
+- **狀態（2026-10-13）：程式已完成，但兩端的訊號都還沒在裝置上驗證過，發給教練之前必須先驗。**
+  - iOS：模擬器上 Safari 確實在播音，`isOtherAudioPlaying` 80 秒內 310 次取樣全為 false；把我們的 session 停用、改 `.ambient`、
+    停掉引擎後仍然是 false，所以判斷是模擬器沒有實作這個訊號，**只能在實機 iPad 上驗**。
+    實機也不可靠的話：iOS 記為平台例外，把開關預設改成關或移除 iOS 的接線，由 Tony 決定。
+  - Android：`isMusicActive` 尚未實測（含嗶聲短暫為真、一般段落換進串流段落時上一首的殘留）。
+  - 輪詢在 HUD 層（Android `LaunchedEffect`、iOS `.task`），不在引擎裡：引擎的 tick 暫停時不跑，掛在那裡會永遠偵測不到「否→是」。
 
 ### T4 — Android 曲目同步與遙控（Android 限定，刻意的平台例外）
 
