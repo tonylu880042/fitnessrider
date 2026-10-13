@@ -33,6 +33,8 @@ import com.fitnessrider.ui.musiclibrary.importProgressFraction
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
+import com.fitnessrider.ui.musiclibrary.buildStreamingSegment
+import com.fitnessrider.ui.musiclibrary.streamingDurationMsFromInput
 import com.fitnessrider.ui.musiclibrary.copyMusicFileOrCleanup
 import com.fitnessrider.ui.musiclibrary.filterExternalMusicEntries
 import com.fitnessrider.ui.musiclibrary.filterMusicLibraryTracks
@@ -1095,7 +1097,91 @@ class FitnessRiderAndroidTest {
         val needs = WorkoutSegment(id = "a", musicFileName = "a.mp3", durationMs = 300_000)
         val fixed = WorkoutSegment(id = "b", musicFileName = "b.mp3", durationMs = 201_000)
         val noMusic = WorkoutSegment(id = "c", musicFileName = "", durationMs = 300_000)
-        assertEquals(listOf(needs), segmentsNeedingDurationRepair(listOf(needs, fixed, noMusic)))
+        val blankMusic = WorkoutSegment(id = "d", musicFileName = "  ", durationMs = 300_000)
+        assertEquals(listOf(needs), segmentsNeedingDurationRepair(listOf(needs, fixed, noMusic, blankMusic)))
+    }
+
+    @Test
+    fun testIsStreamingSegment() {
+        assertTrue(isStreamingSegment(WorkoutSegment(musicFileName = "")))
+        assertTrue(isStreamingSegment(WorkoutSegment(musicFileName = "   ")))
+        assertFalse(isStreamingSegment(WorkoutSegment(musicFileName = "missing.mp3")))
+    }
+
+    @Test
+    fun testStreamingDurationMs() {
+        assertEquals(215_000, streamingDurationMs(3, 35))
+        assertEquals(1_000, streamingDurationMs(0, 1))
+        assertEquals(3_600_000, streamingDurationMs(60, 0))
+        assertNull(streamingDurationMs(3, 60))
+        assertNull(streamingDurationMs(0, 0))
+        assertNull(streamingDurationMs(60, 1))
+        assertNull(streamingDurationMs(61, 0))
+        assertNull(streamingDurationMs(-1, 30))
+        assertNull(streamingDurationMs(3, -1))
+    }
+
+    @Test
+    fun testStreamingDurationMsFromInput() {
+        assertEquals(215_000, streamingDurationMsFromInput("3", "35"))
+        assertEquals(45_000, streamingDurationMsFromInput("", "45"))
+        assertEquals(180_000, streamingDurationMsFromInput("3", ""))
+        assertNull(streamingDurationMsFromInput("", ""))
+        assertNull(streamingDurationMsFromInput("3", "75"))
+        assertNull(streamingDurationMsFromInput("x", "10"))
+    }
+
+    @Test
+    fun testBuildStreamingSegmentHasNoMusicFileAndKeepsEnteredValues() {
+        val segment = buildStreamingSegment("Blinding Lights", 200_000, "class-1", 4)
+        assertTrue(isStreamingSegment(segment))
+        assertEquals("Blinding Lights", segment.title)
+        assertEquals(200_000, segment.durationMs)
+        assertEquals(128.0, segment.baseBpm, 0.0001)
+        assertEquals(1.0, segment.playbackRate, 0.0001)
+        assertEquals("class-1", segment.classId)
+        assertEquals(4, segment.orderIndex)
+    }
+
+    @Test
+    fun testSegmentWithAnalyzedTrackLeavesStreamingSegmentUntouched() {
+        val streaming = WorkoutSegment(musicFileName = "", durationMs = 215_000, baseBpm = 128.0)
+        assertEquals(streaming, segmentWithAnalyzedTrack(streaming, 180_000, 120.0))
+    }
+
+    @Test
+    fun testCrossfadeDurationIsZeroWhenStreamingSegmentInvolved() {
+        assertEquals(
+            0.0,
+            CrossfadeCalculator.effectiveDuration(
+                requestedDuration = 3.0,
+                segmentDuration = 60.0,
+                isAutoPauseEnabled = false,
+                involvesStreaming = true
+            ),
+            0.0001
+        )
+        assertEquals(
+            3.0,
+            CrossfadeCalculator.effectiveDuration(
+                requestedDuration = 3.0,
+                segmentDuration = 60.0,
+                isAutoPauseEnabled = false,
+                involvesStreaming = false
+            ),
+            0.0001
+        )
+        assertEquals(
+            0.0,
+            CrossfadeCalculator.manualJumpFadeDuration(
+                requestedDuration = 3.0,
+                targetSegmentDuration = 60.0,
+                isAutoPauseEnabled = false,
+                isPlaying = true,
+                involvesStreaming = true
+            ),
+            0.0001
+        )
     }
 
     @Test

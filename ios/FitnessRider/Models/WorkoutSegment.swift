@@ -48,8 +48,19 @@ public struct WorkoutSegment: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+func isStreamingSegment(_ segment: WorkoutSegment) -> Bool {
+    segment.musicFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+func streamingDurationMs(minutes: Int, seconds: Int) -> Int? {
+    guard (0...60).contains(minutes), (0...59).contains(seconds) else { return nil }
+    let totalSeconds = minutes * 60 + seconds
+    guard (1...3600).contains(totalSeconds) else { return nil }
+    return totalSeconds * 1000
+}
+
 func segmentsNeedingDurationRepair(_ segments: [WorkoutSegment]) -> [WorkoutSegment] {
-    segments.filter { !$0.musicFileName.isEmpty && $0.durationMs == 300_000 }
+    segments.filter { !isStreamingSegment($0) && $0.durationMs == 300_000 }
 }
 
 func shouldCorrectDuration(segmentDurationMs: Int, playerDurationMs: Int) -> Bool {

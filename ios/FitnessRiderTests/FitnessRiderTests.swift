@@ -829,7 +829,86 @@ final class FitnessRiderTests: XCTestCase {
         let needs = WorkoutSegment(title: "a", musicFileName: "a.mp3", durationMs: 300_000)
         let fixed = WorkoutSegment(title: "b", musicFileName: "b.mp3", durationMs: 201_000)
         let noMusic = WorkoutSegment(title: "c", musicFileName: "", durationMs: 300_000)
-        XCTAssertEqual(segmentsNeedingDurationRepair([needs, fixed, noMusic]), [needs])
+        let blankMusic = WorkoutSegment(title: "d", musicFileName: "  ", durationMs: 300_000)
+        XCTAssertEqual(segmentsNeedingDurationRepair([needs, fixed, noMusic, blankMusic]), [needs])
+    }
+
+    func testIsStreamingSegment() {
+        XCTAssertTrue(isStreamingSegment(WorkoutSegment(musicFileName: "")))
+        XCTAssertTrue(isStreamingSegment(WorkoutSegment(musicFileName: "   ")))
+        XCTAssertFalse(isStreamingSegment(WorkoutSegment(musicFileName: "missing.mp3")))
+    }
+
+    func testStreamingDurationMs() {
+        XCTAssertEqual(streamingDurationMs(minutes: 3, seconds: 35), 215_000)
+        XCTAssertEqual(streamingDurationMs(minutes: 0, seconds: 1), 1_000)
+        XCTAssertEqual(streamingDurationMs(minutes: 60, seconds: 0), 3_600_000)
+        XCTAssertNil(streamingDurationMs(minutes: 3, seconds: 60))
+        XCTAssertNil(streamingDurationMs(minutes: 0, seconds: 0))
+        XCTAssertNil(streamingDurationMs(minutes: 60, seconds: 1))
+        XCTAssertNil(streamingDurationMs(minutes: 61, seconds: 0))
+        XCTAssertNil(streamingDurationMs(minutes: -1, seconds: 30))
+        XCTAssertNil(streamingDurationMs(minutes: 3, seconds: -1))
+    }
+
+    func testStreamingDurationMsFromInput() {
+        XCTAssertEqual(streamingDurationMsFromInput(minutesText: "3", secondsText: "35"), 215_000)
+        XCTAssertEqual(streamingDurationMsFromInput(minutesText: "", secondsText: "45"), 45_000)
+        XCTAssertEqual(streamingDurationMsFromInput(minutesText: "3", secondsText: ""), 180_000)
+        XCTAssertNil(streamingDurationMsFromInput(minutesText: "", secondsText: ""))
+        XCTAssertNil(streamingDurationMsFromInput(minutesText: "3", secondsText: "75"))
+        XCTAssertNil(streamingDurationMsFromInput(minutesText: "x", secondsText: "10"))
+    }
+
+    func testBuildStreamingSegmentHasNoMusicFileAndKeepsEnteredValues() {
+        let classId = UUID()
+        let segment = buildStreamingSegment(title: "Blinding Lights", durationMs: 200_000, classId: classId, startOrderIndex: 4)
+        XCTAssertTrue(isStreamingSegment(segment))
+        XCTAssertEqual(segment.title, "Blinding Lights")
+        XCTAssertEqual(segment.durationMs, 200_000)
+        XCTAssertEqual(segment.baseBpm, 128.0, accuracy: 0.0001)
+        XCTAssertEqual(segment.playbackRate, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(segment.classId, classId)
+        XCTAssertEqual(segment.orderIndex, 4)
+    }
+
+    func testSegmentWithAnalyzedTrackLeavesStreamingSegmentUntouched() {
+        let streaming = WorkoutSegment(title: "s", musicFileName: "", durationMs: 215_000, baseBpm: 128.0)
+        XCTAssertEqual(segmentWithAnalyzedTrack(streaming, durationMs: 180_000, bpm: 120.0), streaming)
+    }
+
+    func testCrossfadeDurationIsZeroWhenStreamingSegmentInvolved() {
+        XCTAssertEqual(
+            CrossfadeCalculator.effectiveDuration(
+                requestedDuration: 3.0,
+                segmentDuration: 60.0,
+                isAutoPauseEnabled: false,
+                involvesStreaming: true
+            ),
+            0.0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            CrossfadeCalculator.effectiveDuration(
+                requestedDuration: 3.0,
+                segmentDuration: 60.0,
+                isAutoPauseEnabled: false,
+                involvesStreaming: false
+            ),
+            3.0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            CrossfadeCalculator.manualJumpFadeDuration(
+                requestedDuration: 3.0,
+                targetSegmentDuration: 60.0,
+                isAutoPauseEnabled: false,
+                isPlaying: true,
+                involvesStreaming: true
+            ),
+            0.0,
+            accuracy: 0.0001
+        )
     }
 
     func testShouldCorrectDurationRequiresMoreThanOneSecondDifference() {

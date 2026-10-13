@@ -33,6 +33,7 @@ import kotlin.math.roundToInt
 fun BpmCalibrationDialog(
     initialBpm: Double,
     onDetectBpm: suspend () -> Double?,
+    isAutoDetectEnabled: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit
 ) {
@@ -159,7 +160,7 @@ fun BpmCalibrationDialog(
                 )
 
                 OutlinedButton(
-                    enabled = !isDetecting,
+                    enabled = isAutoDetectEnabled && !isDetecting,
                     onClick = {
                         isDetecting = true
                         detectFailed = false

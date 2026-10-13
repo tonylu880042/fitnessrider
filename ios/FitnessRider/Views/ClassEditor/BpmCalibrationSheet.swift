@@ -8,11 +8,13 @@ public struct BpmCalibrationSheet: View {
     @State private var isDetecting: Bool = false
     @State private var detectFailed: Bool = false
     private let detector = TapTempoDetector()
+    public let isAutoDetectEnabled: Bool
     public let onDetect: () async -> Double?
     public let onSave: (Double) -> Void
 
-    public init(initialBpm: Double, onDetect: @escaping () async -> Double?, onSave: @escaping (Double) -> Void) {
+    public init(initialBpm: Double, isAutoDetectEnabled: Bool = true, onDetect: @escaping () async -> Double?, onSave: @escaping (Double) -> Void) {
         self._bpm = State(initialValue: max(40.0, min(240.0, initialBpm)))
+        self.isAutoDetectEnabled = isAutoDetectEnabled
         self.onDetect = onDetect
         self.onSave = onSave
     }
@@ -116,7 +118,7 @@ public struct BpmCalibrationSheet: View {
                             .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
                     )
                 }
-                .disabled(isDetecting)
+                .disabled(!isAutoDetectEnabled || isDetecting)
 
                 if detectFailed {
                     Text("無法偵測，請改用 TAP 測速")

@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 let importProgressDelayMs = 500
 
+private let streamingTab = 2
+
 func importProgressFraction(done: Int, total: Int) -> Double {
     guard total > 0 else { return 0 }
     return min(max(Double(done) / Double(total), 0), 1)
@@ -79,6 +81,47 @@ func buildSegmentsFromExternalSelection(
     return buildSegmentsForImportedTracks(tracks: importInfos, classId: classId, startOrderIndex: startOrderIndex)
 }
 
+func buildStreamingSegment(title: String, durationMs: Int, classId: UUID, startOrderIndex: Int) -> WorkoutSegment {
+    let info = ImportedTrackInfo(fileName: "", durationMs: durationMs, bpm: 128.0, displayTitle: title)
+    return buildSegmentsForImportedTracks(tracks: [info], classId: classId, startOrderIndex: startOrderIndex)[0]
+}
+
+func streamingDurationMsFromInput(minutesText: String, secondsText: String) -> Int? {
+    let minutesInput = minutesText.trimmingCharacters(in: .whitespaces)
+    let secondsInput = secondsText.trimmingCharacters(in: .whitespaces)
+    let minutes = minutesInput.isEmpty ? 0 : Int(minutesInput)
+    let seconds = secondsInput.isEmpty ? 0 : Int(secondsInput)
+    guard let minutes = minutes, let seconds = seconds else { return nil }
+    return streamingDurationMs(minutes: minutes, seconds: seconds)
+}
+
+struct StreamingDurationFields: View {
+    @Binding var minutesText: String
+    @Binding var secondsText: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            field("分", text: $minutesText)
+            field("秒", text: $secondsText)
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>) -> some View {
+        HStack(spacing: 6) {
+            TextField("0", text: text)
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: text.wrappedValue) { _, newValue in
+                    let digits = String(newValue.filter { $0.isASCII && $0.isNumber }.prefix(2))
+                    if digits != newValue { text.wrappedValue = digits }
+                }
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundColor(FitnessRiderTheme.textSecondary)
+        }
+    }
+}
+
 @discardableResult
 func copyMusicFileOrCleanup(from sourceURL: URL, to destURL: URL) -> Bool {
     do {
@@ -133,6 +176,10 @@ struct MusicLibraryView: View {
     @State private var externalFolderError: String?
     @State private var isShowingFolderImporter: Bool = false
 
+    @State private var streamingTitle: String = ""
+    @State private var streamingMinutesText: String = ""
+    @State private var streamingSecondsText: String = ""
+
     @State private var previewPlayer: AVAudioPlayer?
     @State private var playingKey: String?
     @State private var downloadingKey: String?
@@ -163,7 +210,7 @@ struct MusicLibraryView: View {
                             Label("匯入新檔", systemImage: "plus")
                                 .font(.system(size: 15, weight: .bold))
                         }
-                    } else {
+                    } else if selectedTab == 1 {
                         Button {
                             isShowingFolderImporter = true
                         } label: {
@@ -182,46 +229,53 @@ struct MusicLibraryView: View {
             Picker("", selection: $selectedTab) {
                 Text("已匯入音樂庫").tag(0)
                 Text("音樂資料夾").tag(1)
+                Text("串流音樂").tag(streamingTab)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
-                TextField("搜尋曲名...", text: $searchQuery)
+            if selectedTab != streamingTab {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    TextField("搜尋曲名...", text: $searchQuery)
+                }
+                .padding(10)
+                .background(FitnessRiderTheme.cardBackground)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
+                )
+                .padding(16)
             }
-            .padding(10)
-            .background(FitnessRiderTheme.cardBackground)
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
-            )
-            .padding(16)
 
             if selectedTab == 0 {
                 libraryTabContent
+            } else if selectedTab == streamingTab {
+                streamingTabContent
             } else {
                 folderTabContent
             }
 
-            Divider()
+            if selectedTab != streamingTab {
+                Divider()
 
-            Button {
-                confirmSelection()
-            } label: {
-                Text(isImporting ? "匯入中..." : "加入 \(currentSelectionCount) 首到課表")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(currentSelectionCount == 0 || isImporting ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreen)
-                    .cornerRadius(10)
+                Button {
+                    confirmSelection()
+                } label: {
+                    Text(isImporting ? "匯入中..." : "加入 \(currentSelectionCount) 首到課表")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(currentSelectionCount == 0 || isImporting ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreen)
+                        .cornerRadius(10)
+                }
+                .disabled(currentSelectionCount == 0 || isImporting)
+                .padding(16)
             }
-            .disabled(currentSelectionCount == 0 || isImporting)
-            .padding(16)
         }
         .disabled(isImporting)
         .background(FitnessRiderTheme.canvasWhite)
@@ -385,6 +439,38 @@ struct MusicLibraryView: View {
         )
         onSegmentsCreated(newSegments)
         onDismiss()
+    }
+
+    private var streamingTabContent: some View {
+        let trimmedTitle = streamingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let durationMs = streamingDurationMsFromInput(minutesText: streamingMinutesText, secondsText: streamingSecondsText)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("歌曲由 Spotify、KKBOX 等 App 播放，FitnessRider 只負責計時與提示")
+                    .font(.system(size: 13))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                TextField("曲名", text: $streamingTitle)
+                    .textFieldStyle(.roundedBorder)
+                StreamingDurationFields(minutesText: $streamingMinutesText, secondsText: $streamingSecondsText)
+                Button {
+                    if let durationMs = durationMs {
+                        stopPreview()
+                        onSegmentsCreated([buildStreamingSegment(title: trimmedTitle, durationMs: durationMs, classId: classId, startOrderIndex: startOrderIndex)])
+                        onDismiss()
+                    }
+                } label: {
+                    Text("加入課表")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(trimmedTitle.isEmpty || durationMs == nil ? FitnessRiderTheme.textMuted : FitnessRiderTheme.topBarGreen)
+                        .cornerRadius(10)
+                }
+                .disabled(trimmedTitle.isEmpty || durationMs == nil)
+            }
+            .padding(16)
+        }
     }
 
     private var libraryTabContent: some View {

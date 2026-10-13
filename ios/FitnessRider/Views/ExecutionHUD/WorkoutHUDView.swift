@@ -52,6 +52,10 @@ public struct WorkoutHUDView: View {
         audioManager.currentSegment ?? liveClass.segments.first
     }
 
+    private var isStreamingSegmentActive: Bool {
+        activeSegment.map(isStreamingSegment) ?? false
+    }
+
     private var currentZoneColor: Color {
         FitnessRiderTheme.colorForZone(activeSegment?.intensityZone ?? 2)
     }
@@ -399,16 +403,19 @@ public struct WorkoutHUDView: View {
                         audioManager.adjustRatePercent(by: -2.0)
                     }
                     .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
+                    .disabled(isStreamingSegmentActive)
 
                     Button("100%") {
                         audioManager.resetRate()
                     }
                     .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 16 * scale))
+                    .disabled(isStreamingSegmentActive)
 
                     Button("+2%") {
                         audioManager.adjustRatePercent(by: 2.0)
                     }
                     .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
+                    .disabled(isStreamingSegmentActive)
 
                     Text(String(format: "%.0f%%", audioManager.currentRate * 100))
                         .font(.system(size: 18 * scale, weight: .bold, design: .monospaced))
@@ -425,7 +432,7 @@ public struct WorkoutHUDView: View {
         .gesture(
             DragGesture(minimumDistance: 10)
                 .onEnded { value in
-                    let rateStep = rateStepForSwipe(
+                    let rateStep = isStreamingSegmentActive ? 0 : rateStepForSwipe(
                         dx: value.translation.width,
                         dy: value.translation.height,
                         threshold: rateSwipeThreshold
@@ -800,6 +807,7 @@ public struct WorkoutHUDView: View {
 }
 
 struct HUDTempoButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     var isPrimary: Bool = false
     var fontSize: CGFloat = 14
 
@@ -813,7 +821,7 @@ struct HUDTempoButtonStyle: ButtonStyle {
             .background(isPrimary ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.cardBorder)
             .cornerRadius(8)
             .contentShape(Rectangle())
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1.0) : 0.4)
     }
 }
 

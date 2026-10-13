@@ -9,6 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +44,7 @@ import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.ExternalMusicFolderPrefs
 import com.fitnessrider.data.listExternalMusicEntries
 import com.fitnessrider.model.WorkoutSegment
+import com.fitnessrider.model.streamingDurationMs
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.ui.editor.ImportedTrackInfo
@@ -61,6 +66,8 @@ import java.io.InputStream
 import java.util.Locale
 
 internal const val IMPORT_PROGRESS_DELAY_MS = 500L
+
+private const val STREAMING_TAB_INDEX = 2
 
 internal fun importProgressFraction(done: Int, total: Int): Float {
     if (total <= 0) return 0f
@@ -132,6 +139,23 @@ internal fun buildSegmentsFromExternalSelection(
         )
     }
     return buildSegmentsForImportedTracks(importInfos, classId, startOrderIndex)
+}
+
+internal fun buildStreamingSegment(
+    title: String,
+    durationMs: Int,
+    classId: String,
+    startOrderIndex: Int
+): WorkoutSegment {
+    val info = ImportedTrackInfo(fileName = "", durationMs = durationMs, bpm = 128.0, displayTitle = title)
+    return buildSegmentsForImportedTracks(listOf(info), classId, startOrderIndex).single()
+}
+
+internal fun streamingDurationMsFromInput(minutesText: String, secondsText: String): Int? {
+    val minutes = if (minutesText.isBlank()) 0 else minutesText.trim().toIntOrNull()
+    val seconds = if (secondsText.isBlank()) 0 else secondsText.trim().toIntOrNull()
+    if (minutes == null || seconds == null) return null
+    return streamingDurationMs(minutes, seconds)
 }
 
 internal fun copyMusicFileOrCleanup(destFile: File, openInput: () -> InputStream): Boolean {
@@ -398,7 +422,7 @@ fun MusicLibraryScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(text = "匯入新檔", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
-                    } else {
+                    } else if (selectedTabIndex == 1) {
                         TextButton(onClick = { folderPickerLauncher.launch(null) }, enabled = !isImporting) {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
@@ -429,19 +453,27 @@ fun MusicLibraryScreen(
                     enabled = !isImporting,
                     text = { Text("音樂資料夾", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
+                Tab(
+                    selected = selectedTabIndex == STREAMING_TAB_INDEX,
+                    onClick = { selectedTabIndex = STREAMING_TAB_INDEX },
+                    enabled = !isImporting,
+                    text = { Text("串流音樂", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                )
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                singleLine = true,
-                enabled = !isImporting,
-                placeholder = { Text("搜尋曲名...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
-            )
+            if (selectedTabIndex != STREAMING_TAB_INDEX) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    singleLine = true,
+                    enabled = !isImporting,
+                    placeholder = { Text("搜尋曲名...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+                )
+            }
 
             Box(modifier = Modifier.weight(1f)) {
                 if (selectedTabIndex == 0) {
@@ -460,6 +492,14 @@ fun MusicLibraryScreen(
                             }
                         },
                         onTogglePreview = { togglePreview(it) }
+                    )
+                } else if (selectedTabIndex == STREAMING_TAB_INDEX) {
+                    StreamingTabContent(
+                        enabled = !isImporting,
+                        onAdd = { title, durationMs ->
+                            onSegmentsCreated(listOf(buildStreamingSegment(title, durationMs, classId, startOrderIndex)))
+                            onDismiss()
+                        }
                     )
                 } else {
                     ExternalFolderTabContent(
@@ -490,75 +530,77 @@ fun MusicLibraryScreen(
                 }
             }
 
-            HorizontalDivider(color = CardBorder)
+            if (selectedTabIndex != STREAMING_TAB_INDEX) {
+                HorizontalDivider(color = CardBorder)
 
-            val selectionCount = if (selectedTabIndex == 0) selectedFileNames.size else selectedExternalUris.size
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Button(
-                    onClick = {
-                        val analyzer = WaveformAnalyzer.getInstance(context)
-                        if (selectedTabIndex == 0) {
-                            val selectedTracks = allTracks.filter { selectedFileNames.contains(it.fileName) }
-                            if (selectedTracks.isNotEmpty()) {
-                                startImport(selectedTracks.size) {
-                                    val analyzedTracks = selectedTracks.mapIndexed { index, track ->
-                                        importProgress = ImportProgress(index, selectedTracks.size, track.title)
-                                        val result = analyzer.readTrackInfo(track.fileName)
-                                        track.copy(durationMs = result.durationMs, bpm = result.bpm)
-                                    }
-                                    currentCoroutineContext().ensureActive()
-                                    onSegmentsCreated(
-                                        buildSegmentsFromLibrarySelection(
-                                            tracks = analyzedTracks,
-                                            classId = classId,
-                                            startOrderIndex = startOrderIndex
-                                        )
-                                    )
-                                    onDismiss()
-                                }
-                            }
-                        } else {
-                            val selectedEntries = externalEntries.filter {
-                                selectedExternalUris.contains(it.documentUriString)
-                            }
-                            if (selectedEntries.isNotEmpty()) {
-                                startImport(selectedEntries.size) {
-                                    val analyzed = mutableMapOf<String, Pair<Int, Double>>()
-                                    selectedEntries.forEachIndexed { index, entry ->
-                                        importProgress = ImportProgress(
-                                            index,
-                                            selectedEntries.size,
-                                            musicTitleFromFileName(entry.displayName)
-                                        )
-                                        val result = analyzer.readTrackInfo(entry.documentUriString)
-                                        analyzed[entry.documentUriString] = result.durationMs to result.bpm
-                                    }
-                                    currentCoroutineContext().ensureActive()
-                                    onSegmentsCreated(
-                                        buildSegmentsFromExternalSelection(
-                                            entries = selectedEntries,
-                                            analyzed = analyzed,
-                                            classId = classId,
-                                            startOrderIndex = startOrderIndex
-                                        )
-                                    )
-                                    onDismiss()
-                                }
-                            }
-                        }
-                    },
-                    enabled = selectionCount > 0 && !isImporting,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                val selectionCount = if (selectedTabIndex == 0) selectedFileNames.size else selectedExternalUris.size
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
                 ) {
-                    Text(
-                        text = if (isImporting) "匯入中..." else "加入 $selectionCount 首到課表",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Button(
+                        onClick = {
+                            val analyzer = WaveformAnalyzer.getInstance(context)
+                            if (selectedTabIndex == 0) {
+                                val selectedTracks = allTracks.filter { selectedFileNames.contains(it.fileName) }
+                                if (selectedTracks.isNotEmpty()) {
+                                    startImport(selectedTracks.size) {
+                                        val analyzedTracks = selectedTracks.mapIndexed { index, track ->
+                                            importProgress = ImportProgress(index, selectedTracks.size, track.title)
+                                            val result = analyzer.readTrackInfo(track.fileName)
+                                            track.copy(durationMs = result.durationMs, bpm = result.bpm)
+                                        }
+                                        currentCoroutineContext().ensureActive()
+                                        onSegmentsCreated(
+                                            buildSegmentsFromLibrarySelection(
+                                                tracks = analyzedTracks,
+                                                classId = classId,
+                                                startOrderIndex = startOrderIndex
+                                            )
+                                        )
+                                        onDismiss()
+                                    }
+                                }
+                            } else {
+                                val selectedEntries = externalEntries.filter {
+                                    selectedExternalUris.contains(it.documentUriString)
+                                }
+                                if (selectedEntries.isNotEmpty()) {
+                                    startImport(selectedEntries.size) {
+                                        val analyzed = mutableMapOf<String, Pair<Int, Double>>()
+                                        selectedEntries.forEachIndexed { index, entry ->
+                                            importProgress = ImportProgress(
+                                                index,
+                                                selectedEntries.size,
+                                                musicTitleFromFileName(entry.displayName)
+                                            )
+                                            val result = analyzer.readTrackInfo(entry.documentUriString)
+                                            analyzed[entry.documentUriString] = result.durationMs to result.bpm
+                                        }
+                                        currentCoroutineContext().ensureActive()
+                                        onSegmentsCreated(
+                                            buildSegmentsFromExternalSelection(
+                                                entries = selectedEntries,
+                                                analyzed = analyzed,
+                                                classId = classId,
+                                                startOrderIndex = startOrderIndex
+                                            )
+                                        )
+                                        onDismiss()
+                                    }
+                                }
+                            }
+                        },
+                        enabled = selectionCount > 0 && !isImporting,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                    ) {
+                        Text(
+                            text = if (isImporting) "匯入中..." else "加入 $selectionCount 首到課表",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -567,6 +609,77 @@ fun MusicLibraryScreen(
                 progress = importProgress,
                 onCancel = { importJob?.cancel() }
             )
+        }
+    }
+}
+
+@Composable
+internal fun StreamingDurationFields(
+    minutesText: String,
+    secondsText: String,
+    onMinutesChange: (String) -> Unit,
+    onSecondsChange: (String) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = minutesText,
+            onValueChange = { onMinutesChange(it.filter(Char::isDigit).take(2)) },
+            label = { Text("分") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = secondsText,
+            onValueChange = { onSecondsChange(it.filter(Char::isDigit).take(2)) },
+            label = { Text("秒") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun StreamingTabContent(enabled: Boolean, onAdd: (String, Int) -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var minutesText by remember { mutableStateOf("") }
+    var secondsText by remember { mutableStateOf("") }
+    val trimmedTitle = title.trim()
+    val durationMs = streamingDurationMsFromInput(minutesText, secondsText)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "歌曲由 Spotify、KKBOX 等 App 播放，FitnessRider 只負責計時與提示",
+            fontSize = 13.sp,
+            color = TextSecondary
+        )
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it },
+            label = { Text("曲名") },
+            singleLine = true,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+        StreamingDurationFields(
+            minutesText = minutesText,
+            secondsText = secondsText,
+            onMinutesChange = { minutesText = it },
+            onSecondsChange = { secondsText = it }
+        )
+        Button(
+            onClick = { if (durationMs != null) onAdd(trimmedTitle, durationMs) },
+            enabled = enabled && trimmedTitle.isNotEmpty() && durationMs != null,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+        ) {
+            Text(text = "加入課表", fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -10,6 +10,7 @@ import com.fitnessrider.data.MusicSource
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutSegment
+import com.fitnessrider.model.isStreamingSegment
 import com.fitnessrider.model.shouldCorrectDuration
 import com.fitnessrider.model.withRecalculatedTotals
 import kotlinx.coroutines.*
@@ -30,9 +31,10 @@ object CrossfadeCalculator {
     fun effectiveDuration(
         requestedDuration: Double,
         segmentDuration: Double,
-        isAutoPauseEnabled: Boolean
+        isAutoPauseEnabled: Boolean,
+        involvesStreaming: Boolean = false
     ): Double {
-        if (isAutoPauseEnabled || requestedDuration <= 0.0 || segmentDuration <= 0.0) {
+        if (involvesStreaming || isAutoPauseEnabled || requestedDuration <= 0.0 || segmentDuration <= 0.0) {
             return 0.0
         }
         return minOf(requestedDuration, segmentDuration * 0.5)
@@ -42,10 +44,11 @@ object CrossfadeCalculator {
         requestedDuration: Double,
         targetSegmentDuration: Double,
         isAutoPauseEnabled: Boolean,
-        isPlaying: Boolean
+        isPlaying: Boolean,
+        involvesStreaming: Boolean = false
     ): Double {
         if (!isPlaying) return 0.0
-        return effectiveDuration(requestedDuration, targetSegmentDuration, isAutoPauseEnabled)
+        return effectiveDuration(requestedDuration, targetSegmentDuration, isAutoPauseEnabled, involvesStreaming)
     }
 
     fun manualTailVolume(startVolume: Float, progress: Double): Float {
@@ -221,7 +224,7 @@ class AudioEngineManager(private val context: Context) {
 
     private fun loadCurrentSegment() {
         val segment = currentSegment ?: return
-        setRate(segment.playbackRate)
+        setRate(if (isStreamingSegment(segment)) 1.0 else segment.playbackRate)
         loadSegmentOnPlayer(activePlayer, segment)
         activePlayer.volume = 1.0f
         _currentDurationSeconds.value = (segment.durationMs / 1000.0)
@@ -325,7 +328,8 @@ class AudioEngineManager(private val context: Context) {
             requestedDuration = settings.crossfadeDurationSeconds,
             targetSegmentDuration = targetSegment.durationMs / 1000.0,
             isAutoPauseEnabled = settings.isAutoPauseBetweenSegmentsEnabled,
-            isPlaying = _isPlaying.value
+            isPlaying = _isPlaying.value,
+            involvesStreaming = isStreamingSegment(targetSegment) || currentSegment?.let(::isStreamingSegment) == true
         )
 
         if (fadeDuration <= 0.0) {
@@ -610,15 +614,18 @@ class AudioEngineManager(private val context: Context) {
                     updateManualTail()
                 }
 
+                val c = currentClass
+                val hasNext = c != null && _currentSegmentIndex.value < c.segments.size - 1
+                val nextSegment = c?.segments?.getOrNull(_currentSegmentIndex.value + 1)
                 val effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
                     requestedDuration = settings.crossfadeDurationSeconds,
                     segmentDuration = totalSec,
-                    isAutoPauseEnabled = settings.isAutoPauseBetweenSegmentsEnabled
+                    isAutoPauseEnabled = settings.isAutoPauseBetweenSegmentsEnabled,
+                    involvesStreaming = currentSegment?.let(::isStreamingSegment) == true ||
+                        (nextSegment != null && isStreamingSegment(nextSegment))
                 )
 
                 val remaining = totalSec - currentSec
-                val c = currentClass
-                val hasNext = c != null && _currentSegmentIndex.value < c.segments.size - 1
 
                 if (!_isCrossfading.value) {
                     if (effectiveCrossfade > 0.0 && hasNext && remaining <= effectiveCrossfade) {

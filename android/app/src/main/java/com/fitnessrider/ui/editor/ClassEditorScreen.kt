@@ -41,6 +41,8 @@ import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.ui.components.WaveformCanvas
 import com.fitnessrider.ui.musiclibrary.MusicLibraryScreen
+import com.fitnessrider.ui.musiclibrary.StreamingDurationFields
+import com.fitnessrider.ui.musiclibrary.streamingDurationMsFromInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -102,6 +104,7 @@ internal fun buildSegmentsForImportedTracks(
 }
 
 internal fun segmentWithAnalyzedTrack(segment: WorkoutSegment, durationMs: Int, bpm: Double): WorkoutSegment {
+    if (isStreamingSegment(segment)) return segment
     if (durationMs == 300_000 && bpm == 128.0) return segment
     val needsBpmUpdate = segment.baseBpm == 128.0 && bpm != 128.0
     val needsDurationUpdate = durationMs > 0 && durationMs != segment.durationMs
@@ -175,6 +178,7 @@ fun ClassEditorScreen(
     var isBpmDialogVisible by remember { mutableStateOf(false) }
     var segmentPendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
     var segmentPendingRenameIndex by remember { mutableStateOf<Int?>(null) }
+    var isStreamingDurationDialogVisible by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf(TextFieldValue("")) }
 
     var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
@@ -200,7 +204,7 @@ fun ClassEditorScreen(
 
     LaunchedEffect(Unit) {
         val analyzer = WaveformAnalyzer.getInstance(context)
-        val targets = initialClass.segments.filter { it.musicFileName.isNotBlank() }
+        val targets = initialClass.segments.filterNot(::isStreamingSegment)
         targets.forEachIndexed { position, original ->
             repairProgress = (position + 1) to targets.size
             val result = analyzer.analyzeWaveform(original.musicFileName)
@@ -227,8 +231,12 @@ fun ClassEditorScreen(
             previewPlayheadMs = 0
             isPreviewPlaying = false
             previewPlayer.pause()
-            if (activeSegment.musicFileName.isNotBlank() &&
-                MusicSource.exists(context, repository, activeSegment.musicFileName)
+            if (isStreamingSegment(activeSegment)) {
+                previewPlayer.clearMediaItems()
+                waveformSamples = FloatArray(0)
+                return@LaunchedEffect
+            }
+            if (MusicSource.exists(context, repository, activeSegment.musicFileName)
             ) {
                 previewPlayer.setMediaItem(MediaItem.fromUri(MusicSource.resolveUri(repository, activeSegment.musicFileName)))
                 previewPlayer.prepare()
@@ -519,6 +527,11 @@ fun ClassEditorScreen(
                                     segmentPendingRenameIndex = selectedSegmentIndex
                                 }
                         )
+                        if (isStreamingSegment(activeSegment)) {
+                            TextButton(onClick = { isStreamingDurationDialogVisible = true }) {
+                                Text(text = "編輯長度", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+                            }
+                        }
                         val curSec = previewPlayheadMs / 1000
                         val totSec = activeSegment.durationMs / 1000
                         Text(
@@ -532,16 +545,26 @@ fun ClassEditorScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    WaveformCanvas(
-                        samples = waveformSamples,
-                        cues = activeSegment.cues,
-                        durationMs = activeSegment.durationMs,
-                        currentOffsetMs = previewPlayheadMs,
-                        onSeek = {
-                            previewPlayheadMs = it
-                            previewPlayer.seekTo(it.toLong())
+                    Box {
+                        WaveformCanvas(
+                            samples = waveformSamples,
+                            cues = activeSegment.cues,
+                            durationMs = activeSegment.durationMs,
+                            currentOffsetMs = previewPlayheadMs,
+                            onSeek = {
+                                previewPlayheadMs = it
+                                previewPlayer.seekTo(it.toLong())
+                            }
+                        )
+                        if (isStreamingSegment(activeSegment)) {
+                            Text(
+                                text = "串流音樂・無波形",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
                         }
-                    )
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -551,9 +574,10 @@ fun ClassEditorScreen(
                     ) {
                         IconButton(
                             onClick = { isPreviewPlaying = !isPreviewPlaying },
+                            enabled = !isStreamingSegment(activeSegment),
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(TopBarGreen, CircleShape)
+                                .background(if (isStreamingSegment(activeSegment)) CardBorder else TopBarGreen, CircleShape)
                         ) {
                             Icon(
                                 if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -567,6 +591,7 @@ fun ClassEditorScreen(
 
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
+                                enabled = !isStreamingSegment(activeSegment),
                                 onClick = {
                                     val newRate = ((activeSegment.playbackRate - 0.02) * 100).roundToInt() / 100.0
                                     val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
@@ -580,6 +605,7 @@ fun ClassEditorScreen(
                             }
 
                             Button(
+                                enabled = !isStreamingSegment(activeSegment),
                                 onClick = {
                                     val updatedSeg = activeSegment.copy(playbackRate = 1.0)
                                     val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
@@ -593,6 +619,7 @@ fun ClassEditorScreen(
                             }
 
                             OutlinedButton(
+                                enabled = !isStreamingSegment(activeSegment),
                                 onClick = {
                                     val newRate = ((activeSegment.playbackRate + 0.02) * 100).roundToInt() / 100.0
                                     val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
@@ -801,6 +828,7 @@ fun ClassEditorScreen(
     if (isBpmDialogVisible && activeSegment != null) {
         BpmCalibrationDialog(
             initialBpm = activeSegment.baseBpm,
+            isAutoDetectEnabled = !isStreamingSegment(activeSegment),
             onDetectBpm = {
                 if (MusicSource.exists(context, repository, activeSegment.musicFileName)) {
                     WaveformAnalyzer.getInstance(context).analyzeWaveform(activeSegment.musicFileName).bpm
@@ -812,6 +840,20 @@ fun ClassEditorScreen(
                 val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
                 workoutClass = workoutClass.copy(segments = updatedSegs)
                 isBpmDialogVisible = false
+            }
+        )
+    }
+
+    if (isStreamingDurationDialogVisible && activeSegment != null) {
+        StreamingDurationDialog(
+            durationMs = activeSegment.durationMs,
+            onDismiss = { isStreamingDurationDialogVisible = false },
+            onSave = { newDurationMs ->
+                val updatedSegs = workoutClass.segments.toMutableList().also {
+                    it[selectedSegmentIndex] = activeSegment.copy(durationMs = newDurationMs)
+                }
+                workoutClass = workoutClass.copy(segments = updatedSegs).withRecalculatedTotals()
+                isStreamingDurationDialogVisible = false
             }
         )
     }
@@ -890,6 +932,34 @@ fun ClassEditorScreen(
             }
         )
     }
+}
+
+@Composable
+private fun StreamingDurationDialog(durationMs: Int, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
+    var minutesText by remember { mutableStateOf((durationMs / 60_000).toString()) }
+    var secondsText by remember { mutableStateOf(((durationMs / 1000) % 60).toString()) }
+    val newDurationMs = streamingDurationMsFromInput(minutesText, secondsText)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("編輯長度", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+        text = {
+            StreamingDurationFields(
+                minutesText = minutesText,
+                secondsText = secondsText,
+                onMinutesChange = { minutesText = it },
+                onSecondsChange = { secondsText = it }
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = newDurationMs != null,
+                onClick = { if (newDurationMs != null) onSave(newDurationMs) }
+            ) { Text("儲存", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

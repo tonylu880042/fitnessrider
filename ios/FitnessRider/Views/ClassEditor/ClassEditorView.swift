@@ -49,6 +49,7 @@ func buildSegmentsForImportedTracks(
 }
 
 func segmentWithAnalyzedTrack(_ segment: WorkoutSegment, durationMs: Int, bpm: Double) -> WorkoutSegment {
+    if isStreamingSegment(segment) { return segment }
     if durationMs == 300_000 && bpm == 128.0 { return segment }
     var updated = segment
     if segment.baseBpm == 128.0 && bpm != 128.0 {
@@ -123,6 +124,7 @@ public struct ClassEditorView: View {
     @State private var isShowingDeleteSegmentAlert: Bool = false
     @State private var segmentPendingRenameIndex: Int?
     @State private var renameInput: String = ""
+    @State private var isShowingStreamingDurationSheet: Bool = false
 
     public init(workoutClass: WorkoutClass, onSave: @escaping (WorkoutClass) -> Void) {
         self._workoutClass = State(initialValue: workoutClass)
@@ -266,6 +268,7 @@ public struct ClassEditorView: View {
             if let segment = activeSegment {
                 BpmCalibrationSheet(
                     initialBpm: segment.baseBpm,
+                    isAutoDetectEnabled: !isStreamingSegment(segment),
                     onDetect: {
                         guard MusicSource.fileExists(for: segment.musicFileName) else { return nil }
                         return await WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName).2
@@ -273,6 +276,16 @@ public struct ClassEditorView: View {
                 ) { newBpm in
                     if selectedSegmentIndex < workoutClass.segments.count {
                         workoutClass.segments[selectedSegmentIndex].baseBpm = newBpm
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingStreamingDurationSheet) {
+            if let segment = activeSegment {
+                StreamingDurationSheet(durationMs: segment.durationMs) { newDurationMs in
+                    if selectedSegmentIndex < workoutClass.segments.count {
+                        workoutClass.segments[selectedSegmentIndex].durationMs = newDurationMs
+                        workoutClass.recalculateTotals()
                     }
                 }
             }
@@ -443,9 +456,10 @@ public struct ClassEditorView: View {
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .frame(width: 44, height: 44)
-                .background(FitnessRiderTheme.topBarGreen)
+                .background(isStreamingSegment(segment) ? FitnessRiderTheme.cardBorder : FitnessRiderTheme.topBarGreen)
                 .clipShape(Circle())
         }
+        .disabled(isStreamingSegment(segment))
     }
 
     private func rateButtons(for segment: WorkoutSegment) -> some View {
@@ -465,6 +479,7 @@ public struct ClassEditorView: View {
             }
             .buttonStyle(SpeedButtonStyle())
         }
+        .disabled(isStreamingSegment(segment))
     }
 
     private func bpmCalibrationButton(for segment: WorkoutSegment) -> some View {
@@ -530,6 +545,12 @@ public struct ClassEditorView: View {
                         .foregroundColor(FitnessRiderTheme.textPrimary)
                         .onTapGesture { beginRename(at: selectedSegmentIndex) }
 
+                    if isStreamingSegment(segment) {
+                        Button("編輯長度") { isShowingStreamingDurationSheet = true }
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                    }
+
                     Spacer()
 
                     let currentSec = previewPlayheadMs / 1000
@@ -555,6 +576,14 @@ public struct ClassEditorView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(FitnessRiderTheme.cardBorder, lineWidth: 1)
                 )
+                .overlay {
+                    if isStreamingSegment(segment) {
+                        Text("串流音樂・無波形")
+                            .font(.system(size: 12))
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
             .padding(.horizontal, 20)
 
@@ -718,7 +747,7 @@ public struct ClassEditorView: View {
     }
 
     private func repairSegmentsFromAnalysis() {
-        let originals = workoutClass.segments.filter { !$0.musicFileName.isEmpty }
+        let originals = workoutClass.segments.filter { !isStreamingSegment($0) }
         Task { @MainActor in
             for (position, original) in originals.enumerated() {
                 repairProgress = (position + 1, originals.count)
@@ -742,9 +771,15 @@ public struct ClassEditorView: View {
 
     private func loadWaveformForActiveSegment() {
         guard let segment = activeSegment else { return }
+        if isStreamingSegment(segment) {
+            waveformSamples = []
+            isAnalyzingWaveform = false
+            return
+        }
         isAnalyzingWaveform = true
         WaveformAnalyzer.shared.analyzeWaveform(for: segment.musicFileName) { samples, durationMs, bpm in
             Task { @MainActor in
+                guard self.activeSegment?.id == segment.id else { return }
                 self.waveformSamples = samples
                 self.isAnalyzingWaveform = false
                 guard self.selectedSegmentIndex < self.workoutClass.segments.count else { return }
@@ -846,7 +881,49 @@ public struct ClassEditorView: View {
     }
 }
 
+struct StreamingDurationSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var minutesText: String
+    @State private var secondsText: String
+    let onSave: (Int) -> Void
+
+    init(durationMs: Int, onSave: @escaping (Int) -> Void) {
+        self._minutesText = State(initialValue: String(durationMs / 60_000))
+        self._secondsText = State(initialValue: String((durationMs / 1000) % 60))
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        let newDurationMs = streamingDurationMsFromInput(minutesText: minutesText, secondsText: secondsText)
+        NavigationStack {
+            VStack {
+                StreamingDurationFields(minutesText: $minutesText, secondsText: $secondsText)
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("編輯長度")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("儲存") {
+                        if let newDurationMs = newDurationMs {
+                            onSave(newDurationMs)
+                            dismiss()
+                        }
+                    }
+                    .disabled(newDurationMs == nil)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
 struct SpeedButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     var isPrimary: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -857,6 +934,6 @@ struct SpeedButtonStyle: ButtonStyle {
             .padding(.vertical, 6)
             .background(isPrimary ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.cardBorder)
             .cornerRadius(6)
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1.0) : 0.4)
     }
 }

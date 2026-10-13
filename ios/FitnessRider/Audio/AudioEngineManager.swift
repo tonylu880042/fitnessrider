@@ -14,9 +14,10 @@ public struct CrossfadeCalculator: Sendable {
     public static func effectiveDuration(
         requestedDuration: Double,
         segmentDuration: Double,
-        isAutoPauseEnabled: Bool
+        isAutoPauseEnabled: Bool,
+        involvesStreaming: Bool = false
     ) -> Double {
-        if isAutoPauseEnabled || requestedDuration <= 0.0 || segmentDuration <= 0.0 {
+        if involvesStreaming || isAutoPauseEnabled || requestedDuration <= 0.0 || segmentDuration <= 0.0 {
             return 0.0
         }
         return min(requestedDuration, segmentDuration * 0.5)
@@ -26,13 +27,15 @@ public struct CrossfadeCalculator: Sendable {
         requestedDuration: Double,
         targetSegmentDuration: Double,
         isAutoPauseEnabled: Bool,
-        isPlaying: Bool
+        isPlaying: Bool,
+        involvesStreaming: Bool = false
     ) -> Double {
         guard isPlaying else { return 0.0 }
         return effectiveDuration(
             requestedDuration: requestedDuration,
             segmentDuration: targetSegmentDuration,
-            isAutoPauseEnabled: isAutoPauseEnabled
+            isAutoPauseEnabled: isAutoPauseEnabled,
+            involvesStreaming: involvesStreaming
         )
     }
 
@@ -187,8 +190,9 @@ public final class AudioEngineManager: ObservableObject {
               segmentIndex >= 0 && segmentIndex < currentClass.segments.count else { return }
 
         let segment = currentClass.segments[segmentIndex]
+        let rate = isStreamingSegment(segment) ? 1.0 : segment.playbackRate
         deck.segmentIndex = segmentIndex
-        deck.setRate(segment.playbackRate)
+        deck.setRate(rate)
         deck.setVolume(1.0)
         deck.playerNode.stop()
 
@@ -212,7 +216,7 @@ public final class AudioEngineManager: ObservableObject {
 
         if deck === activeDeck {
             self.currentSegment = self.currentClass?.segments[segmentIndex] ?? segment
-            self.currentRate = segment.playbackRate
+            self.currentRate = rate
             self.currentDurationSeconds = deck.currentDurationSeconds
             self.currentOffsetSeconds = 0.0
             updateNowPlayingInfo()
@@ -356,7 +360,8 @@ public final class AudioEngineManager: ObservableObject {
             requestedDuration: AppSettings.shared.crossfadeDurationSeconds,
             targetSegmentDuration: Double(targetSegment.durationMs) / 1000.0,
             isAutoPauseEnabled: AppSettings.shared.isAutoPauseBetweenSegmentsEnabled,
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            involvesStreaming: isStreamingSegment(targetSegment) || (currentSegment.map(isStreamingSegment) ?? false)
         )
 
         if fadeDuration <= 0.0 {
@@ -613,16 +618,18 @@ public final class AudioEngineManager: ObservableObject {
             updateManualTail()
         }
 
+        guard let currentClass = currentClass else { return }
+        let hasNextSegment = currentSegmentIndex < currentClass.segments.count - 1
+        let nextSegment: WorkoutSegment? = hasNextSegment ? currentClass.segments[currentSegmentIndex + 1] : nil
+
         let effectiveCrossfade = CrossfadeCalculator.effectiveDuration(
             requestedDuration: AppSettings.shared.crossfadeDurationSeconds,
             segmentDuration: currentDurationSeconds,
-            isAutoPauseEnabled: AppSettings.shared.isAutoPauseBetweenSegmentsEnabled
+            isAutoPauseEnabled: AppSettings.shared.isAutoPauseBetweenSegmentsEnabled,
+            involvesStreaming: (currentSegment.map(isStreamingSegment) ?? false) || (nextSegment.map(isStreamingSegment) ?? false)
         )
 
         let remaining = currentDurationSeconds - currentOffsetSeconds
-
-        guard let currentClass = currentClass else { return }
-        let hasNextSegment = currentSegmentIndex < currentClass.segments.count - 1
 
         if !isCrossfading {
             if effectiveCrossfade > 0.0 && hasNextSegment && remaining <= effectiveCrossfade {

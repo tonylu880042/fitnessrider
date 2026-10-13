@@ -44,6 +44,7 @@ import com.fitnessrider.model.HandPosition
 import com.fitnessrider.model.PostureType
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutCue
+import com.fitnessrider.model.isStreamingSegment
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.CircleProgressBar
 import com.fitnessrider.ui.components.HandPositionBadge
@@ -132,6 +133,7 @@ fun WorkoutHUDScreen(
     )
 
     val activeSegment = audioManager.currentSegment
+    val isStreamingSegmentActive = activeSegment?.let(::isStreamingSegment) == true
     val currentMs = (currentOffsetSec * 1000).toInt()
     val activeCue = activeSegment?.cues?.lastOrNull { it.offsetMs <= currentMs } ?: activeSegment?.cues?.firstOrNull()
     val nextCue = activeSegment?.cues?.firstOrNull { it.offsetMs > currentMs }
@@ -363,7 +365,11 @@ fun WorkoutHUDScreen(
                                         totalDragY += dragAmount.y
                                     },
                                     onDragEnd = {
-                                        val rateStep = rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
+                                        val rateStep = if (audioManager.currentSegment?.let(::isStreamingSegment) == true) {
+                                            0
+                                        } else {
+                                            rateStepForSwipe(totalDragX, totalDragY, rateSwipeThresholdPx)
+                                        }
                                         if (rateStep != 0) {
                                             audioManager.adjustRatePercent(rateStep * 2.0)
                                             HapticFeedbackManager.playCountdownTick(context)
@@ -625,6 +631,7 @@ fun WorkoutHUDScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Button(
                                 onClick = { audioManager.adjustRatePercent(-2.0) },
+                                enabled = !isStreamingSegmentActive,
                                 colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
@@ -635,6 +642,7 @@ fun WorkoutHUDScreen(
 
                             Button(
                                 onClick = { audioManager.resetRate() },
+                                enabled = !isStreamingSegmentActive,
                                 colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
@@ -645,6 +653,7 @@ fun WorkoutHUDScreen(
 
                             Button(
                                 onClick = { audioManager.adjustRatePercent(2.0) },
+                                enabled = !isStreamingSegmentActive,
                                 colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),

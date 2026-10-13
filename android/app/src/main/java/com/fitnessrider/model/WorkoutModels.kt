@@ -74,8 +74,17 @@ fun WorkoutClass.withRecalculatedTotals(): WorkoutClass {
     return copy(totalDurationMs = totalMs, estimatedCalories = roundedCalories)
 }
 
+fun isStreamingSegment(segment: WorkoutSegment): Boolean = segment.musicFileName.isBlank()
+
+fun streamingDurationMs(minutes: Int, seconds: Int): Int? {
+    if (minutes < 0 || minutes > 60 || seconds !in 0..59) return null
+    val totalSeconds = minutes * 60 + seconds
+    if (totalSeconds < 1 || totalSeconds > 3600) return null
+    return totalSeconds * 1000
+}
+
 fun segmentsNeedingDurationRepair(segments: List<WorkoutSegment>): List<WorkoutSegment> =
-    segments.filter { it.musicFileName.isNotBlank() && it.durationMs == 300_000 }
+    segments.filter { !isStreamingSegment(it) && it.durationMs == 300_000 }
 
 fun shouldCorrectDuration(segmentDurationMs: Int, playerDurationMs: Int): Boolean =
     playerDurationMs > 0 && kotlin.math.abs(playerDurationMs - segmentDurationMs) > 1000
