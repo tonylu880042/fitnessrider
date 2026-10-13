@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -19,6 +20,33 @@ func segmentStepForSwipe(dx: CGFloat, dy: CGFloat, threshold: CGFloat) -> Int {
     if absDy <= absDx * 1.5 { return 0 }
     if absDy <= threshold { return 0 }
     return dy > 0 ? 1 : -1
+}
+
+let streamingFollowDebounceMs: Int = 800
+
+enum StreamingFollowAction: Equatable {
+    case none
+    case play
+    case pause
+}
+
+struct StreamingFollowState: Equatable {
+    var signal: Bool
+    var pendingSinceMs: Int?
+}
+
+func streamingFollowStep(state: StreamingFollowState?, signal: Bool, nowMs: Int) -> (state: StreamingFollowState, action: StreamingFollowAction) {
+    guard let state = state else {
+        return (StreamingFollowState(signal: signal, pendingSinceMs: nil), .none)
+    }
+    if signal == state.signal {
+        return (StreamingFollowState(signal: signal, pendingSinceMs: nil), .none)
+    }
+    let since = state.pendingSinceMs ?? nowMs
+    if nowMs - since < streamingFollowDebounceMs {
+        return (StreamingFollowState(signal: state.signal, pendingSinceMs: since), .none)
+    }
+    return (StreamingFollowState(signal: signal, pendingSinceMs: nil), signal ? .play : .pause)
 }
 
 func hudScale(availableHeight: CGFloat) -> CGFloat {
@@ -60,6 +88,33 @@ public struct WorkoutHUDView: View {
 
     private var isStreamingSegmentActive: Bool {
         activeSegment.map(isStreamingSegment) ?? false
+    }
+
+    private func followStreamingPlayback() async {
+        var followState: StreamingFollowState?
+        var followedIndex = -1
+        while !Task.isCancelled {
+            let index = audioManager.currentSegmentIndex
+            if !isStreamingSegmentActive || !AppSettings.shared.followStreamingPlayback {
+                followState = nil
+                followedIndex = -1
+            } else {
+                if index != followedIndex {
+                    followState = nil
+                    followedIndex = index
+                }
+                let nowMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+                let step = streamingFollowStep(
+                    state: followState,
+                    signal: AVAudioSession.sharedInstance().isOtherAudioPlaying,
+                    nowMs: nowMs
+                )
+                followState = step.state
+                if step.action == .play && !audioManager.isPlaying { audioManager.play() }
+                if step.action == .pause && audioManager.isPlaying { audioManager.pause() }
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
     }
 
     private var currentZoneColor: Color {
@@ -189,6 +244,9 @@ public struct WorkoutHUDView: View {
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false
                 audioManager.pause()
+            }
+            .task {
+                await followStreamingPlayback()
             }
             .alert("無法開啟歌單連結", isPresented: $isShowingPlaylistOpenError) {
                 Button("確定", role: .cancel) {}

@@ -2076,4 +2076,56 @@ final class FitnessRiderTests: XCTestCase {
         info = quickTrackInfo(cachedDurationMs: nil, cachedBpm: nil, cacheIsCurrent: false, headerDurationMs: -5, tagBpm: nil)
         XCTAssertEqual(info.durationMs, 300_000)
     }
+
+    func testStreamingFollowDebounceConstant() {
+        XCTAssertEqual(streamingFollowDebounceMs, 800)
+    }
+
+    func testStreamingFollowInitialSignalDoesNotAct() {
+        let on = streamingFollowStep(state: nil, signal: true, nowMs: 1_000)
+        XCTAssertEqual(on.state, StreamingFollowState(signal: true, pendingSinceMs: nil))
+        XCTAssertEqual(on.action, .none)
+        let off = streamingFollowStep(state: nil, signal: false, nowMs: 1_000)
+        XCTAssertEqual(off.state, StreamingFollowState(signal: false, pendingSinceMs: nil))
+        XCTAssertEqual(off.action, .none)
+    }
+
+    func testStreamingFollowChangeShorterThanDebounceDoesNotAct() {
+        let first = streamingFollowStep(state: StreamingFollowState(signal: false, pendingSinceMs: nil), signal: true, nowMs: 1_000)
+        XCTAssertEqual(first.action, .none)
+        let second = streamingFollowStep(state: first.state, signal: true, nowMs: 1_799)
+        XCTAssertEqual(second.action, .none)
+        XCTAssertEqual(second.state.signal, false)
+    }
+
+    func testStreamingFollowPlaysWhenSignalTurnsOnForDebounce() {
+        let pending = streamingFollowStep(state: StreamingFollowState(signal: false, pendingSinceMs: nil), signal: true, nowMs: 1_000)
+        let settled = streamingFollowStep(state: pending.state, signal: true, nowMs: 1_800)
+        XCTAssertEqual(settled.action, .play)
+        XCTAssertEqual(settled.state, StreamingFollowState(signal: true, pendingSinceMs: nil))
+    }
+
+    func testStreamingFollowPausesWhenSignalTurnsOffForDebounce() {
+        let pending = streamingFollowStep(state: StreamingFollowState(signal: true, pendingSinceMs: nil), signal: false, nowMs: 5_000)
+        let settled = streamingFollowStep(state: pending.state, signal: false, nowMs: 5_800)
+        XCTAssertEqual(settled.action, .pause)
+        XCTAssertEqual(settled.state, StreamingFollowState(signal: false, pendingSinceMs: nil))
+    }
+
+    func testStreamingFollowJitterThatReturnsDoesNotAct() {
+        let pending = streamingFollowStep(state: StreamingFollowState(signal: false, pendingSinceMs: nil), signal: true, nowMs: 1_000)
+        let returned = streamingFollowStep(state: pending.state, signal: false, nowMs: 1_300)
+        XCTAssertEqual(returned.action, .none)
+        XCTAssertEqual(returned.state, StreamingFollowState(signal: false, pendingSinceMs: nil))
+        let again = streamingFollowStep(state: returned.state, signal: true, nowMs: 1_400)
+        XCTAssertEqual(again.action, .none)
+        let late = streamingFollowStep(state: again.state, signal: true, nowMs: 1_900)
+        XCTAssertEqual(late.action, .none)
+    }
+
+    func testStreamingFollowActsOnlyOncePerChange() {
+        let settled = streamingFollowStep(state: StreamingFollowState(signal: true, pendingSinceMs: 1_000), signal: true, nowMs: 1_800)
+        let repeated = streamingFollowStep(state: settled.state, signal: true, nowMs: 2_000)
+        XCTAssertEqual(repeated.action, .none)
+    }
 }

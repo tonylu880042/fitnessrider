@@ -2,8 +2,11 @@ package com.fitnessrider.ui.hud
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
+import android.os.SystemClock
 import android.widget.Toast
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
@@ -79,6 +82,27 @@ fun segmentStepForSwipe(dx: Float, dy: Float, threshold: Float): Int {
     return if (dy > 0) 1 else -1
 }
 
+const val STREAMING_FOLLOW_DEBOUNCE_MS = 800L
+
+enum class StreamingFollowAction { NONE, PLAY, PAUSE }
+
+data class StreamingFollowState(val signal: Boolean, val pendingSinceMs: Long?)
+
+fun streamingFollowStep(
+    state: StreamingFollowState?,
+    signal: Boolean,
+    nowMs: Long
+): Pair<StreamingFollowState, StreamingFollowAction> {
+    if (state == null) return Pair(StreamingFollowState(signal, null), StreamingFollowAction.NONE)
+    if (signal == state.signal) return Pair(StreamingFollowState(signal, null), StreamingFollowAction.NONE)
+    val since = state.pendingSinceMs ?: nowMs
+    if (nowMs - since < STREAMING_FOLLOW_DEBOUNCE_MS) {
+        return Pair(StreamingFollowState(state.signal, since), StreamingFollowAction.NONE)
+    }
+    val action = if (signal) StreamingFollowAction.PLAY else StreamingFollowAction.PAUSE
+    return Pair(StreamingFollowState(signal, null), action)
+}
+
 fun hudScale(availableHeight: Float): Float = (availableHeight / 800f).coerceIn(0.7f, 1.6f)
 
 @Composable
@@ -103,6 +127,31 @@ fun WorkoutHUDScreen(
             activity?.requestedOrientation = hudRequestedOrientation(false)
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             audioManager.pause()
+        }
+    }
+
+    LaunchedEffect(audioManager) {
+        val systemAudio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        var followState: StreamingFollowState? = null
+        var followedIndex = -1
+        while (true) {
+            val index = audioManager.currentSegmentIndex.value
+            val isStreaming = audioManager.currentSegment?.let(::isStreamingSegment) == true
+            if (!isStreaming || !settings.followStreamingPlayback) {
+                followState = null
+                followedIndex = -1
+            } else {
+                if (index != followedIndex) {
+                    followState = null
+                    followedIndex = index
+                }
+                val (next, action) = streamingFollowStep(followState, systemAudio.isMusicActive, SystemClock.elapsedRealtime())
+                followState = next
+                val playing = audioManager.isPlaying.value
+                if (action == StreamingFollowAction.PLAY && !playing) audioManager.play()
+                if (action == StreamingFollowAction.PAUSE && playing) audioManager.pause()
+            }
+            delay(100)
         }
     }
 

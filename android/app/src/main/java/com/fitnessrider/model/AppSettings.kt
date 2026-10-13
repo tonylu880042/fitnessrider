@@ -26,6 +26,10 @@ class AppSettings internal constructor(context: Context) {
         get() = prefs.getBoolean("keep_screen_awake", true)
         set(value) = prefs.edit().putBoolean("keep_screen_awake", value).apply()
 
+    var followStreamingPlayback: Boolean
+        get() = prefs.getBoolean("follow_streaming_playback", true)
+        set(value) = prefs.edit().putBoolean("follow_streaming_playback", value).apply()
+
     companion object {
         @Volatile
         private var INSTANCE: AppSettings? = null

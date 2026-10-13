@@ -50,6 +50,8 @@ public struct SettingsBackupView: View {
                     }
 
                     Toggle("課堂進行中螢幕強制常亮", isOn: $settings.keepScreenAwakeInHUD)
+
+                    Toggle("跟隨串流音樂播放／暫停", isOn: $settings.followStreamingPlayback)
                 }
 
                 Section("資料庫備份與還原 (SQLite)") {

@@ -12,6 +12,7 @@ public final class AppSettings: ObservableObject {
         static let isAutoPauseBetweenSegmentsEnabled = "isAutoPauseBetweenSegmentsEnabled"
         static let crossfadeDurationSeconds = "crossfadeDurationSeconds"
         static let keepScreenAwakeInHUD = "keepScreenAwakeInHUD"
+        static let followStreamingPlayback = "followStreamingPlayback"
     }
 
     @Published public var isCountdownBeepEnabled: Bool {
@@ -34,13 +35,18 @@ public final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(keepScreenAwakeInHUD, forKey: Keys.keepScreenAwakeInHUD) }
     }
 
+    @Published public var followStreamingPlayback: Bool {
+        didSet { UserDefaults.standard.set(followStreamingPlayback, forKey: Keys.followStreamingPlayback) }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             Keys.isCountdownBeepEnabled: true,
             Keys.isHapticFeedbackEnabled: true,
             Keys.isAutoPauseBetweenSegmentsEnabled: false,
             Keys.crossfadeDurationSeconds: 2.0,
-            Keys.keepScreenAwakeInHUD: true
+            Keys.keepScreenAwakeInHUD: true,
+            Keys.followStreamingPlayback: true
         ])
 
         self.isCountdownBeepEnabled = UserDefaults.standard.bool(forKey: Keys.isCountdownBeepEnabled)
@@ -48,5 +54,6 @@ public final class AppSettings: ObservableObject {
         self.isAutoPauseBetweenSegmentsEnabled = UserDefaults.standard.bool(forKey: Keys.isAutoPauseBetweenSegmentsEnabled)
         self.crossfadeDurationSeconds = UserDefaults.standard.double(forKey: Keys.crossfadeDurationSeconds)
         self.keepScreenAwakeInHUD = UserDefaults.standard.bool(forKey: Keys.keepScreenAwakeInHUD)
+        self.followStreamingPlayback = UserDefaults.standard.bool(forKey: Keys.followStreamingPlayback)
     }
 }

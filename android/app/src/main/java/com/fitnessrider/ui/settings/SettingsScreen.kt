@@ -47,6 +47,7 @@ fun SettingsScreen(
     var isAutoPauseEnabled by remember { mutableStateOf(settings.isAutoPauseBetweenSegmentsEnabled) }
     var crossfadeDuration by remember { mutableStateOf(settings.crossfadeDurationSeconds) }
     var isKeepAwakeEnabled by remember { mutableStateOf(settings.keepScreenAwakeInHUD) }
+    var isFollowStreamingEnabled by remember { mutableStateOf(settings.followStreamingPlayback) }
 
     var notificationMessage by remember { mutableStateOf<String?>(null) }
     var showActivationDialog by remember { mutableStateOf(false) }
@@ -195,6 +196,17 @@ fun SettingsScreen(
                             onCheckedChange = {
                                 isKeepAwakeEnabled = it
                                 settings.keepScreenAwakeInHUD = it
+                            }
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "跟隨串流音樂播放／暫停", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = isFollowStreamingEnabled,
+                            onCheckedChange = {
+                                isFollowStreamingEnabled = it
+                                settings.followStreamingPlayback = it
                             }
                         )
                     }

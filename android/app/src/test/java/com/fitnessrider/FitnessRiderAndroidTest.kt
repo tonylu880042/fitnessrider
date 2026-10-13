@@ -26,7 +26,11 @@ import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.hudRequestedOrientation
 import com.fitnessrider.ui.hud.hudScale
 import com.fitnessrider.ui.hud.rateStepForSwipe
+import com.fitnessrider.ui.hud.STREAMING_FOLLOW_DEBOUNCE_MS
+import com.fitnessrider.ui.hud.StreamingFollowAction
+import com.fitnessrider.ui.hud.StreamingFollowState
 import com.fitnessrider.ui.hud.segmentStepForSwipe
+import com.fitnessrider.ui.hud.streamingFollowStep
 import com.fitnessrider.ui.musiclibrary.IMPORT_PROGRESS_DELAY_MS
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
 import com.fitnessrider.ui.musiclibrary.importProgressFraction
@@ -2148,5 +2152,64 @@ class FitnessRiderAndroidTest {
         assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 11_000L))
         assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 600_000L))
         assertFalse(isDecodeStalled(lastProgressAtMs = 50_000L, nowMs = 1_000L))
+    }
+
+    @Test
+    fun testStreamingFollowDebounceConstant() {
+        assertEquals(800L, STREAMING_FOLLOW_DEBOUNCE_MS)
+    }
+
+    @Test
+    fun testStreamingFollowInitialSignalDoesNotAct() {
+        val (onState, onAction) = streamingFollowStep(null, true, 1_000L)
+        assertEquals(StreamingFollowState(true, null), onState)
+        assertEquals(StreamingFollowAction.NONE, onAction)
+        val (offState, offAction) = streamingFollowStep(null, false, 1_000L)
+        assertEquals(StreamingFollowState(false, null), offState)
+        assertEquals(StreamingFollowAction.NONE, offAction)
+    }
+
+    @Test
+    fun testStreamingFollowChangeShorterThanDebounceDoesNotAct() {
+        val (first, firstAction) = streamingFollowStep(StreamingFollowState(false, null), true, 1_000L)
+        assertEquals(StreamingFollowAction.NONE, firstAction)
+        val (second, secondAction) = streamingFollowStep(first, true, 1_799L)
+        assertEquals(StreamingFollowAction.NONE, secondAction)
+        assertEquals(false, second.signal)
+    }
+
+    @Test
+    fun testStreamingFollowPlaysWhenSignalTurnsOnForDebounce() {
+        val (pending, _) = streamingFollowStep(StreamingFollowState(false, null), true, 1_000L)
+        val (settled, action) = streamingFollowStep(pending, true, 1_800L)
+        assertEquals(StreamingFollowAction.PLAY, action)
+        assertEquals(StreamingFollowState(true, null), settled)
+    }
+
+    @Test
+    fun testStreamingFollowPausesWhenSignalTurnsOffForDebounce() {
+        val (pending, _) = streamingFollowStep(StreamingFollowState(true, null), false, 5_000L)
+        val (settled, action) = streamingFollowStep(pending, false, 5_800L)
+        assertEquals(StreamingFollowAction.PAUSE, action)
+        assertEquals(StreamingFollowState(false, null), settled)
+    }
+
+    @Test
+    fun testStreamingFollowJitterThatReturnsDoesNotAct() {
+        val (pending, _) = streamingFollowStep(StreamingFollowState(false, null), true, 1_000L)
+        val (returned, returnedAction) = streamingFollowStep(pending, false, 1_300L)
+        assertEquals(StreamingFollowAction.NONE, returnedAction)
+        assertEquals(StreamingFollowState(false, null), returned)
+        val (again, againAction) = streamingFollowStep(returned, true, 1_400L)
+        assertEquals(StreamingFollowAction.NONE, againAction)
+        val (_, lateAction) = streamingFollowStep(again, true, 1_900L)
+        assertEquals(StreamingFollowAction.NONE, lateAction)
+    }
+
+    @Test
+    fun testStreamingFollowActsOnlyOncePerChange() {
+        val (settled, _) = streamingFollowStep(StreamingFollowState(true, 1_000L), true, 1_800L)
+        val (_, repeatAction) = streamingFollowStep(settled, true, 2_000L)
+        assertEquals(StreamingFollowAction.NONE, repeatAction)
     }
 }
