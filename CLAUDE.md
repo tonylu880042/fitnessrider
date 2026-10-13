@@ -635,3 +635,113 @@ W1 之後本機加歌幾乎瞬間完成，但「＋匯入新檔」的複製、iO
 - 底部按鈕的「匯入中...」文字保留（對話框出現前的那 500ms 仍需要狀態）。
 - 背景的波形／BPM 分析不進這個對話框，維持既有那行「正在讀取曲目長度 N/M」。
 - 純函式雙端同名 `importProgressFraction(done, total)`：total ≤ 0 → 0，其餘 clamp 在 0…1；有測試。
+
+## 開發清單：串流音樂支援（Spotify／KKBOX／Apple Music，2026-10-13 客戶需求）
+
+客戶希望支援 Spotify。**產品決策（Tony，2026-10-13）：不使用任何串流服務的 SDK 或 Web API。**
+FitnessRider 只管課表、時間與 HUD，聲音由教練自己的串流 App 在背景播。理由（都是從程式碼看不出來的事實）：
+
+- Spotify 開發模式每個 App 上限 5 位授權使用者（2026-02 起），extended quota 要登記公司＋25 萬月活躍使用者，功能發不出去。
+- Spotify 開發者條款把「控制背景的 Spotify App」算作串流，串流類 App 不得商業化；FitnessRider 賣 VIP，正好踩到。
+- 2026-09-22 已刪除過一份從未接線的 Spotify App Remote 模組（commit dd2ea59）。**不要把它加回來**，
+  也不要引入 Spotify／KKBOX／MusicKit 的 SDK 或 Web API。
+- 串流音訊有 DRM，App 拿不到音訊資料：串流段落**沒有**變速、波形、自動 BPM、App 自己的 Crossfade。這是平台限制，不是待辦。
+
+現況已有的底子（2026-10-13 讀碼確認）：段落 `musicFileName` 可為空字串；雙端引擎對無音檔段落已用 0.1 秒計時器推進、
+時間到就換段；iOS 音訊 session 已是 `.mixWithOthers`；Android 的 ExoPlayer 沒有要 audio focus，所以兩端都不會把串流 App 停掉。
+
+**名詞**：`musicFileName` 為空白的段落＝「串流段落」。程式裡既有的 external 指的是「外部音樂資料夾」
+（`MusicSource.isExternalUri`／`isExternal`），兩者無關；新程式碼一律用 streaming／串流，不要用 external。
+既存課表中 `musicFileName` 為空的舊段落會自動被視為串流段落，這是可接受的結果。
+
+五個單元依序做，**前一個 commit 前不要動下一個**（T1～T4 都改編輯器或 HUD）。
+
+### T1 — 串流段落（雙端）
+
+- 雙端同名純函式 `isStreamingSegment(segment)`：`musicFileName` trim 後為空。有檔名但檔案不存在的段落**不是**串流段落。
+- **入口**：音樂庫畫面（Android `ui/musiclibrary/MusicLibraryScreen.kt`、iOS `Views/ClassEditor/MusicLibraryView.swift`）
+  加第三個分頁「串流音樂」。內容：一句說明「歌曲由 Spotify、KKBOX 等 App 播放，FitnessRider 只負責計時與提示」，
+  以及表單：曲名、長度（分、秒）、「加入課表」。一次加一首，沿用既有 `onSegmentsCreated` 把段落交回編輯器，不為此另開流程。
+- 長度用雙端同名純函式 `streamingDurationMs(minutes, seconds)`：秒 0…59、總長至少 1 秒、上限 60 分鐘，不合法回 null，按鈕 disable。
+  曲名 trim 後不可為空。BPM 預設 128，教練用既有 BPM 校正視窗的 TAP 校正；「自動偵測」對串流段落 disable。
+- **編輯**：選中串流段落時，資訊區「重新命名」入口旁加「編輯長度」，同一組分秒欄位與同一個純函式。
+- **編輯器對串流段落**：不跑 `analyzeWaveform`（選中段落分析與開啟時的背景修復都跳過）、不寫回長度；
+  波形區顯示一行「串流音樂・無波形」，cue 時間軸照常可用；試聽鍵 disable；段落速率固定 1.0、速率控制 disable。
+- **HUD 對串流段落**：`-2%／100%／+2%` 按鈕 disable、水平滑動不變速（在呼叫端擋，`rateStepForSwipe` 本身不改）；
+  進入串流段落時引擎速率設回 1.0——計時器是 `0.1 × currentRate`，速率不是 1 時鐘會比音樂跑得快。
+- **Crossfade**：目前段落或下一段（手動換曲時為目標段落）是串流段落時有效秒數一律為 0，硬切，段落邊界才對得上計時。
+  規則放進 `CrossfadeCalculator`（自動與 `manualJumpFadeDuration` 共用），不要在 tick 裡散寫判斷。
+- 總時長與卡路里照既有規則。`.riderclass` 匯出入後仍是串流段落（本來就沒有音檔可打包），確認即可。
+- 測試（雙端同名）：`isStreamingSegment`（空、純空白、有檔名）；`streamingDurationMs`（正常、秒 60、0 秒、超過 60 分鐘、負數）；
+  任一邊為串流段落時自動與手動的淡入淡出秒數為 0；`segmentsNeedingDurationRepair` 不含串流段落。
+
+### T2 — 課表的歌單連結（雙端）
+
+- `WorkoutClass` 加 `streamingPlaylistUrl: String`（預設空字串）。
+- **DB 一定要寫 migration**：Android Room 版本 3→4，`MIGRATION_3_4` 對 `classes` 加欄位（`TEXT NOT NULL DEFAULT ''`）。
+  `data/AppDatabase.kt` 掛著 `fallbackToDestructiveMigration()`，漏寫會把教練所有課表清空。
+  iOS 沿用 `Database/SQLiteDatabase.swift` 既有的 `ALTER TABLE … ADD COLUMN` 寫法。
+- `.riderclass` 的 JSON 加同名欄位；舊包沒有這個欄位時讀成空字串（Android `optString`、iOS `decodeIfPresent`）。
+- 雙端同名純函式 `normalizedStreamingPlaylistUrl(input)`：trim；只接受 scheme 為 `https` 且有 host 的網址，否則回 null；空字串代表清除連結。
+  **只允許 https**：連結會跟著 `.riderclass` 從別的教練手上匯入，按鈕直接把它交給系統開啟，
+  不能讓 `intent:`、`file:`、自訂 scheme 混進來。匯入時不合法的連結一律存成空字串。
+- 編輯器：課表名稱附近加「串流歌單連結」欄位，可貼上 Spotify／KKBOX 的分享連結；不合法時顯示錯誤且不寫入。
+- HUD：課表有連結時頂端顯示「開啟歌單」鍵，交給系統開啟（Android `ACTION_VIEW`、iOS `UIApplication.shared.open`），
+  已安裝的串流 App 會自己接手。開不了要有使用者可見的提示。按鈕套 `hudScale`，不擋既有手勢。
+- 測試：`normalizedStreamingPlaylistUrl`（https 正常、前後空白、http／`intent:`／`spotify:`／`file:` 拒絕、空字串）；
+  archive 缺欄位讀成空字串、帶不合法連結的包匯入後為空字串；存檔再載入後連結仍在
+  （Android migration 若既有測試基礎設施測不到，以 repository 往返測試覆蓋並在回報中說明）。
+
+### T3 — 跟隨串流播放／暫停（雙端）
+
+教練在串流 App 按播放，課堂時鐘自動開始；串流暫停，HUD 跟著暫停。
+
+- 訊號只有是／否：iOS `AVAudioSession.sharedInstance().isOtherAudioPlaying`、Android `AudioManager.isMusicActive`。跟著既有 0.1 秒 tick 輪詢。
+- **只在目前段落是串流段落時作用**，一般段落完全不受影響。
+- **邊緣觸發**：只對「狀態改變」動作，否→是＝播放、是→否＝暫停。教練手動按 HUD 的播放／暫停照常生效，不會被立刻打回，直到下一次狀態改變。
+  進入 HUD 或進入串流段落時以當下訊號作為初始狀態，不觸發動作。
+- **去抖**：狀態要連續維持 800ms 才算改變（雙端同值常數）。Android 的 cue 倒數嗶聲走 `STREAM_MUSIC`
+  （`audio/CueCountdownBeepPlayer.kt`），會讓 `isMusicActive` 短暫為真；曲與曲之間也可能有短暫空檔。
+- 判斷抽成雙端同名純函式（輸入：目前狀態、新訊號、現在時間；輸出：新狀態與動作 無／播放／暫停），HUD 只負責餵訊號與執行動作。
+- 設定頁加一個開關「跟隨串流音樂播放／暫停」，預設開。各裝置的音訊行為無法逐一驗證，課堂上出狀況時教練要有辦法關掉。
+- 已知取捨：去抖讓每次暫停／繼續最多約 1 秒誤差，不補償。
+- **先驗證再做**：iOS 在我們自己的 session 啟用中（`.playback`＋`.mixWithOthers`）時，`isOtherAudioPlaying` 是否仍正確反映其他 App。
+  在模擬器用 Safari 播一段音訊驗證；不可靠就停下來回報，不要硬做，由 Tony 決定 iOS 是否記為例外。
+- 測試：未滿 800ms 不動作；滿了之後否→是＝播放、是→否＝暫停；抖動（真 300ms 又回假）不動作；初始狀態不動作。
+
+### T4 — Android 曲目同步與遙控（Android 限定，刻意的平台例外）
+
+iOS 不開放讀取其他 App 的播放資訊。**Tony 2026-10-13 定案：接受這一層 Android 比 iOS 強。**
+
+- 機制：一個空實作的 `NotificationListenerService`（manifest 宣告 `BIND_NOTIFICATION_LISTENER_SERVICE`），
+  用 `MediaSessionManager.getActiveSessions` 取得其他 App 的 `MediaController`。這是藍牙車機、手錶控制音樂的同一套系統機制，
+  對 Spotify、KKBOX、YouTube Music 一體適用。**不讀取、不儲存任何通知內容。**
+- 一定要排除自己的 package：本 App 的 `audio/PlaybackService.kt` 也有 MediaSession。多個 session 時優先正在播放的那個。
+- 權限：設定頁加一列「串流音樂同步」，顯示是否已授權，按下開啟 `Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS`。
+  未授權時本單元所有功能靜默停用，T1～T3 照常運作。
+- 以下行為**只在目前段落是串流段落時**作用：
+  1. 播放狀態：已授權且有 session 時，以 `MediaController` 的播放狀態取代 T3 的 `isMusicActive`（不需去抖），同樣邊緣觸發。
+  2. 遙控：HUD 的播放／暫停同時送給串流 App；下一首／上一首同時送 `skipToNext`／`skipToPrevious`。
+     點左側清單跳段只換本機段落，不遙控（系統介面無法指定曲目）。
+  3. 曲目跟隨：串流 App 換歌（曲名改變）時，用 `segmentIndexForNowPlaying(title, segments, currentIndex)` 找段落：
+     曲名 trim 後不分大小寫比對；多個相符取 `currentIndex` 之後最近的，後面沒有才取前面最近的。
+     找到且不是目前段落就 `jumpToSegment`；找不到（廣告、不在課表的歌）不動作，HUD 顯示一行「串流正在播放：〈曲名〉（不在課表中）」。
+     只在「換歌」這個邊緣動作，教練手動跳段不會被立刻拉回。
+  4. 位置校正：目前段落曲名與正在播放的相符時，時鐘與播放位置差超過 1.5 秒就把時鐘 seek 過去（純函式 `shouldResyncClock`）；
+     長度與段落差超過 1 秒時沿用既有 `shouldCorrectDuration` 更新並存回 DB（U5 的單段長度更新）。
+  5. T1 的串流段落表單加「帶入正在播放的歌」，填入曲名與長度。
+- 播放位置依 `PlaybackState` 的 position、`lastPositionUpdateTime`、speed 推算，抽成純函式。所有讀取都是本機同步呼叫，HUD 路徑不得等待任何東西。
+- 隱私權政策（`backend/src/app/privacy`）同步揭露：Android 版在教練授權後，於本機讀取其他音樂 App 的「正在播放」資訊，不上傳。
+- 測試：`segmentIndexForNowPlaying`（唯一相符、重複曲名取後面最近、只有前面有、無相符、大小寫與空白）；
+  `shouldResyncClock`；播放位置推算；session 選擇（排除自己、優先播放中）。
+
+### T5 — iOS：Apple「音樂」App 同步（延後，需實機）
+
+iOS 唯一能讀到的是 Apple 自己的「音樂」App（`MPMusicPlayerController.systemMusicPlayer`，需 `NSAppleMusicUsageDescription`）。
+行為比照 T4 並重用同名純函式。模擬器沒有「音樂」App，無法在開發機驗證，**Tony 有 iPad 可測時才開工**。
+
+### 不在範圍
+
+- 在 App 內瀏覽串流歌單、指定播放某一首、讀歌單內容一次建好課表。
+- iPad 分割畫面：`Info.plist` 的 iPad 只支援橫向，很可能無法與 Spotify 並排，需實測，另案處理。
+- 教學影片：T1～T4 完成後在 Android 實機或帶 Play Store 的模擬器上錄；Google 與 Spotify 帳號由 Tony 自己登入。
