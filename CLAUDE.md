@@ -745,6 +745,9 @@ iOS 不開放讀取其他 App 的播放資訊。**Tony 2026-10-13 定案：接�
   2026-10-13 在模擬器上用 Chrome 當替身播放器實際踩到。
 - **狀態（2026-10-13）：T1～T4 已完成並 commit。發給教練前要用真的 Spotify 在 Android 實機驗過下列未驗項目。**
   - 模擬器上已驗（Chrome 播放頁當替身）：T1 分頁與編輯器、T2 連結輸入檢查、授權偵測、「帶入正在播放的歌」、進 HUD 的位置校正。
+  - 資料庫升級已在模擬器實測（2026-10-14）：裝 v1.0.12 建課表後覆蓋安裝新版，Room 3→4，課表、段落、cue 筆數與 id 不變，
+    `classes` 多出 `streamingPlaylistUrl` 欄位。專案沒有能自動跑 migration 的測試，**之後每次改 Room 版本都要照這個方式手動驗一次**：
+    根目錄留有歷次發布的 `fitnessrider-v*.apk` 可當舊版，debug 版可用 `adb shell run-as com.fitnessrider.coach sqlite3 databases/FitnessRider.db` 查。
   - 未驗：播放／暫停跟隨（T3 的 `isMusicActive` 與 T4 的 session 兩條路徑）、HUD 遙控（播放、暫停、上下首、±10 秒）、
     換歌自動換段與「不在課表中」提示、曲長自動校正、「開啟歌單」實際開啟。
   - 模擬器替身不可靠的原因：Chrome 退到背景後會被系統關掉，媒體鍵會被送到別的 App，所以這些項目不要再用模擬器驗。
