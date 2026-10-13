@@ -201,10 +201,11 @@ fun MusicLibraryScreen(
     suspend fun reload() {
         val musicDir = repository.musicDirectory
         val fileNames = musicDir.list()?.toList() ?: emptyList()
-        val waveformByFileName = fileNames.associateWith { fileName ->
-            repository.getWaveform(fileName)?.let { it.second to it.third }
+        val analyzer = WaveformAnalyzer.getInstance(context)
+        val trackInfoByFileName = fileNames.associateWith { fileName ->
+            analyzer.readTrackInfo(fileName).let { it.durationMs to it.bpm }
         }
-        allTracks = buildMusicLibraryTracks(fileNames) { waveformByFileName[it] }
+        allTracks = buildMusicLibraryTracks(fileNames) { trackInfoByFileName[it] }
         isLoading = false
     }
 

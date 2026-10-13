@@ -122,6 +122,7 @@ struct MusicLibraryView: View {
     @State private var importProgress = ImportProgress(done: 0, total: 0, currentTitle: "")
     @State private var showImportDialog: Bool = false
     @State private var importTask: Task<Void, Never>?
+    @State private var trackInfoTask: Task<Void, Never>?
     @State private var isShowingFileImporter: Bool = false
 
     @State private var folderConfigured: Bool = ExternalMusicFolderStore.shared.isFolderConfigured()
@@ -568,6 +569,16 @@ struct MusicLibraryView: View {
         allTracks = buildMusicLibraryTracks(fileNames: fileNames) { fileName in
             guard let cached = ClassRepository.shared.fetchWaveform(for: fileName) else { return nil }
             return (cached.durationMs, cached.bpm)
+        }
+        trackInfoTask?.cancel()
+        trackInfoTask = Task { @MainActor in
+            var trackInfoByFileName: [String: (Int, Double)] = [:]
+            for fileName in fileNames {
+                let info = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
+                trackInfoByFileName[fileName] = (info.durationMs, info.bpm)
+            }
+            if Task.isCancelled { return }
+            allTracks = buildMusicLibraryTracks(fileNames: fileNames) { trackInfoByFileName[$0] }
         }
     }
 

@@ -158,7 +158,9 @@ public final class WaveformAnalyzer: Sendable {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let cached = ClassRepository.shared.fetchWaveform(for: fileName)
-                let header: (durationMs: Int?, tagBpm: Double?) = MusicSource.withResolvedFileURL(for: fileName) { fileURL in
+                let cacheIsCurrent = (cached?.analysisVersion ?? 0) >= Self.analysisVersion
+                let cacheIsComplete = cacheIsCurrent && (cached?.durationMs ?? 0) > 0
+                let header: (durationMs: Int?, tagBpm: Double?) = cacheIsComplete ? (nil, nil) : MusicSource.withResolvedFileURL(for: fileName) { fileURL in
                     let asset = AVURLAsset(url: fileURL)
                     let seconds = CMTimeGetSeconds(asset.duration)
                     let durationMs = seconds.isFinite ? Int(seconds * 1000) : nil
@@ -167,7 +169,7 @@ public final class WaveformAnalyzer: Sendable {
                 continuation.resume(returning: quickTrackInfo(
                     cachedDurationMs: cached?.durationMs,
                     cachedBpm: cached?.bpm,
-                    cacheIsCurrent: (cached?.analysisVersion ?? 0) >= Self.analysisVersion,
+                    cacheIsCurrent: cacheIsCurrent,
                     headerDurationMs: header.durationMs,
                     tagBpm: header.tagBpm
                 ))

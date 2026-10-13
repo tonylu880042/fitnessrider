@@ -69,14 +69,15 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         val cached = repository?.getWaveform(fileName)
         val cacheIsCurrent = cached != null &&
             (repository?.getWaveformAnalysisVersion(fileName) ?: 0) >= ANALYSIS_VERSION
-        val tagBpm = repository?.let { repo ->
+        val cacheIsComplete = cacheIsCurrent && (cached?.second ?: 0) > 0
+        val tagBpm = if (cacheIsComplete) null else repository?.let { repo ->
             MusicSource.openInputStream(repo.context, repo, fileName)?.use { Id3BpmReader.read(it) }
         }
         quickTrackInfo(
             cachedDurationMs = cached?.second,
             cachedBpm = cached?.third,
             cacheIsCurrent = cacheIsCurrent,
-            headerDurationMs = readHeaderDurationMs(fileName),
+            headerDurationMs = if (cacheIsComplete) null else readHeaderDurationMs(fileName),
             tagBpm = tagBpm
         )
     }
