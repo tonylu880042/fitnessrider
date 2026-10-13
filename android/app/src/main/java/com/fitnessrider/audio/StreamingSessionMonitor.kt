@@ -61,6 +61,11 @@ fun segmentIndexForNowPlaying(title: String?, segments: List<WorkoutSegment>, cu
 fun shouldResyncClock(clockSeconds: Double, playerPositionSeconds: Double): Boolean =
     abs(clockSeconds - playerPositionSeconds) > RESYNC_THRESHOLD_SECONDS
 
+fun shouldResyncToPlayerPosition(clockSeconds: Double, playerPositionSeconds: Double?, durationSeconds: Double): Boolean {
+    if (playerPositionSeconds == null || playerPositionSeconds < 0.0 || playerPositionSeconds > durationSeconds) return false
+    return shouldResyncClock(clockSeconds, playerPositionSeconds)
+}
+
 fun estimatedPlaybackPositionMs(
     positionMs: Long,
     lastUpdateElapsedMs: Long,

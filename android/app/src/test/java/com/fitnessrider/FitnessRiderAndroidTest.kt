@@ -14,6 +14,7 @@ import com.fitnessrider.audio.segmentIndexForNowPlaying
 import com.fitnessrider.audio.selectStreamingSessionIndex
 import com.fitnessrider.audio.shouldFollowTrackChange
 import com.fitnessrider.audio.shouldResyncClock
+import com.fitnessrider.audio.shouldResyncToPlayerPosition
 import com.fitnessrider.audio.streamingPreviousAction
 import com.fitnessrider.audio.quickTrackInfo
 import com.fitnessrider.data.ExternalMusicEntry
@@ -2292,6 +2293,31 @@ class FitnessRiderAndroidTest {
         assertFalse(shouldResyncClock(10.0, 8.5))
         assertTrue(shouldResyncClock(10.0, 11.6))
         assertTrue(shouldResyncClock(10.0, 8.4))
+    }
+
+    @Test
+    fun testShouldResyncToPlayerPositionWithinDurationAndBeyondThreshold() {
+        assertTrue(shouldResyncToPlayerPosition(10.0, 30.0, 206.0))
+        assertTrue(shouldResyncToPlayerPosition(10.0, 206.0, 206.0))
+        assertTrue(shouldResyncToPlayerPosition(100.0, 0.0, 206.0))
+    }
+
+    @Test
+    fun testShouldNotResyncToPlayerPositionBeyondDuration() {
+        assertFalse(shouldResyncToPlayerPosition(10.0, 231.0, 206.0))
+        assertFalse(shouldResyncToPlayerPosition(10.0, 206.1, 206.0))
+    }
+
+    @Test
+    fun testShouldNotResyncToPlayerPositionWhenNegativeOrUnknown() {
+        assertFalse(shouldResyncToPlayerPosition(10.0, -1.0, 206.0))
+        assertFalse(shouldResyncToPlayerPosition(10.0, null, 206.0))
+    }
+
+    @Test
+    fun testShouldNotResyncToPlayerPositionWithinThreshold() {
+        assertFalse(shouldResyncToPlayerPosition(10.0, 11.5, 206.0))
+        assertFalse(shouldResyncToPlayerPosition(10.0, 8.5, 206.0))
     }
 
     @Test

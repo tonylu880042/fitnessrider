@@ -55,7 +55,7 @@ import com.fitnessrider.audio.normalizedTrackTitle
 import com.fitnessrider.audio.sanitizedStreamingDurationMs
 import com.fitnessrider.audio.segmentIndexForNowPlaying
 import com.fitnessrider.audio.shouldFollowTrackChange
-import com.fitnessrider.audio.shouldResyncClock
+import com.fitnessrider.audio.shouldResyncToPlayerPosition
 import com.fitnessrider.audio.streamingPreviousAction
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.HandPosition
@@ -192,12 +192,15 @@ fun WorkoutHUDScreen(
             ) {
                 sanitizedStreamingDurationMs(session.durationMs)?.let { audioManager.correctStreamingDuration(it) }
                 if (session.isPlaying && nowMs - lastResyncAtMs >= RESYNC_COOLDOWN_MS) {
-                    val positionMs = session.estimatedPositionMs(nowMs)
-                    if (positionMs != null &&
-                        shouldResyncClock(audioManager.currentOffsetSeconds.value, positionMs / 1000.0)
+                    val positionSeconds = session.estimatedPositionMs(nowMs)?.let { it / 1000.0 }
+                    if (shouldResyncToPlayerPosition(
+                            audioManager.currentOffsetSeconds.value,
+                            positionSeconds,
+                            audioManager.currentDurationSeconds.value
+                        )
                     ) {
                         lastResyncAtMs = nowMs
-                        audioManager.seekTo(positionMs / 1000.0)
+                        audioManager.seekTo(positionSeconds!!)
                     }
                 }
             }
