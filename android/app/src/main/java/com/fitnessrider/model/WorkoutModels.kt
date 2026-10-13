@@ -44,7 +44,8 @@ data class WorkoutClass(
     val createdAt: String = "",
     val totalDurationMs: Int = 0,
     val estimatedCalories: Double = 0.0,
-    val segments: List<WorkoutSegment> = emptyList()
+    val segments: List<WorkoutSegment> = emptyList(),
+    val streamingPlaylistUrl: String = ""
 ) {
     val formattedDuration: String
         get() {
@@ -72,6 +73,18 @@ fun WorkoutClass.withRecalculatedTotals(): WorkoutClass {
     }
     val roundedCalories = (calories * 10.0).roundToInt() / 10.0
     return copy(totalDurationMs = totalMs, estimatedCalories = roundedCalories)
+}
+
+fun normalizedStreamingPlaylistUrl(input: String): String? {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return ""
+    val uri = try {
+        java.net.URI(trimmed)
+    } catch (e: java.net.URISyntaxException) {
+        return null
+    }
+    val hasHost = !uri.host.isNullOrEmpty()
+    return if (uri.scheme.equals("https", ignoreCase = true) && hasHost) trimmed else null
 }
 
 fun isStreamingSegment(segment: WorkoutSegment): Boolean = segment.musicFileName.isBlank()

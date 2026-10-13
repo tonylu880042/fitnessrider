@@ -37,6 +37,7 @@ public struct WorkoutHUDView: View {
     @State private var reminderRotationTick: Int = 0
     @State private var pulseAlpha: CGFloat = 1.0
     @State private var countdownPulse: CGFloat = 1.0
+    @State private var isShowingPlaylistOpenError: Bool = false
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
@@ -50,6 +51,11 @@ public struct WorkoutHUDView: View {
 
     private var activeSegment: WorkoutSegment? {
         audioManager.currentSegment ?? liveClass.segments.first
+    }
+
+    private var playlistURL: URL? {
+        guard let normalized = normalizedStreamingPlaylistUrl(liveClass.streamingPlaylistUrl), !normalized.isEmpty else { return nil }
+        return URL(string: normalized)
     }
 
     private var isStreamingSegmentActive: Bool {
@@ -183,6 +189,9 @@ public struct WorkoutHUDView: View {
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false
                 audioManager.pause()
+            }
+            .alert("無法開啟歌單連結", isPresented: $isShowingPlaylistOpenError) {
+                Button("確定", role: .cancel) {}
             }
             .alert("退出課堂確認", isPresented: $isShowingExitAlert) {
                 Button("繼續騎乘", role: .cancel) {}
@@ -354,6 +363,26 @@ public struct WorkoutHUDView: View {
 
     private func cockpitCore(isLandscape: Bool, scale: CGFloat, hudHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
+            if let url = playlistURL {
+                HStack {
+                    Spacer()
+                    Button {
+                        UIApplication.shared.open(url, options: [:]) { success in
+                            if !success { isShowingPlaylistOpenError = true }
+                        }
+                    } label: {
+                        Label("開啟歌單", systemImage: "music.note")
+                            .font(.system(size: 18 * scale, weight: .bold))
+                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .frame(minHeight: 40 * scale)
+                            .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
+                            .cornerRadius(8)
+                    }
+                }
+            }
+
             Spacer()
 
             if isLandscape {

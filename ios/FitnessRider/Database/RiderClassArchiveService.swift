@@ -105,7 +105,8 @@ public final class RiderClassArchiveService: Sendable {
             createdAt: workoutClass.createdAt,
             totalDurationMs: workoutClass.totalDurationMs,
             estimatedCalories: workoutClass.estimatedCalories,
-            segments: newSegments
+            segments: newSegments,
+            streamingPlaylistUrl: workoutClass.streamingPlaylistUrl
         )
     }
 

@@ -8,6 +8,7 @@ public struct WorkoutClass: Identifiable, Codable, Equatable, Sendable {
     public var totalDurationMs: Int
     public var estimatedCalories: Double
     public var segments: [WorkoutSegment]
+    public var streamingPlaylistUrl: String
 
     public var totalDurationMinutes: Int {
         return totalDurationMs / 60_000
@@ -27,7 +28,8 @@ public struct WorkoutClass: Identifiable, Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         totalDurationMs: Int = 0,
         estimatedCalories: Double = 0.0,
-        segments: [WorkoutSegment] = []
+        segments: [WorkoutSegment] = [],
+        streamingPlaylistUrl: String = ""
     ) {
         self.id = id
         self.title = title
@@ -36,6 +38,20 @@ public struct WorkoutClass: Identifiable, Codable, Equatable, Sendable {
         self.totalDurationMs = totalDurationMs
         self.estimatedCalories = estimatedCalories
         self.segments = segments
+        self.streamingPlaylistUrl = streamingPlaylistUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.author = try container.decode(String.self, forKey: .author)
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.totalDurationMs = try container.decode(Int.self, forKey: .totalDurationMs)
+        self.estimatedCalories = try container.decode(Double.self, forKey: .estimatedCalories)
+        self.segments = try container.decode([WorkoutSegment].self, forKey: .segments)
+        let rawUrl = (try? container.decodeIfPresent(String.self, forKey: .streamingPlaylistUrl)) ?? ""
+        self.streamingPlaylistUrl = normalizedStreamingPlaylistUrl(rawUrl) ?? ""
     }
 
     public mutating func recalculateTotals() {
@@ -55,4 +71,15 @@ public struct WorkoutClass: Identifiable, Codable, Equatable, Sendable {
         }
         self.estimatedCalories = (cals * 10).rounded() / 10
     }
+}
+
+func normalizedStreamingPlaylistUrl(_ input: String) -> String? {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return "" }
+    let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+    guard trimmed.rangeOfCharacter(from: forbidden) == nil,
+          let components = URLComponents(string: trimmed),
+          components.scheme?.lowercased() == "https",
+          let host = components.host, !host.isEmpty else { return nil }
+    return trimmed
 }

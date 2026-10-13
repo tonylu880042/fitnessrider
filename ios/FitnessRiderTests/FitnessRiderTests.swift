@@ -1,6 +1,7 @@
 import XCTest
 import CryptoKit
 import AVFoundation
+import SQLite3
 @testable import FitnessRider
 
 final class FitnessRiderTests: XCTestCase {
@@ -837,6 +838,104 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(isStreamingSegment(WorkoutSegment(musicFileName: "")))
         XCTAssertTrue(isStreamingSegment(WorkoutSegment(musicFileName: "   ")))
         XCTAssertFalse(isStreamingSegment(WorkoutSegment(musicFileName: "missing.mp3")))
+    }
+
+    func testNormalizedStreamingPlaylistUrl() {
+        let spotify = "https://open.spotify.com/playlist/37i9dQZF1DX?si=abc"
+        XCTAssertEqual(normalizedStreamingPlaylistUrl(spotify), spotify)
+        XCTAssertEqual(normalizedStreamingPlaylistUrl("  \(spotify) \n"), spotify)
+        XCTAssertEqual(normalizedStreamingPlaylistUrl("https://www.kkbox.com/tw/zh/playlist/abc"), "https://www.kkbox.com/tw/zh/playlist/abc")
+        XCTAssertEqual(normalizedStreamingPlaylistUrl(""), "")
+        XCTAssertEqual(normalizedStreamingPlaylistUrl("   "), "")
+        XCTAssertNil(normalizedStreamingPlaylistUrl("http://open.spotify.com/playlist/abc"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("intent://scan/#Intent;scheme=zxing;end"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("spotify:playlist:37i9dQZF1DX"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("file:///sdcard/list.m3u"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("javascript:alert(1)"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("https://"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("https:///playlist"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("open.spotify.com/playlist/abc"))
+        XCTAssertNil(normalizedStreamingPlaylistUrl("https://open.spotify.com/play list"))
+    }
+
+    func testRiderClassArchiveStreamingPlaylistUrl() throws {
+        let url = "https://open.spotify.com/playlist/37i9dQZF1DX"
+        let archiveService = RiderClassArchiveService.shared
+        let archiveURL = try archiveService.exportRiderClass(for: WorkoutClass(title: "歌單課表", streamingPlaylistUrl: url))
+        let imported = try archiveService.importRiderClass(from: archiveURL)
+        XCTAssertEqual(imported.streamingPlaylistUrl, url)
+        try? FileManager.default.removeItem(at: archiveURL)
+        ClassRepository.shared.deleteClass(byId: imported.id)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let legacyJson = """
+        {"id":"\(UUID().uuidString)","title":"舊課表","author":"A","createdAt":"2026-01-01T00:00:00Z","totalDurationMs":0,"estimatedCalories":0,"segments":[]}
+        """
+        XCTAssertEqual(try decoder.decode(WorkoutClass.self, from: Data(legacyJson.utf8)).streamingPlaylistUrl, "")
+
+        for bad in ["http://open.spotify.com/x", "intent://x#Intent;end", "spotify:playlist:abc", "file:///x", "not a url", "12"] {
+            let badJson = """
+            {"id":"\(UUID().uuidString)","title":"壞連結","author":"A","createdAt":"2026-01-01T00:00:00Z","totalDurationMs":0,"estimatedCalories":0,"segments":[],"streamingPlaylistUrl":"\(bad)"}
+            """
+            XCTAssertEqual(try decoder.decode(WorkoutClass.self, from: Data(badJson.utf8)).streamingPlaylistUrl, "")
+        }
+
+        let nullJson = """
+        {"id":"\(UUID().uuidString)","title":"null","author":"A","createdAt":"2026-01-01T00:00:00Z","totalDurationMs":0,"estimatedCalories":0,"segments":[],"streamingPlaylistUrl":null}
+        """
+        XCTAssertEqual(try decoder.decode(WorkoutClass.self, from: Data(nullJson.utf8)).streamingPlaylistUrl, "")
+    }
+
+    func testRegenerateIdsKeepsStreamingPlaylistUrl() {
+        let url = "https://open.spotify.com/playlist/abc"
+        let regenerated = RiderClassArchiveService.regenerateIds(for: WorkoutClass(streamingPlaylistUrl: url))
+        XCTAssertEqual(regenerated.streamingPlaylistUrl, url)
+    }
+
+    func testStreamingPlaylistUrlPersistsThroughRepository() {
+        let url = "https://open.spotify.com/playlist/37i9dQZF1DX"
+        let workoutClass = WorkoutClass(title: "歌單存檔", streamingPlaylistUrl: url)
+        ClassRepository.shared.saveClass(workoutClass)
+        XCTAssertEqual(ClassRepository.shared.fetchClass(byId: workoutClass.id)?.streamingPlaylistUrl, url)
+        XCTAssertEqual(ClassRepository.shared.fetchAllClasses().first(where: { $0.id == workoutClass.id })?.streamingPlaylistUrl, url)
+
+        var cleared = workoutClass
+        cleared.streamingPlaylistUrl = ""
+        ClassRepository.shared.saveClass(cleared)
+        XCTAssertEqual(ClassRepository.shared.fetchClass(byId: workoutClass.id)?.streamingPlaylistUrl, "")
+
+        ClassRepository.shared.deleteClass(byId: workoutClass.id)
+    }
+
+    func testRestoringLegacyBackupWithoutPlaylistColumnKeepsClasses() throws {
+        let backupService = SQLiteBackupService.shared
+        guard let originalBackup = backupService.exportBackupFile() else {
+            XCTFail("Backup export returned nil")
+            return
+        }
+        defer {
+            try? backupService.restoreFromFile(at: originalBackup)
+            try? FileManager.default.removeItem(at: originalBackup)
+        }
+
+        let legacyURL = FileManager.default.temporaryDirectory.appendingPathComponent("legacy_\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: legacyURL) }
+        let legacyId = UUID()
+        var legacyDb: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(legacyURL.path, &legacyDb), SQLITE_OK)
+        let legacySql = """
+        CREATE TABLE classes (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL, created_at TEXT NOT NULL, total_duration_ms INTEGER NOT NULL DEFAULT 0, estimated_calories REAL NOT NULL DEFAULT 0.0);
+        INSERT INTO classes VALUES ('\(legacyId.uuidString)', '舊版課表', 'Coach', '2026-01-01T00:00:00Z', 0, 0.0);
+        """
+        XCTAssertEqual(sqlite3_exec(legacyDb, legacySql, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(legacyDb)
+
+        try backupService.restoreFromFile(at: legacyURL)
+
+        let restored = ClassRepository.shared.fetchClass(byId: legacyId)
+        XCTAssertEqual(restored?.title, "舊版課表")
+        XCTAssertEqual(restored?.streamingPlaylistUrl, "")
     }
 
     func testStreamingDurationMs() {

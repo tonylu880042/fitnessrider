@@ -14,7 +14,7 @@ public final class ClassRepository: @unchecked Sendable {
     public func fetchAllClasses() -> [WorkoutClass] {
         guard let dbPtr = db.getDbPointer() else { return [] }
 
-        let query = "SELECT id, title, author, created_at, total_duration_ms, estimated_calories FROM classes ORDER BY created_at DESC;"
+        let query = "SELECT id, title, author, created_at, total_duration_ms, estimated_calories, streaming_playlist_url FROM classes ORDER BY created_at DESC;"
         var statement: OpaquePointer?
         var classes: [WorkoutClass] = []
 
@@ -26,6 +26,7 @@ public final class ClassRepository: @unchecked Sendable {
                 let createdAtStr = String(cString: sqlite3_column_text(statement, 3))
                 let durationMs = Int(sqlite3_column_int(statement, 4))
                 let calories = sqlite3_column_double(statement, 5)
+                let playlistUrl = sqlite3_column_text(statement, 6).map { String(cString: $0) } ?? ""
 
                 let id = UUID(uuidString: idStr) ?? UUID()
                 let createdAt = ISO8601DateFormatter().date(from: createdAtStr) ?? Date()
@@ -38,7 +39,8 @@ public final class ClassRepository: @unchecked Sendable {
                     createdAt: createdAt,
                     totalDurationMs: durationMs,
                     estimatedCalories: calories,
-                    segments: segments
+                    segments: segments,
+                    streamingPlaylistUrl: playlistUrl
                 )
                 classes.append(workoutClass)
             }
@@ -50,7 +52,7 @@ public final class ClassRepository: @unchecked Sendable {
     public func fetchClass(byId id: UUID) -> WorkoutClass? {
         guard let dbPtr = db.getDbPointer() else { return nil }
 
-        let query = "SELECT id, title, author, created_at, total_duration_ms, estimated_calories FROM classes WHERE id = ? LIMIT 1;"
+        let query = "SELECT id, title, author, created_at, total_duration_ms, estimated_calories, streaming_playlist_url FROM classes WHERE id = ? LIMIT 1;"
         var statement: OpaquePointer?
         var workoutClass: WorkoutClass?
 
@@ -63,6 +65,7 @@ public final class ClassRepository: @unchecked Sendable {
                 let createdAtStr = String(cString: sqlite3_column_text(statement, 3))
                 let durationMs = Int(sqlite3_column_int(statement, 4))
                 let calories = sqlite3_column_double(statement, 5)
+                let playlistUrl = sqlite3_column_text(statement, 6).map { String(cString: $0) } ?? ""
 
                 let classId = UUID(uuidString: idStr) ?? id
                 let createdAt = ISO8601DateFormatter().date(from: createdAtStr) ?? Date()
@@ -75,7 +78,8 @@ public final class ClassRepository: @unchecked Sendable {
                     createdAt: createdAt,
                     totalDurationMs: durationMs,
                     estimatedCalories: calories,
-                    segments: segments
+                    segments: segments,
+                    streamingPlaylistUrl: playlistUrl
                 )
             }
         }
@@ -91,8 +95,8 @@ public final class ClassRepository: @unchecked Sendable {
 
         try? db.executeWithTransaction {
             let classSql = """
-            INSERT OR REPLACE INTO classes (id, title, author, created_at, total_duration_ms, estimated_calories)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT OR REPLACE INTO classes (id, title, author, created_at, total_duration_ms, estimated_calories, streaming_playlist_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
             """
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(dbPtr, classSql, -1, &stmt, nil) == SQLITE_OK {
@@ -102,6 +106,7 @@ public final class ClassRepository: @unchecked Sendable {
                 sqlite3_bind_text(stmt, 4, ISO8601DateFormatter().string(from: workoutClass.createdAt), -1, SQLITE_TRANSIENT)
                 sqlite3_bind_int(stmt, 5, Int32(workoutClass.totalDurationMs))
                 sqlite3_bind_double(stmt, 6, workoutClass.estimatedCalories)
+                sqlite3_bind_text(stmt, 7, workoutClass.streamingPlaylistUrl, -1, SQLITE_TRANSIENT)
                 sqlite3_step(stmt)
             }
             sqlite3_finalize(stmt)

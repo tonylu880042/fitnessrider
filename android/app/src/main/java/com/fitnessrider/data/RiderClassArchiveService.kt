@@ -201,6 +201,7 @@ class RiderClassArchiveService(private val context: Context) {
             root.put("createdAt", wc.createdAt)
             root.put("totalDurationMs", wc.totalDurationMs)
             root.put("estimatedCalories", wc.estimatedCalories)
+            root.put("streamingPlaylistUrl", wc.streamingPlaylistUrl)
 
             val segArray = JSONArray()
             for (seg in wc.segments) {
@@ -244,6 +245,7 @@ class RiderClassArchiveService(private val context: Context) {
             val createdAt = root.optString("createdAt")
             val totalDurationMs = root.optInt("totalDurationMs")
             val estimatedCalories = root.optDouble("estimatedCalories")
+            val streamingPlaylistUrl = normalizedStreamingPlaylistUrl(root.optString("streamingPlaylistUrl")) ?: ""
 
             val segArray = root.optJSONArray("segments") ?: JSONArray()
             val segments = mutableListOf<WorkoutSegment>()
@@ -305,7 +307,8 @@ class RiderClassArchiveService(private val context: Context) {
                 createdAt = createdAt,
                 totalDurationMs = totalDurationMs,
                 estimatedCalories = estimatedCalories,
-                segments = segments
+                segments = segments,
+                streamingPlaylistUrl = streamingPlaylistUrl
             )
         }
     }

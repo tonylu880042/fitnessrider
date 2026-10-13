@@ -1109,6 +1109,50 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testNormalizedStreamingPlaylistUrl() {
+        val spotify = "https://open.spotify.com/playlist/37i9dQZF1DX?si=abc"
+        assertEquals(spotify, normalizedStreamingPlaylistUrl(spotify))
+        assertEquals(spotify, normalizedStreamingPlaylistUrl("  $spotify \n"))
+        assertEquals("https://www.kkbox.com/tw/zh/playlist/abc", normalizedStreamingPlaylistUrl("https://www.kkbox.com/tw/zh/playlist/abc"))
+        assertEquals("", normalizedStreamingPlaylistUrl(""))
+        assertEquals("", normalizedStreamingPlaylistUrl("   "))
+        assertNull(normalizedStreamingPlaylistUrl("http://open.spotify.com/playlist/abc"))
+        assertNull(normalizedStreamingPlaylistUrl("intent://scan/#Intent;scheme=zxing;end"))
+        assertNull(normalizedStreamingPlaylistUrl("spotify:playlist:37i9dQZF1DX"))
+        assertNull(normalizedStreamingPlaylistUrl("file:///sdcard/list.m3u"))
+        assertNull(normalizedStreamingPlaylistUrl("javascript:alert(1)"))
+        assertNull(normalizedStreamingPlaylistUrl("https://"))
+        assertNull(normalizedStreamingPlaylistUrl("https:///playlist"))
+        assertNull(normalizedStreamingPlaylistUrl("open.spotify.com/playlist/abc"))
+        assertNull(normalizedStreamingPlaylistUrl("https://open.spotify.com/play list"))
+    }
+
+    @Test
+    fun testRiderClassArchiveStreamingPlaylistUrl() {
+        val url = "https://open.spotify.com/playlist/37i9dQZF1DX"
+        val json = RiderClassArchiveService.serializeClassToJson(WorkoutClass(id = "c1", streamingPlaylistUrl = url))
+        assertEquals(url, RiderClassArchiveService.deserializeJsonToClass(json).streamingPlaylistUrl)
+
+        val legacyJson = """{"id":"c1","title":"舊課表","author":"A","createdAt":"","totalDurationMs":0,"estimatedCalories":0,"segments":[]}"""
+        assertEquals("", RiderClassArchiveService.deserializeJsonToClass(legacyJson).streamingPlaylistUrl)
+
+        for (bad in listOf("http://open.spotify.com/x", "intent://x#Intent;end", "spotify:playlist:abc", "file:///x", "not a url")) {
+            val badJson = RiderClassArchiveService.serializeClassToJson(WorkoutClass(id = "c1", streamingPlaylistUrl = bad))
+            assertEquals("", RiderClassArchiveService.deserializeJsonToClass(badJson).streamingPlaylistUrl)
+        }
+
+        val nullJson = """{"id":"c1","streamingPlaylistUrl":null,"segments":[]}"""
+        assertEquals("", RiderClassArchiveService.deserializeJsonToClass(nullJson).streamingPlaylistUrl)
+    }
+
+    @Test
+    fun testRegenerateIdsKeepsStreamingPlaylistUrl() {
+        val url = "https://open.spotify.com/playlist/abc"
+        val regenerated = RiderClassArchiveService.regenerateIds(WorkoutClass(id = "c1", streamingPlaylistUrl = url))
+        assertEquals(url, regenerated.streamingPlaylistUrl)
+    }
+
+    @Test
     fun testStreamingDurationMs() {
         assertEquals(215_000, streamingDurationMs(3, 35))
         assertEquals(1_000, streamingDurationMs(0, 1))

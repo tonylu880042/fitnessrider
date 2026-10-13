@@ -125,6 +125,7 @@ public struct ClassEditorView: View {
     @State private var segmentPendingRenameIndex: Int?
     @State private var renameInput: String = ""
     @State private var isShowingStreamingDurationSheet: Bool = false
+    @State private var isShowingPlaylistSheet: Bool = false
 
     public init(workoutClass: WorkoutClass, onSave: @escaping (WorkoutClass) -> Void) {
         self._workoutClass = State(initialValue: workoutClass)
@@ -171,6 +172,26 @@ public struct ClassEditorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
+            }
+
+            Button {
+                isShowingPlaylistSheet = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "link")
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                    Text("串流歌單連結")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                    Text(workoutClass.streamingPlaylistUrl.isEmpty ? "未設定" : workoutClass.streamingPlaylistUrl)
+                        .font(.system(size: 13))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
             }
 
             HStack(spacing: 24) {
@@ -288,6 +309,11 @@ public struct ClassEditorView: View {
                         workoutClass.recalculateTotals()
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $isShowingPlaylistSheet) {
+            StreamingPlaylistSheet(url: workoutClass.streamingPlaylistUrl) { newUrl in
+                workoutClass.streamingPlaylistUrl = newUrl
             }
         }
         .sheet(isPresented: $isShowingMusicLibrary) {
@@ -915,6 +941,52 @@ struct StreamingDurationSheet: View {
                         }
                     }
                     .disabled(newDurationMs == nil)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+struct StreamingPlaylistSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var urlText: String
+    let onSave: (String) -> Void
+
+    init(url: String, onSave: @escaping (String) -> Void) {
+        self._urlText = State(initialValue: url)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        let normalizedUrl = normalizedStreamingPlaylistUrl(urlText)
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Spotify、KKBOX 的分享連結", text: $urlText)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text(normalizedUrl == nil ? "只支援 https 開頭的網址" : "留空代表清除連結")
+                    .font(.system(size: 12))
+                    .foregroundColor(normalizedUrl == nil ? FitnessRiderTheme.accentRed : FitnessRiderTheme.textSecondary)
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("串流歌單連結")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("儲存") {
+                        if let normalizedUrl = normalizedUrl {
+                            onSave(normalizedUrl)
+                            dismiss()
+                        }
+                    }
+                    .disabled(normalizedUrl == nil)
                 }
             }
         }

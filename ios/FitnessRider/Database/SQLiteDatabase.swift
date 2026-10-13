@@ -137,6 +137,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
         _ = executeRaw("ALTER TABLE cues ADD COLUMN hand_position INTEGER NOT NULL DEFAULT 1;")
         _ = executeRaw("ALTER TABLE cues ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]';")
         _ = executeRaw("ALTER TABLE waveform_cache ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0;")
+        _ = executeRaw("ALTER TABLE classes ADD COLUMN streaming_playlist_url TEXT NOT NULL DEFAULT '';")
     }
 
     public func createHotBackup(to destinationURL: URL) -> Bool {
@@ -190,6 +191,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
         if sqlite3_open(destURL.path, &dbPointer) == SQLITE_OK {
             _ = executeRaw("PRAGMA journal_mode=WAL;")
             _ = executeRaw("PRAGMA foreign_keys=ON;")
+            createTables()
         } else {
             throw NSError(domain: "SQLiteDatabase", code: -2, userInfo: [NSLocalizedDescriptionKey: "無法重新開啟還原後的資料庫"])
         }

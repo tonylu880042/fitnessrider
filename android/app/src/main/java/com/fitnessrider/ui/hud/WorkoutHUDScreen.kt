@@ -1,6 +1,10 @@
 package com.fitnessrider.ui.hud
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -45,6 +49,7 @@ import com.fitnessrider.model.PostureType
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutCue
 import com.fitnessrider.model.isStreamingSegment
+import com.fitnessrider.model.normalizedStreamingPlaylistUrl
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.CircleProgressBar
 import com.fitnessrider.ui.components.HandPositionBadge
@@ -132,6 +137,7 @@ fun WorkoutHUDScreen(
         label = "alpha"
     )
 
+    val playlistUrl = normalizedStreamingPlaylistUrl(workoutClass.streamingPlaylistUrl)?.takeIf { it.isNotEmpty() }
     val activeSegment = audioManager.currentSegment
     val isStreamingSegmentActive = activeSegment?.let(::isStreamingSegment) == true
     val currentMs = (currentOffsetSec * 1000).toInt()
@@ -348,6 +354,34 @@ fun WorkoutHUDScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    if (playlistUrl != null) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Button(
+                                onClick = {
+                                    try {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(playlistUrl))
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    } catch (e: ActivityNotFoundException) {
+                                        Toast.makeText(context, "無法開啟歌單連結", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = TopBarGreen.copy(alpha = 0.15f),
+                                    contentColor = TopBarGreenDark
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = (40 * s).dp)
+                            ) {
+                                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size((20 * s).dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = "開啟歌單", fontSize = (18 * s).sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.weight(1f))
 
                     Row(

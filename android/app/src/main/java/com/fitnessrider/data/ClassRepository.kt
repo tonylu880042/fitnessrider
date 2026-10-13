@@ -62,7 +62,8 @@ class ClassRepository(val context: Context) {
                     createdAt = entity.createdAt,
                     totalDurationMs = entity.totalDurationMs,
                     estimatedCalories = entity.estimatedCalories,
-                    segments = segments
+                    segments = segments,
+                    streamingPlaylistUrl = entity.streamingPlaylistUrl
                 )
             }
         }
@@ -110,7 +111,8 @@ class ClassRepository(val context: Context) {
             createdAt = entity.createdAt,
             totalDurationMs = entity.totalDurationMs,
             estimatedCalories = entity.estimatedCalories,
-            segments = segments
+            segments = segments,
+            streamingPlaylistUrl = entity.streamingPlaylistUrl
         )
     }
 
@@ -124,7 +126,8 @@ class ClassRepository(val context: Context) {
                 SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
             },
             totalDurationMs = workoutClass.totalDurationMs,
-            estimatedCalories = workoutClass.estimatedCalories
+            estimatedCalories = workoutClass.estimatedCalories,
+            streamingPlaylistUrl = workoutClass.streamingPlaylistUrl
         )
         dao.insertClass(classEntity)
 

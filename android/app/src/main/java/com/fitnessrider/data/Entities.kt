@@ -13,7 +13,8 @@ data class ClassEntity(
     val author: String,
     val createdAt: String,
     val totalDurationMs: Int,
-    val estimatedCalories: Double
+    val estimatedCalories: Double,
+    @ColumnInfo(defaultValue = "''") val streamingPlaylistUrl: String = ""
 )
 
 @Entity(

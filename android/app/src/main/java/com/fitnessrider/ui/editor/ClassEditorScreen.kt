@@ -180,6 +180,8 @@ fun ClassEditorScreen(
     var segmentPendingRenameIndex by remember { mutableStateOf<Int?>(null) }
     var isStreamingDurationDialogVisible by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf(TextFieldValue("")) }
+    var isPlaylistDialogVisible by remember { mutableStateOf(false) }
+    var playlistInput by remember { mutableStateOf("") }
 
     var waveformSamples by remember { mutableStateOf(FloatArray(0)) }
     var previewPlayheadMs by remember { mutableStateOf(0) }
@@ -330,6 +332,30 @@ fun ClassEditorScreen(
             color = TextSecondary,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    playlistInput = workoutClass.streamingPlaylistUrl
+                    isPlaylistDialogVisible = true
+                }
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Link, contentDescription = null, tint = TopBarGreenDark, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(text = "串流歌單連結", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = workoutClass.streamingPlaylistUrl.ifEmpty { "未設定" },
+                fontSize = 13.sp,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Row(
             modifier = Modifier
@@ -868,6 +894,40 @@ fun ClassEditorScreen(
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("匯入失敗：${failedLabels.joinToString("、")}")
                 }
+            }
+        )
+    }
+
+    if (isPlaylistDialogVisible) {
+        val normalizedPlaylistUrl = normalizedStreamingPlaylistUrl(playlistInput)
+        AlertDialog(
+            onDismissRequest = { isPlaylistDialogVisible = false },
+            title = { Text("串流歌單連結", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = playlistInput,
+                    onValueChange = { playlistInput = it },
+                    singleLine = true,
+                    label = { Text("Spotify、KKBOX 的分享連結") },
+                    isError = normalizedPlaylistUrl == null,
+                    supportingText = {
+                        Text(if (normalizedPlaylistUrl == null) "只支援 https 開頭的網址" else "留空代表清除連結")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = normalizedPlaylistUrl != null,
+                    onClick = {
+                        if (normalizedPlaylistUrl != null) {
+                            workoutClass = workoutClass.copy(streamingPlaylistUrl = normalizedPlaylistUrl)
+                        }
+                        isPlaylistDialogVisible = false
+                    }
+                ) { Text("儲存", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { isPlaylistDialogVisible = false }) { Text("取消") }
             }
         )
     }
