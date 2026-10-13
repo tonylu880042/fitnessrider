@@ -1,9 +1,12 @@
 package com.fitnessrider.ui.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.fitnessrider.audio.StreamingSessionMonitor
 import com.fitnessrider.auth.DeviceIdentifierService
 import com.fitnessrider.auth.LicenseVerificationService
 import com.fitnessrider.data.ClassRepository
@@ -30,6 +34,7 @@ import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.ui.paywall.PaywallScreen
 import com.fitnessrider.util.VersionLifecycleManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -48,6 +53,14 @@ fun SettingsScreen(
     var crossfadeDuration by remember { mutableStateOf(settings.crossfadeDurationSeconds) }
     var isKeepAwakeEnabled by remember { mutableStateOf(settings.keepScreenAwakeInHUD) }
     var isFollowStreamingEnabled by remember { mutableStateOf(settings.followStreamingPlayback) }
+    var isNowPlayingAuthorized by remember { mutableStateOf(StreamingSessionMonitor.isAuthorized(context)) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            isNowPlayingAuthorized = StreamingSessionMonitor.isAuthorized(context)
+            delay(1000)
+        }
+    }
 
     var notificationMessage by remember { mutableStateOf<String?>(null) }
     var showActivationDialog by remember { mutableStateOf(false) }
@@ -208,6 +221,27 @@ fun SettingsScreen(
                                 isFollowStreamingEnabled = it
                                 settings.followStreamingPlayback = it
                             }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                try {
+                                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                } catch (e: ActivityNotFoundException) {
+                                    android.widget.Toast.makeText(context, "無法開啟系統設定", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "串流音樂同步", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                        Text(
+                            text = if (isNowPlayingAuthorized) "已授權" else "未授權，點此開啟",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isNowPlayingAuthorized) TopBarGreenDark else TextSecondary
                         )
                     }
                 }

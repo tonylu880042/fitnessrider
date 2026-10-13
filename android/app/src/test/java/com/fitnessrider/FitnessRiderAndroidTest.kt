@@ -5,7 +5,16 @@ import com.fitnessrider.audio.CrossfadeFinishCoordinator
 import com.fitnessrider.audio.HapticFeedbackManager
 import com.fitnessrider.audio.SynchronizedOnceCache
 import com.fitnessrider.audio.QuickTrackInfo
+import com.fitnessrider.audio.StreamingPreviousAction
+import com.fitnessrider.audio.StreamingSessionCandidate
+import com.fitnessrider.audio.estimatedPlaybackPositionMs
 import com.fitnessrider.audio.isDecodeStalled
+import com.fitnessrider.audio.sanitizedStreamingDurationMs
+import com.fitnessrider.audio.segmentIndexForNowPlaying
+import com.fitnessrider.audio.selectStreamingSessionIndex
+import com.fitnessrider.audio.shouldFollowTrackChange
+import com.fitnessrider.audio.shouldResyncClock
+import com.fitnessrider.audio.streamingPreviousAction
 import com.fitnessrider.audio.quickTrackInfo
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.MusicSource
@@ -2211,5 +2220,137 @@ class FitnessRiderAndroidTest {
         val (settled, _) = streamingFollowStep(StreamingFollowState(true, 1_000L), true, 1_800L)
         val (_, repeatAction) = streamingFollowStep(settled, true, 2_000L)
         assertEquals(StreamingFollowAction.NONE, repeatAction)
+    }
+
+    private fun streamingSegments(vararg titles: String): List<WorkoutSegment> =
+        titles.map { WorkoutSegment(title = it, musicFileName = "") }
+
+    @Test
+    fun testSegmentIndexForNowPlayingUniqueMatch() {
+        val segments = streamingSegments("A", "B", "C")
+        assertEquals(2, segmentIndexForNowPlaying("C", segments, 0))
+        assertEquals(0, segmentIndexForNowPlaying("A", segments, 2))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingDuplicatePrefersNearestAfter() {
+        val segments = streamingSegments("A", "B", "A", "C", "A")
+        assertEquals(2, segmentIndexForNowPlaying("A", segments, 1))
+        assertEquals(4, segmentIndexForNowPlaying("A", segments, 3))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingFallsBackToNearestBefore() {
+        val segments = streamingSegments("A", "B", "A", "C")
+        assertEquals(2, segmentIndexForNowPlaying("A", segments, 3))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingKeepsCurrentWhenItMatches() {
+        val segments = streamingSegments("A", "B", "A")
+        assertEquals(2, segmentIndexForNowPlaying("A", segments, 2))
+        assertEquals(0, segmentIndexForNowPlaying("A", segments, 0))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingNoMatch() {
+        val segments = streamingSegments("A", "B")
+        assertNull(segmentIndexForNowPlaying("Z", segments, 0))
+        assertNull(segmentIndexForNowPlaying(null, segments, 0))
+        assertNull(segmentIndexForNowPlaying("", segments, 0))
+        assertNull(segmentIndexForNowPlaying("   ", streamingSegments("", "A"), 0))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingIgnoresCaseAndWhitespace() {
+        val segments = streamingSegments("  Shape Of You ", "B")
+        assertEquals(0, segmentIndexForNowPlaying(" shape of YOU", segments, 1))
+    }
+
+    @Test
+    fun testSegmentIndexForNowPlayingSkipsNonStreamingSegments() {
+        val segments = listOf(
+            WorkoutSegment(title = "A", musicFileName = "a.mp3"),
+            WorkoutSegment(title = "A", musicFileName = "")
+        )
+        assertEquals(1, segmentIndexForNowPlaying("A", segments, 0))
+        assertNull(segmentIndexForNowPlaying("A", listOf(segments[0]), 0))
+    }
+
+    @Test
+    fun testShouldFollowTrackChangeOnlyOnRealChange() {
+        assertFalse(shouldFollowTrackChange(null, "A"))
+        assertFalse(shouldFollowTrackChange("A", null))
+        assertFalse(shouldFollowTrackChange("A", " a "))
+        assertFalse(shouldFollowTrackChange("A", ""))
+        assertTrue(shouldFollowTrackChange("A", "B"))
+    }
+
+    @Test
+    fun testShouldResyncClock() {
+        assertFalse(shouldResyncClock(10.0, 11.5))
+        assertFalse(shouldResyncClock(10.0, 8.5))
+        assertTrue(shouldResyncClock(10.0, 11.6))
+        assertTrue(shouldResyncClock(10.0, 8.4))
+    }
+
+    @Test
+    fun testEstimatedPlaybackPositionWhilePlaying() {
+        assertEquals(12_000L, estimatedPlaybackPositionMs(10_000L, 1_000L, 1f, true, 3_000L))
+        assertEquals(14_000L, estimatedPlaybackPositionMs(10_000L, 1_000L, 2f, true, 3_000L))
+        assertEquals(12_000L, estimatedPlaybackPositionMs(10_000L, 1_000L, 0f, true, 3_000L))
+    }
+
+    @Test
+    fun testEstimatedPlaybackPositionWhenNotPlayingOrUnknown() {
+        assertEquals(10_000L, estimatedPlaybackPositionMs(10_000L, 1_000L, 1f, false, 9_000L))
+        assertNull(estimatedPlaybackPositionMs(-1L, 1_000L, 1f, true, 3_000L))
+        assertEquals(10_000L, estimatedPlaybackPositionMs(10_000L, 0L, 1f, true, 3_000L))
+        assertEquals(10_000L, estimatedPlaybackPositionMs(10_000L, 5_000L, 1f, true, 3_000L))
+    }
+
+    @Test
+    fun testSelectStreamingSessionExcludesOwnPackage() {
+        val own = StreamingSessionCandidate("com.fitnessrider", true)
+        val other = StreamingSessionCandidate("com.spotify.music", false)
+        assertEquals(1, selectStreamingSessionIndex(listOf(own, other), "com.fitnessrider"))
+        assertNull(selectStreamingSessionIndex(listOf(own), "com.fitnessrider"))
+        assertNull(selectStreamingSessionIndex(emptyList(), "com.fitnessrider"))
+    }
+
+    @Test
+    fun testSelectStreamingSessionPrefersPlaying() {
+        val paused = StreamingSessionCandidate("com.kkbox", false)
+        val playing = StreamingSessionCandidate("com.spotify.music", true)
+        assertEquals(1, selectStreamingSessionIndex(listOf(paused, playing), "com.fitnessrider"))
+        assertEquals(0, selectStreamingSessionIndex(listOf(paused, paused.copy(packageName = "x")), "com.fitnessrider"))
+    }
+
+    @Test
+    fun testSanitizedStreamingDurationMs() {
+        assertEquals(215_000, sanitizedStreamingDurationMs(214_800L))
+        assertEquals(3_600_000, sanitizedStreamingDurationMs(3_600_000L))
+        assertNull(sanitizedStreamingDurationMs(0L))
+        assertNull(sanitizedStreamingDurationMs(-1L))
+        assertNull(sanitizedStreamingDurationMs(400L))
+        assertNull(sanitizedStreamingDurationMs(3_700_000L))
+        assertNull(sanitizedStreamingDurationMs(Long.MAX_VALUE))
+    }
+
+    @Test
+    fun testStreamingPreviousActionMatchesEnginePreviousSegment() {
+        assertEquals(StreamingPreviousAction.SEEK_TO_START, streamingPreviousAction(3.5, 2))
+        assertEquals(StreamingPreviousAction.SKIP_TO_PREVIOUS, streamingPreviousAction(3.0, 2))
+        assertEquals(StreamingPreviousAction.SEEK_TO_START, streamingPreviousAction(1.0, 0))
+    }
+
+    @Test
+    fun testStreamingFollowWithZeroDebounceActsImmediately() {
+        val (initial, _) = streamingFollowStep(null, true, 1_000L, 0L)
+        val (settled, action) = streamingFollowStep(initial, false, 1_050L, 0L)
+        assertEquals(StreamingFollowAction.PAUSE, action)
+        assertEquals(StreamingFollowState(false, null), settled)
+        val (_, repeat) = streamingFollowStep(settled, false, 1_150L, 0L)
+        assertEquals(StreamingFollowAction.NONE, repeat)
     }
 }

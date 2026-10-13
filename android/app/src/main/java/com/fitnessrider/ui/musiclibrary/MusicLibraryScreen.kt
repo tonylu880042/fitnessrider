@@ -1,5 +1,6 @@
 package com.fitnessrider.ui.musiclibrary
 
+import android.widget.Toast
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,7 +39,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.fitnessrider.audio.StreamingSessionMonitor
 import com.fitnessrider.audio.WaveformAnalyzer
+import com.fitnessrider.audio.normalizedTrackTitle
+import com.fitnessrider.audio.sanitizedStreamingDurationMs
 import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.ExternalMusicFolderPrefs
@@ -642,6 +646,7 @@ internal fun StreamingDurationFields(
 
 @Composable
 private fun StreamingTabContent(enabled: Boolean, onAdd: (String, Int) -> Unit) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var minutesText by remember { mutableStateOf("") }
     var secondsText by remember { mutableStateOf("") }
@@ -673,6 +678,27 @@ private fun StreamingTabContent(enabled: Boolean, onAdd: (String, Int) -> Unit) 
             onMinutesChange = { minutesText = it },
             onSecondsChange = { secondsText = it }
         )
+        if (remember { StreamingSessionMonitor.isAuthorized(context) }) {
+            OutlinedButton(
+                onClick = {
+                    val nowPlaying = StreamingSessionMonitor.readNowPlayingOnce(context)
+                    val nowTitle = normalizedTrackTitle(nowPlaying?.title)
+                    if (nowPlaying == null || nowTitle == null) {
+                        Toast.makeText(context, "目前沒有正在播放的歌曲", Toast.LENGTH_SHORT).show()
+                    } else {
+                        title = nowTitle
+                        sanitizedStreamingDurationMs(nowPlaying.durationMs)?.let {
+                            minutesText = (it / 60_000).toString()
+                            secondsText = ((it / 1000) % 60).toString()
+                        }
+                    }
+                },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "帶入正在播放的歌", fontWeight = FontWeight.Bold, color = TopBarGreenDark)
+            }
+        }
         Button(
             onClick = { if (durationMs != null) onAdd(trimmedTitle, durationMs) },
             enabled = enabled && trimmedTitle.isNotEmpty() && durationMs != null,

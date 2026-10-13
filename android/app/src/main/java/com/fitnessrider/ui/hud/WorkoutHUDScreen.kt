@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.session.MediaController
 import android.net.Uri
 import android.os.SystemClock
 import android.widget.Toast
@@ -46,6 +47,16 @@ import androidx.compose.ui.res.painterResource
 import com.fitnessrider.R
 import com.fitnessrider.audio.AudioEngineManager
 import com.fitnessrider.audio.HapticFeedbackManager
+import com.fitnessrider.audio.NOW_PLAYING_AUTH_CHECK_MS
+import com.fitnessrider.audio.RESYNC_COOLDOWN_MS
+import com.fitnessrider.audio.StreamingPreviousAction
+import com.fitnessrider.audio.StreamingSessionMonitor
+import com.fitnessrider.audio.normalizedTrackTitle
+import com.fitnessrider.audio.sanitizedStreamingDurationMs
+import com.fitnessrider.audio.segmentIndexForNowPlaying
+import com.fitnessrider.audio.shouldFollowTrackChange
+import com.fitnessrider.audio.shouldResyncClock
+import com.fitnessrider.audio.streamingPreviousAction
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.HandPosition
 import com.fitnessrider.model.PostureType
@@ -91,12 +102,13 @@ data class StreamingFollowState(val signal: Boolean, val pendingSinceMs: Long?)
 fun streamingFollowStep(
     state: StreamingFollowState?,
     signal: Boolean,
-    nowMs: Long
+    nowMs: Long,
+    debounceMs: Long = STREAMING_FOLLOW_DEBOUNCE_MS
 ): Pair<StreamingFollowState, StreamingFollowAction> {
     if (state == null) return Pair(StreamingFollowState(signal, null), StreamingFollowAction.NONE)
     if (signal == state.signal) return Pair(StreamingFollowState(signal, null), StreamingFollowAction.NONE)
     val since = state.pendingSinceMs ?: nowMs
-    if (nowMs - since < STREAMING_FOLLOW_DEBOUNCE_MS) {
+    if (nowMs - since < debounceMs) {
         return Pair(StreamingFollowState(state.signal, since), StreamingFollowAction.NONE)
     }
     val action = if (signal) StreamingFollowAction.PLAY else StreamingFollowAction.PAUSE
@@ -130,28 +142,127 @@ fun WorkoutHUDScreen(
         }
     }
 
+    val monitor = remember { StreamingSessionMonitor(context) }
+    var unmatchedNowPlaying by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(monitor) {
+        onDispose { monitor.stop() }
+    }
+
     LaunchedEffect(audioManager) {
         val systemAudio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         var followState: StreamingFollowState? = null
         var followedIndex = -1
+        var followedBySession = false
+        var lastTitle: String? = null
+        var lastResyncAtMs = 0L
+        var lastAuthCheckMs = -NOW_PLAYING_AUTH_CHECK_MS
         while (true) {
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastAuthCheckMs >= NOW_PLAYING_AUTH_CHECK_MS) {
+                lastAuthCheckMs = nowMs
+                if (StreamingSessionMonitor.isAuthorized(context)) monitor.start() else monitor.stop()
+            }
+            val segments = audioManager.currentClass?.segments.orEmpty()
+            val streamingNow = audioManager.currentSegment?.let(::isStreamingSegment) == true
+            val session = if (streamingNow) monitor.current() else null
+            val title = normalizedTrackTitle(session?.title)
+
+            if (session == null) {
+                lastTitle = null
+            } else {
+                if (shouldFollowTrackChange(lastTitle, title)) {
+                    val target = segmentIndexForNowPlaying(title, segments, audioManager.currentSegmentIndex.value)
+                    if (target != null && target != audioManager.currentSegmentIndex.value) {
+                        audioManager.jumpToSegment(target)
+                    }
+                }
+                lastTitle = title
+            }
+
             val index = audioManager.currentSegmentIndex.value
-            val isStreaming = audioManager.currentSegment?.let(::isStreamingSegment) == true
-            if (!isStreaming || !settings.followStreamingPlayback) {
+            val streamingSegment = audioManager.currentSegment?.takeIf(::isStreamingSegment)
+
+            unmatchedNowPlaying = if (session != null && session.isPlaying && title != null &&
+                segmentIndexForNowPlaying(title, segments, index) == null
+            ) title else null
+
+            if (session != null && streamingSegment != null && title != null &&
+                normalizedTrackTitle(streamingSegment.title).equals(title, ignoreCase = true)
+            ) {
+                sanitizedStreamingDurationMs(session.durationMs)?.let { audioManager.correctStreamingDuration(it) }
+                if (session.isPlaying && nowMs - lastResyncAtMs >= RESYNC_COOLDOWN_MS) {
+                    val positionMs = session.estimatedPositionMs(nowMs)
+                    if (positionMs != null &&
+                        shouldResyncClock(audioManager.currentOffsetSeconds.value, positionMs / 1000.0)
+                    ) {
+                        lastResyncAtMs = nowMs
+                        audioManager.seekTo(positionMs / 1000.0)
+                    }
+                }
+            }
+
+            if (streamingSegment == null || !settings.followStreamingPlayback) {
                 followState = null
                 followedIndex = -1
             } else {
-                if (index != followedIndex) {
+                val bySession = session != null
+                if (index != followedIndex || bySession != followedBySession) {
                     followState = null
                     followedIndex = index
+                    followedBySession = bySession
                 }
-                val (next, action) = streamingFollowStep(followState, systemAudio.isMusicActive, SystemClock.elapsedRealtime())
+                val signal = session?.isPlaying ?: systemAudio.isMusicActive
+                val debounceMs = if (bySession) 0L else STREAMING_FOLLOW_DEBOUNCE_MS
+                val (next, action) = streamingFollowStep(followState, signal, nowMs, debounceMs)
                 followState = next
                 val playing = audioManager.isPlaying.value
                 if (action == StreamingFollowAction.PLAY && !playing) audioManager.play()
                 if (action == StreamingFollowAction.PAUSE && playing) audioManager.pause()
             }
             delay(100)
+        }
+    }
+
+    fun sendToStreamingApp(command: (MediaController.TransportControls) -> Unit) = monitor.sendCommand(command)
+
+    fun togglePlayback() {
+        val fromStreaming = audioManager.currentSegment?.let(::isStreamingSegment) == true
+        val willPlay = !audioManager.isPlaying.value
+        audioManager.togglePlayPause()
+        if (fromStreaming) sendToStreamingApp { if (willPlay) it.play() else it.pause() }
+    }
+
+    fun seekBySeconds(deltaSeconds: Double) {
+        val fromStreaming = audioManager.currentSegment?.let(::isStreamingSegment) == true
+        audioManager.seekBy(deltaSeconds)
+        if (fromStreaming) {
+            val positionMs = (audioManager.currentOffsetSeconds.value * 1000).toLong()
+            sendToStreamingApp { it.seekTo(positionMs) }
+        }
+    }
+
+    fun goToNextSegment() {
+        val segments = audioManager.currentClass?.segments.orEmpty()
+        val index = audioManager.currentSegmentIndex.value
+        val fromStreaming = segments.getOrNull(index)?.let(::isStreamingSegment) == true
+        val toStreaming = segments.getOrNull(index + 1)?.let(::isStreamingSegment) == true
+        audioManager.nextSegment()
+        if (fromStreaming && toStreaming) sendToStreamingApp { it.skipToNext() }
+    }
+
+    fun goToPreviousSegment() {
+        val segments = audioManager.currentClass?.segments.orEmpty()
+        val index = audioManager.currentSegmentIndex.value
+        val fromStreaming = segments.getOrNull(index)?.let(::isStreamingSegment) == true
+        val action = streamingPreviousAction(audioManager.currentOffsetSeconds.value, index)
+        val toStreaming = action == StreamingPreviousAction.SEEK_TO_START ||
+            segments.getOrNull(index - 1)?.let(::isStreamingSegment) == true
+        audioManager.previousSegment()
+        if (fromStreaming && toStreaming) {
+            sendToStreamingApp {
+                if (action == StreamingPreviousAction.SEEK_TO_START) it.seekTo(0) else it.skipToPrevious()
+            }
         }
     }
 
@@ -283,14 +394,14 @@ fun WorkoutHUDScreen(
             },
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(onClick = { audioManager.previousSegment() }) {
+                    IconButton(onClick = { goToPreviousSegment() }) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White)
                     }
-                    IconButton(onClick = { audioManager.seekBy(-10.0) }) {
+                    IconButton(onClick = { seekBySeconds(-10.0) }) {
                         Icon(Icons.Default.FastRewind, contentDescription = "快退10秒", tint = Color.White)
                     }
                     IconButton(
-                        onClick = { audioManager.togglePlayPause() },
+                        onClick = { togglePlayback() },
                         modifier = Modifier
                             .size(42.dp)
                             .background(Color.White, CircleShape)
@@ -301,10 +412,10 @@ fun WorkoutHUDScreen(
                             tint = TopBarGreenDark
                         )
                     }
-                    IconButton(onClick = { audioManager.seekBy(10.0) }) {
+                    IconButton(onClick = { seekBySeconds(10.0) }) {
                         Icon(Icons.Default.FastForward, contentDescription = "快進10秒", tint = Color.White)
                     }
-                    IconButton(onClick = { audioManager.nextSegment() }) {
+                    IconButton(onClick = { goToNextSegment() }) {
                         Icon(Icons.Default.SkipNext, contentDescription = "下一首", tint = Color.White)
                     }
                 }
@@ -403,9 +514,22 @@ fun WorkoutHUDScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (playlistUrl != null) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Button(
+                    if (playlistUrl != null || unmatchedNowPlaying != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = unmatchedNowPlaying?.let { "串流正在播放：$it（不在課表中）" } ?: "",
+                                fontSize = (18 * s).sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (playlistUrl != null) Button(
                                 onClick = {
                                     try {
                                         context.startActivity(
@@ -459,9 +583,9 @@ fun WorkoutHUDScreen(
                                         } else {
                                             val segmentStep = segmentStepForSwipe(totalDragX, totalDragY, segmentSwipeThresholdPx)
                                             if (segmentStep > 0) {
-                                                audioManager.nextSegment()
+                                                goToNextSegment()
                                             } else if (segmentStep < 0) {
-                                                audioManager.previousSegment()
+                                                goToPreviousSegment()
                                             }
                                         }
                                     }
@@ -485,7 +609,7 @@ fun WorkoutHUDScreen(
                                 .pointerInput(Unit) {
                                     detectTapGestures(
                                         onDoubleTap = {
-                                            audioManager.togglePlayPause()
+                                            togglePlayback()
                                         }
                                     )
                                 }

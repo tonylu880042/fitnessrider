@@ -27,7 +27,7 @@ export default function PrivacyPolicy() {
           </div>
           <div>
             <h1 className="text-3xl font-extrabold text-white">隱私權政策 (Privacy Policy)</h1>
-            <p className="text-xs text-zinc-500 mt-1">最後更新日期：2026 年 9 月 21 日</p>
+            <p className="text-xs text-zinc-500 mt-1">最後更新日期：2026 年 10 月 13 日</p>
           </div>
         </div>
 
@@ -53,6 +53,10 @@ export default function PrivacyPolicy() {
               <li>
                 <strong className="text-zinc-200">本機音樂與課表資料：</strong>
                 您在 App 內匯入的音樂檔案（MP3、AAC）與編排之課表資料，<strong>100% 僅儲存於您設備的本機沙盒中</strong>。我們不會將您的任何音訊檔案上傳至雲端伺服器。
+              </li>
+              <li>
+                <strong className="text-zinc-200">其他音樂 App 的「正在播放」資訊（僅限 Android，選用）：</strong>
+                若您在 Android 設定中授予 FitnessRider「通知存取權」，App 會在您的設備本機讀取 Spotify、KKBOX 等其他音樂 App 目前播放的曲名、長度與播放進度，用來讓課堂畫面跟上實際播放的歌曲，並可從課堂畫面控制該音樂 App 的播放、暫停與切歌。<strong>這些資訊只在本機即時使用，不會儲存、不會上傳至伺服器，也不會與任何第三方分享</strong>；我們不會讀取或儲存任何通知內容。您可隨時在系統設定中撤銷此權限，撤銷後相關功能自動停用，其餘功能不受影響。
               </li>
             </ul>
           </section>

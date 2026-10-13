@@ -647,6 +647,13 @@ class AudioEngineManager(private val context: Context) {
         }
     }
 
+    fun correctStreamingDuration(durationMs: Int) {
+        val segment = currentSegment ?: return
+        if (!isStreamingSegment(segment) || !shouldCorrectDuration(segment.durationMs, durationMs)) return
+        correctSegmentDurationIfNeeded(durationMs.toLong())
+        _currentDurationSeconds.value = durationMs / 1000.0
+    }
+
     private fun correctSegmentDurationIfNeeded(playerDurationMs: Long) {
         val workoutClass = currentClass ?: return
         val index = _currentSegmentIndex.value
