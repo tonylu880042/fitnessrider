@@ -1651,6 +1651,20 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertTrue(options.contains(2.0), "預設值 2 秒必須仍是合法選項之一")
     }
 
+    func testImportProgressFraction() {
+        XCTAssertEqual(importProgressFraction(done: 0, total: 0), 0, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: 3, total: -1), 0, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: 0, total: 5), 0, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: 2, total: 5), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: 5, total: 5), 1, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: 7, total: 5), 1, accuracy: 0.0001)
+        XCTAssertEqual(importProgressFraction(done: -2, total: 5), 0, accuracy: 0.0001)
+    }
+
+    func testImportProgressDelayMatchesAcrossPlatforms() {
+        XCTAssertEqual(importProgressDelayMs, 500)
+    }
+
     @MainActor
     func testAntiAbuseCodesMatchAcrossPlatforms() {
         let codes = LicenseVerificationService.antiAbuseCodes

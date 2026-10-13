@@ -27,7 +27,9 @@ import com.fitnessrider.ui.hud.hudRequestedOrientation
 import com.fitnessrider.ui.hud.hudScale
 import com.fitnessrider.ui.hud.rateStepForSwipe
 import com.fitnessrider.ui.hud.segmentStepForSwipe
+import com.fitnessrider.ui.musiclibrary.IMPORT_PROGRESS_DELAY_MS
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
+import com.fitnessrider.ui.musiclibrary.importProgressFraction
 import com.fitnessrider.ui.musiclibrary.buildMusicLibraryTracks
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromExternalSelection
 import com.fitnessrider.ui.musiclibrary.buildSegmentsFromLibrarySelection
@@ -1264,6 +1266,22 @@ class FitnessRiderAndroidTest {
         val options = AppSettings.CROSSFADE_OPTIONS_SECONDS
         assertEquals(listOf(0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 15.0), options)
         org.junit.Assert.assertTrue("預設值 2 秒必須仍是合法選項之一", options.contains(2.0))
+    }
+
+    @Test
+    fun testImportProgressFraction() {
+        assertEquals(0f, importProgressFraction(0, 0), 0.0001f)
+        assertEquals(0f, importProgressFraction(3, -1), 0.0001f)
+        assertEquals(0f, importProgressFraction(0, 5), 0.0001f)
+        assertEquals(0.4f, importProgressFraction(2, 5), 0.0001f)
+        assertEquals(1f, importProgressFraction(5, 5), 0.0001f)
+        assertEquals(1f, importProgressFraction(7, 5), 0.0001f)
+        assertEquals(0f, importProgressFraction(-2, 5), 0.0001f)
+    }
+
+    @Test
+    fun testImportProgressDelayMatchesAcrossPlatforms() {
+        assertEquals(500L, IMPORT_PROGRESS_DELAY_MS)
     }
 
     @Test

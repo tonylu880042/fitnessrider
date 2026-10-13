@@ -2,6 +2,19 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 
+let importProgressDelayMs = 500
+
+func importProgressFraction(done: Int, total: Int) -> Double {
+    guard total > 0 else { return 0 }
+    return min(max(Double(done) / Double(total), 0), 1)
+}
+
+private struct ImportProgress {
+    var done: Int
+    var total: Int
+    var currentTitle: String
+}
+
 struct MusicLibraryTrack: Identifiable, Equatable {
     var id: String { fileName }
     let fileName: String
@@ -106,6 +119,9 @@ struct MusicLibraryView: View {
     @State private var allTracks: [MusicLibraryTrack] = []
     @State private var selectedFileNames: Set<String> = []
     @State private var isImporting: Bool = false
+    @State private var importProgress = ImportProgress(done: 0, total: 0, currentTitle: "")
+    @State private var showImportDialog: Bool = false
+    @State private var importTask: Task<Void, Never>?
     @State private var isShowingFileImporter: Bool = false
 
     @State private var folderConfigured: Bool = ExternalMusicFolderStore.shared.isFolderConfigured()
@@ -206,7 +222,12 @@ struct MusicLibraryView: View {
             .disabled(currentSelectionCount == 0 || isImporting)
             .padding(16)
         }
+        .disabled(isImporting)
         .background(FitnessRiderTheme.canvasWhite)
+        .overlay {
+            if showImportDialog { importProgressOverlay }
+        }
+        .interactiveDismissDisabled(isImporting)
         .onAppear {
             audioDelegate.onDidFinish = {
                 stopPreview()
@@ -214,7 +235,10 @@ struct MusicLibraryView: View {
             reload()
             if folderConfigured { reloadExternalEntries() }
         }
-        .onDisappear { stopPreview() }
+        .onDisappear {
+            stopPreview()
+            importTask?.cancel()
+        }
         .onChange(of: includeSubdirectories) { _, newValue in
             ExternalMusicFolderStore.shared.setIncludeSubdirectories(newValue)
             reloadExternalEntries()
@@ -239,19 +263,71 @@ struct MusicLibraryView: View {
         selectedTab == 0 ? selectedFileNames.count : selectedExternalPaths.count
     }
 
+    private func startImport(total: Int, work: @escaping @MainActor () async -> Void) {
+        importProgress = ImportProgress(done: 0, total: total, currentTitle: "")
+        isImporting = true
+        importTask = Task { @MainActor in
+            let reveal = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(importProgressDelayMs) * 1_000_000)
+                if !Task.isCancelled { showImportDialog = true }
+            }
+            await work()
+            reveal.cancel()
+            showImportDialog = false
+            isImporting = false
+            importTask = nil
+        }
+    }
+
+    private var importProgressOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text("正在加入歌曲")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                Text("\(importProgress.done) / \(importProgress.total)")
+                    .font(.system(size: 14))
+                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                ProgressView(value: importProgressFraction(done: importProgress.done, total: importProgress.total))
+                    .tint(FitnessRiderTheme.topBarGreen)
+                Text(importProgress.currentTitle)
+                    .font(.system(size: 14))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Button {
+                    importTask?.cancel()
+                } label: {
+                    Text("取消")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.accentRed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: 320)
+            .background(FitnessRiderTheme.canvasWhite)
+            .cornerRadius(14)
+            .padding(.horizontal, 24)
+        }
+    }
+
     private func confirmSelection() {
         if selectedTab == 0 {
             let selected = allTracks.filter { selectedFileNames.contains($0.fileName) }
             guard !selected.isEmpty else { return }
             stopPreview()
-            isImporting = true
-            Task { @MainActor in
+            startImport(total: selected.count) {
                 var analyzedTracks: [MusicLibraryTrack] = []
-                for track in selected {
+                for (index, track) in selected.enumerated() {
+                    if Task.isCancelled { return }
+                    importProgress = ImportProgress(done: index, total: selected.count, currentTitle: track.title)
                     let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: track.fileName)
                     analyzedTracks.append(MusicLibraryTrack(fileName: track.fileName, title: track.title, durationMs: durationMs, bpm: bpm))
                 }
-                isImporting = false
+                if Task.isCancelled { return }
                 onSegmentsCreated(buildSegmentsFromLibrarySelection(
                     tracks: analyzedTracks,
                     classId: classId,
@@ -264,33 +340,36 @@ struct MusicLibraryView: View {
             guard !selected.isEmpty else { return }
             stopPreview()
 
-            let pending = selected.filter { $0.isCloudPlaceholder }
-
-            isImporting = true
-            Task { @MainActor in
-                var failedNames: Set<String> = []
-                for entry in pending {
-                    let available = await MusicSource.ensureAvailable(
-                        for: MusicSource.externalPrefix + entry.relativePath
+            startImport(total: selected.count) {
+                var failedNames: [String] = []
+                var usable: [ExternalMusicEntry] = []
+                var analyzed: [String: (durationMs: Int, bpm: Double)] = [:]
+                for (index, entry) in selected.enumerated() {
+                    if Task.isCancelled { return }
+                    importProgress = ImportProgress(
+                        done: index,
+                        total: selected.count,
+                        currentTitle: musicTitleFromFileName(entry.displayName)
                     )
-                    if !available { failedNames.insert(entry.displayName) }
+                    let fileName = MusicSource.externalPrefix + entry.relativePath
+                    if entry.isCloudPlaceholder {
+                        let available = await MusicSource.ensureAvailable(for: fileName)
+                        if Task.isCancelled { return }
+                        if !available {
+                            failedNames.append(entry.displayName)
+                            continue
+                        }
+                    }
+                    let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
+                    analyzed[fileName] = (durationMs, bpm)
+                    usable.append(entry)
                 }
+                if Task.isCancelled { return }
 
                 if !failedNames.isEmpty {
                     onImportFailed(failedNames.sorted().map { "\($0)（iCloud 尚未下載完成）" })
                 }
-                let usable = selected.filter { !failedNames.contains($0.displayName) }
-                guard !usable.isEmpty else {
-                    isImporting = false
-                    return
-                }
-                var analyzed: [String: (durationMs: Int, bpm: Double)] = [:]
-                for entry in usable {
-                    let fileName = MusicSource.externalPrefix + entry.relativePath
-                    let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
-                    analyzed[fileName] = (durationMs, bpm)
-                }
-                isImporting = false
+                guard !usable.isEmpty else { return }
                 finishExternalSelection(usable, analyzed: analyzed)
             }
         }
@@ -607,8 +686,7 @@ struct MusicLibraryView: View {
         }
         guard !urls.isEmpty else { return }
 
-        isImporting = true
-        Task { @MainActor in
+        startImport(total: urls.count) {
             let musicDir = SQLiteDatabase.shared.musicDirectoryURL
             var existingNames = Set(
                 (try? FileManager.default.contentsOfDirectory(atPath: musicDir.path)) ?? []
@@ -616,8 +694,10 @@ struct MusicLibraryView: View {
             var importedTracks: [ImportedTrackInfo] = []
             var failedLabels: [String] = []
 
-            for url in urls {
+            for (index, url) in urls.enumerated() {
+                if Task.isCancelled { break }
                 let displayName = url.lastPathComponent
+                importProgress = ImportProgress(done: index, total: urls.count, currentTitle: musicTitleFromFileName(displayName))
                 let didAccess = url.startAccessingSecurityScopedResource()
                 defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
 
@@ -625,17 +705,21 @@ struct MusicLibraryView: View {
                 existingNames.insert(fileName)
                 let destURL = musicDir.appendingPathComponent(fileName)
 
-                guard copyMusicFileOrCleanup(from: url, to: destURL) else {
+                let copied = await Task.detached(priority: .userInitiated) {
+                    copyMusicFileOrCleanup(from: url, to: destURL)
+                }.value
+                guard copied else {
                     failedLabels.append(displayName)
                     continue
                 }
+                if Task.isCancelled { break }
 
                 let (durationMs, bpm) = await WaveformAnalyzer.shared.readTrackInfo(for: fileName)
                 importedTracks.append(ImportedTrackInfo(fileName: fileName, durationMs: durationMs, bpm: bpm))
             }
 
-            isImporting = false
             reload()
+            if Task.isCancelled { return }
 
             if !importedTracks.isEmpty {
                 let newSegments = buildSegmentsForImportedTracks(

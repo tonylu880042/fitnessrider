@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -45,13 +46,28 @@ import com.fitnessrider.ui.editor.ImportedTrackInfo
 import com.fitnessrider.ui.editor.buildSegmentsForImportedTracks
 import com.fitnessrider.ui.editor.musicTitleFromFileName
 import com.fitnessrider.ui.editor.resolveUniqueMusicFileName
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
+
+internal const val IMPORT_PROGRESS_DELAY_MS = 500L
+
+internal fun importProgressFraction(done: Int, total: Int): Float {
+    if (total <= 0) return 0f
+    return (done.toFloat() / total).coerceIn(0f, 1f)
+}
+
+private data class ImportProgress(val done: Int, val total: Int, val currentTitle: String)
 
 internal data class MusicLibraryTrack(
     val fileName: String,
@@ -154,6 +170,9 @@ fun MusicLibraryScreen(
     var selectedFileNames by remember { mutableStateOf(setOf<String>()) }
     var isLoading by remember { mutableStateOf(true) }
     var isImporting by remember { mutableStateOf(false) }
+    var importProgress by remember { mutableStateOf(ImportProgress(0, 0, "")) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importJob by remember { mutableStateOf<Job?>(null) }
 
     var folderUri by remember { mutableStateOf(ExternalMusicFolderPrefs.getFolderUri(context)) }
     var includeSubdirectories by remember { mutableStateOf(ExternalMusicFolderPrefs.isIncludeSubdirectories(context)) }
@@ -211,6 +230,25 @@ fun MusicLibraryScreen(
         isLoadingExternal = false
     }
 
+    fun startImport(total: Int, work: suspend () -> Unit) {
+        importProgress = ImportProgress(0, total, "")
+        isImporting = true
+        importJob = coroutineScope.launch {
+            val reveal = launch {
+                delay(IMPORT_PROGRESS_DELAY_MS)
+                showImportDialog = true
+            }
+            try {
+                work()
+            } finally {
+                reveal.cancel()
+                showImportDialog = false
+                isImporting = false
+                importJob = null
+            }
+        }
+    }
+
     val filteredTracks = remember(allTracks, searchQuery) {
         filterMusicLibraryTracks(allTracks, searchQuery)
     }
@@ -265,49 +303,58 @@ fun MusicLibraryScreen(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
-        isImporting = true
-        coroutineScope.launch {
+        startImport(uris.size) {
             val analyzer = WaveformAnalyzer.getInstance(context)
             val musicDir = repository.musicDirectory
             val existingNames = musicDir.list()?.toMutableSet() ?: mutableSetOf()
             val importedTracks = mutableListOf<ImportedTrackInfo>()
             val failedLabels = mutableListOf<String>()
 
-            for (uri in uris) {
-                var displayName = "imported_${System.currentTimeMillis()}_${importedTracks.size + failedLabels.size}.mp3"
-                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1 && cursor.moveToFirst()) {
-                        displayName = cursor.getString(nameIndex)
+            try {
+                for ((index, uri) in uris.withIndex()) {
+                    var displayName = "imported_${System.currentTimeMillis()}_${importedTracks.size + failedLabels.size}.mp3"
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1 && cursor.moveToFirst()) {
+                                displayName = cursor.getString(nameIndex)
+                            }
+                        }
                     }
-                }
-                val fileName = resolveUniqueMusicFileName(displayName, existingNames)
-                existingNames.add(fileName)
-                val destFile = File(musicDir, fileName)
+                    importProgress = ImportProgress(index, uris.size, musicTitleFromFileName(displayName))
+                    val fileName = resolveUniqueMusicFileName(displayName, existingNames)
+                    existingNames.add(fileName)
+                    val destFile = File(musicDir, fileName)
 
-                val copied = copyMusicFileOrCleanup(destFile) {
-                    context.contentResolver.openInputStream(uri)
-                        ?: throw java.io.IOException("無法讀取檔案：$displayName")
-                }
+                    val copied = withContext(Dispatchers.IO) {
+                        copyMusicFileOrCleanup(destFile) {
+                            context.contentResolver.openInputStream(uri)
+                                ?: throw java.io.IOException("無法讀取檔案：$displayName")
+                        }
+                    }
 
-                if (!copied) {
-                    android.util.Log.e("MusicLibrary", "Error importing music: $displayName")
-                    failedLabels.add(displayName)
-                    continue
-                }
+                    if (!copied) {
+                        android.util.Log.e("MusicLibrary", "Error importing music: $displayName")
+                        failedLabels.add(displayName)
+                        continue
+                    }
 
-                val waveform = analyzer.readTrackInfo(fileName)
-                importedTracks.add(
-                    ImportedTrackInfo(
-                        fileName = fileName,
-                        durationMs = waveform.durationMs,
-                        bpm = waveform.bpm
+                    val waveform = analyzer.readTrackInfo(fileName)
+                    importedTracks.add(
+                        ImportedTrackInfo(
+                            fileName = fileName,
+                            durationMs = waveform.durationMs,
+                            bpm = waveform.bpm
+                        )
                     )
-                )
+                }
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) { reload() }
+                throw e
             }
 
-            isImporting = false
             reload()
+            currentCoroutineContext().ensureActive()
 
             if (importedTracks.isNotEmpty()) {
                 onSegmentsCreated(
@@ -339,19 +386,19 @@ fun MusicLibraryScreen(
             TopNavBar(
                 title = "",
                 leading = {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(onClick = onDismiss, enabled = !isImporting) {
                         Text(text = "取消", color = Color.White, fontSize = 16.sp)
                     }
                 },
                 trailing = {
                     if (selectedTabIndex == 0) {
-                        TextButton(onClick = { musicPickerLauncher.launch(arrayOf("audio/*")) }) {
+                        TextButton(onClick = { musicPickerLauncher.launch(arrayOf("audio/*")) }, enabled = !isImporting) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(text = "匯入新檔", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        TextButton(onClick = { folderPickerLauncher.launch(null) }) {
+                        TextButton(onClick = { folderPickerLauncher.launch(null) }, enabled = !isImporting) {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -372,11 +419,13 @@ fun MusicLibraryScreen(
                 Tab(
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
+                    enabled = !isImporting,
                     text = { Text("已匯入音樂庫", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
                 Tab(
                     selected = selectedTabIndex == 1,
                     onClick = { selectedTabIndex = 1 },
+                    enabled = !isImporting,
                     text = { Text("音樂資料夾", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
             }
@@ -388,6 +437,7 @@ fun MusicLibraryScreen(
                     .fillMaxWidth()
                     .padding(16.dp),
                 singleLine = true,
+                enabled = !isImporting,
                 placeholder = { Text("搜尋曲名...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
             )
@@ -395,6 +445,7 @@ fun MusicLibraryScreen(
             Box(modifier = Modifier.weight(1f)) {
                 if (selectedTabIndex == 0) {
                     LibraryTabContent(
+                        enabled = !isImporting,
                         isLoading = isLoading,
                         allTracksEmpty = allTracks.isEmpty(),
                         filteredTracks = filteredTracks,
@@ -411,6 +462,7 @@ fun MusicLibraryScreen(
                     )
                 } else {
                     ExternalFolderTabContent(
+                        enabled = !isImporting,
                         folderUri = folderUri,
                         includeSubdirectories = includeSubdirectories,
                         onIncludeSubdirectoriesChange = {
@@ -451,13 +503,13 @@ fun MusicLibraryScreen(
                         if (selectedTabIndex == 0) {
                             val selectedTracks = allTracks.filter { selectedFileNames.contains(it.fileName) }
                             if (selectedTracks.isNotEmpty()) {
-                                isImporting = true
-                                coroutineScope.launch {
-                                    val analyzedTracks = selectedTracks.map {
-                                        val result = analyzer.readTrackInfo(it.fileName)
-                                        it.copy(durationMs = result.durationMs, bpm = result.bpm)
+                                startImport(selectedTracks.size) {
+                                    val analyzedTracks = selectedTracks.mapIndexed { index, track ->
+                                        importProgress = ImportProgress(index, selectedTracks.size, track.title)
+                                        val result = analyzer.readTrackInfo(track.fileName)
+                                        track.copy(durationMs = result.durationMs, bpm = result.bpm)
                                     }
-                                    isImporting = false
+                                    currentCoroutineContext().ensureActive()
                                     onSegmentsCreated(
                                         buildSegmentsFromLibrarySelection(
                                             tracks = analyzedTracks,
@@ -473,13 +525,18 @@ fun MusicLibraryScreen(
                                 selectedExternalUris.contains(it.documentUriString)
                             }
                             if (selectedEntries.isNotEmpty()) {
-                                isImporting = true
-                                coroutineScope.launch {
-                                    val analyzed = selectedEntries.associate {
-                                        val result = analyzer.readTrackInfo(it.documentUriString)
-                                        it.documentUriString to (result.durationMs to result.bpm)
+                                startImport(selectedEntries.size) {
+                                    val analyzed = mutableMapOf<String, Pair<Int, Double>>()
+                                    selectedEntries.forEachIndexed { index, entry ->
+                                        importProgress = ImportProgress(
+                                            index,
+                                            selectedEntries.size,
+                                            musicTitleFromFileName(entry.displayName)
+                                        )
+                                        val result = analyzer.readTrackInfo(entry.documentUriString)
+                                        analyzed[entry.documentUriString] = result.durationMs to result.bpm
                                     }
-                                    isImporting = false
+                                    currentCoroutineContext().ensureActive()
                                     onSegmentsCreated(
                                         buildSegmentsFromExternalSelection(
                                             entries = selectedEntries,
@@ -504,11 +561,53 @@ fun MusicLibraryScreen(
                 }
             }
         }
+        if (showImportDialog) {
+            ImportProgressDialog(
+                progress = importProgress,
+                onCancel = { importJob?.cancel() }
+            )
+        }
     }
 }
 
 @Composable
+private fun ImportProgressDialog(progress: ImportProgress, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        containerColor = CanvasWhite,
+        title = { Text("正在加入歌曲", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+        text = {
+            Column {
+                Text("${progress.done} / ${progress.total}", fontSize = 14.sp, color = TextSecondary)
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { importProgressFraction(progress.done, progress.total) },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = TopBarGreen,
+                    trackColor = CardBorder
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = progress.currentTitle,
+                    fontSize = 14.sp,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCancel) {
+                Text("取消", color = AccentRed, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
 private fun LibraryTabContent(
+    enabled: Boolean,
     isLoading: Boolean,
     allTracksEmpty: Boolean,
     filteredTracks: List<MusicLibraryTrack>,
@@ -542,6 +641,7 @@ private fun LibraryTabContent(
                         subtitle = "${formatDuration(track.durationMs)} ・ ${track.bpm.toInt()} BPM",
                         isSelected = isSelected,
                         isPlaying = isPlaying,
+                        enabled = enabled,
                         onClick = { onToggleSelect(track) },
                         onTogglePreview = { onTogglePreview(track) }
                     )
@@ -553,6 +653,7 @@ private fun LibraryTabContent(
 
 @Composable
 private fun ExternalFolderTabContent(
+    enabled: Boolean,
     folderUri: Uri?,
     includeSubdirectories: Boolean,
     onIncludeSubdirectoriesChange: (Boolean) -> Unit,
@@ -584,6 +685,7 @@ private fun ExternalFolderTabContent(
                 Switch(
                     checked = includeSubdirectories,
                     onCheckedChange = onIncludeSubdirectoriesChange,
+                    enabled = enabled,
                     colors = SwitchDefaults.colors(checkedTrackColor = TopBarGreen)
                 )
             }
@@ -595,7 +697,8 @@ private fun ExternalFolderTabContent(
                     icon = Icons.Default.Folder,
                     message = "尚未選擇音樂資料夾",
                     actionLabel = "選擇資料夾",
-                    onAction = onPickFolder
+                    onAction = onPickFolder,
+                    actionEnabled = enabled
                 )
             }
             errorMessage != null -> {
@@ -603,7 +706,8 @@ private fun ExternalFolderTabContent(
                     icon = Icons.Default.Warning,
                     message = errorMessage,
                     actionLabel = "重新選擇資料夾",
-                    onAction = onPickFolder
+                    onAction = onPickFolder,
+                    actionEnabled = enabled
                 )
             }
             isLoading -> {
@@ -631,6 +735,7 @@ private fun ExternalFolderTabContent(
                             subtitle = "外部資料夾",
                             isSelected = isSelected,
                             isPlaying = isPlaying,
+                            enabled = enabled,
                             onClick = { onToggleSelect(entry) },
                             onTogglePreview = { onTogglePreview(entry) }
                         )
@@ -646,7 +751,8 @@ private fun EmptyState(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     message: String,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    actionEnabled: Boolean = true
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -658,7 +764,7 @@ private fun EmptyState(
         Text(text = message, color = TextSecondary, fontSize = 14.sp)
         if (actionLabel != null && onAction != null) {
             Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = onAction, colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)) {
+            Button(onClick = onAction, enabled = actionEnabled, colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)) {
                 Text(actionLabel, fontWeight = FontWeight.Bold)
             }
         }
@@ -671,6 +777,7 @@ private fun MusicRow(
     subtitle: String,
     isSelected: Boolean,
     isPlaying: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     onTogglePreview: () -> Unit
 ) {
@@ -679,13 +786,14 @@ private fun MusicRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (isSelected) TopBarGreen.copy(alpha = 0.1f) else CardBackground)
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(
             checked = isSelected,
             onCheckedChange = { onClick() },
+            enabled = enabled,
             colors = CheckboxDefaults.colors(checkedColor = TopBarGreen)
         )
         Spacer(modifier = Modifier.width(4.dp))
@@ -703,7 +811,7 @@ private fun MusicRow(
                 color = TextSecondary
             )
         }
-        IconButton(onClick = onTogglePreview) {
+        IconButton(onClick = onTogglePreview, enabled = enabled) {
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (isPlaying) "暫停試聽" else "試聽",
