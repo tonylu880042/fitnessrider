@@ -8,7 +8,12 @@ import android.net.Uri
 import android.util.Log
 import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.data.MusicSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteOrder
@@ -50,6 +55,13 @@ fun quickTrackInfo(
     val bpm = if (cacheIsCurrent && cachedBpm != null) cachedBpm else tagBpm ?: 128.0
     return QuickTrackInfo(durationMs, bpm)
 }
+
+const val DECODE_STALL_TIMEOUT_MS = 10_000L
+
+fun isDecodeStalled(lastProgressAtMs: Long, nowMs: Long): Boolean =
+    nowMs - lastProgressAtMs >= DECODE_STALL_TIMEOUT_MS
+
+private class DecodeStalledException : Exception("Audio decode made no progress")
 
 class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
@@ -99,36 +111,47 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             return@withContext cachedResult
         }
         val fallback = { cachedResult ?: generateFallbackResult(targetPoints) }
-        val tagBpm = repository?.let { repo ->
-            MusicSource.openInputStream(repo.context, repo, fileName)?.use { Id3BpmReader.read(it) }
-        }
 
-        if (MusicSource.isExternalUri(fileName)) {
-            val context = repository?.context
-                ?: return@withContext fallback()
-            return@withContext try {
-                val result = extractWaveformFromUri(context, Uri.parse(fileName), targetPoints, tagBpm)
-                repository.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
+        decodeMutex.withLock {
+            val latest = repository?.getWaveform(fileName)
+            if (latest != null && (repository?.getWaveformAnalysisVersion(fileName) ?: 0) >= ANALYSIS_VERSION) {
+                return@withContext WaveformResult(samples = latest.first, durationMs = latest.second, bpm = latest.third)
+            }
+            val tagBpm = repository?.let { repo ->
+                MusicSource.openInputStream(repo.context, repo, fileName)?.use { Id3BpmReader.read(it) }
+            }
+
+            if (MusicSource.isExternalUri(fileName)) {
+                val context = repository?.context
+                    ?: return@withContext fallback()
+                return@withContext try {
+                    val result = extractWaveformFromUri(context, Uri.parse(fileName), targetPoints, tagBpm)
+                    repository.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
+                    result
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("WaveformAnalyzer", "Failed to decode external audio $fileName, using fallback", e)
+                    fallback()
+                }
+            }
+
+            val musicDir = repository?.musicDirectory
+            val file = if (musicDir != null) File(musicDir, fileName) else File(fileName)
+            if (!file.exists() || file.length() == 0L) {
+                return@withContext fallback()
+            }
+
+            try {
+                val result = extractWaveformFromFile(file, targetPoints, tagBpm)
+                repository?.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
                 result
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("WaveformAnalyzer", "Failed to decode external audio $fileName, using fallback", e)
+                Log.e("WaveformAnalyzer", "Failed to decode audio file $fileName, using fallback", e)
                 fallback()
             }
-        }
-
-        val musicDir = repository?.musicDirectory
-        val file = if (musicDir != null) File(musicDir, fileName) else File(fileName)
-        if (!file.exists() || file.length() == 0L) {
-            return@withContext fallback()
-        }
-
-        try {
-            val result = extractWaveformFromFile(file, targetPoints, tagBpm)
-            repository?.saveWaveform(fileName, result.samples, result.durationMs, result.bpm, ANALYSIS_VERSION)
-            result
-        } catch (e: Exception) {
-            Log.e("WaveformAnalyzer", "Failed to decode audio file $fileName, using fallback", e)
-            fallback()
         }
     }
 
@@ -138,7 +161,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         bpm = 128.0
     )
 
-    fun extractWaveformFromFile(file: File, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
+    suspend fun extractWaveformFromFile(file: File, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.absolutePath)
@@ -148,7 +171,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         }
     }
 
-    fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
+    suspend fun extractWaveformFromUri(context: Context, uri: Uri, targetPoints: Int = 800, tagBpm: Double? = null): WaveformResult {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(context, uri, null)
@@ -158,7 +181,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
         }
     }
 
-    private fun decodeWaveform(extractor: MediaExtractor, targetPoints: Int, tagBpm: Double?): WaveformResult {
+    private suspend fun decodeWaveform(extractor: MediaExtractor, targetPoints: Int, tagBpm: Double?): WaveformResult {
         var codec: MediaCodec? = null
         try {
             var audioTrackIndex = -1
@@ -193,8 +216,11 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
             var isOutputEos = false
             val kTimeoutUs = 5000L
             var envelope: EnergyEnvelopeAccumulator? = null
+            var lastProgressAtMs = System.nanoTime() / 1_000_000
 
             while (!isOutputEos) {
+                currentCoroutineContext().ensureActive()
+                if (isDecodeStalled(lastProgressAtMs, System.nanoTime() / 1_000_000)) throw DecodeStalledException()
                 if (!isInputEos) {
                     val inputIndex = codec.dequeueInputBuffer(kTimeoutUs)
                     if (inputIndex >= 0) {
@@ -204,10 +230,12 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
                             if (sampleSize < 0) {
                                 codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                 isInputEos = true
+                                lastProgressAtMs = System.nanoTime() / 1_000_000
                             } else {
                                 val sampleTime = extractor.sampleTime
                                 codec.queueInputBuffer(inputIndex, 0, sampleSize, sampleTime, 0)
                                 extractor.advance()
+                                lastProgressAtMs = System.nanoTime() / 1_000_000
                             }
                         }
                     }
@@ -215,6 +243,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
                 val outputIndex = codec.dequeueOutputBuffer(info, kTimeoutUs)
                 if (outputIndex >= 0) {
+                    lastProgressAtMs = System.nanoTime() / 1_000_000
                     if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         isOutputEos = true
                     }
@@ -327,6 +356,7 @@ class WaveformAnalyzer(private val repository: ClassRepository? = null) {
 
     companion object {
         const val ANALYSIS_VERSION = 1
+        private val decodeMutex = Mutex()
         private const val MIN_BPM = 65.0
         private const val MAX_BPM = 175.0
 

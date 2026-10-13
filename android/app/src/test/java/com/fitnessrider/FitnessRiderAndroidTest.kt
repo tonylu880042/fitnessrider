@@ -5,6 +5,7 @@ import com.fitnessrider.audio.CrossfadeFinishCoordinator
 import com.fitnessrider.audio.HapticFeedbackManager
 import com.fitnessrider.audio.SynchronizedOnceCache
 import com.fitnessrider.audio.QuickTrackInfo
+import com.fitnessrider.audio.isDecodeStalled
 import com.fitnessrider.audio.quickTrackInfo
 import com.fitnessrider.data.ExternalMusicEntry
 import com.fitnessrider.data.MusicSource
@@ -1990,5 +1991,14 @@ class FitnessRiderAndroidTest {
             QuickTrackInfo(300_000, 128.0),
             quickTrackInfo(null, null, false, -5, null)
         )
+    }
+
+    @Test
+    fun testIsDecodeStalled() {
+        assertFalse(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 1_000L))
+        assertFalse(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 10_999L))
+        assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 11_000L))
+        assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 600_000L))
+        assertFalse(isDecodeStalled(lastProgressAtMs = 50_000L, nowMs = 1_000L))
     }
 }
