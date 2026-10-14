@@ -769,9 +769,17 @@ iOS 不開放讀取其他 App 的播放資訊。**Tony 2026-10-13 定案：接�
 
 實機上按「開啟歌單」會先跳出系統的「選擇開啟方式」（Spotify／瀏覽器），因為 `https` 連結有多個 App 可處理。
 
-- Android 11 以上（API 30）：先帶 `Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER` 開啟，讓系統直接交給能處理這個連結的非瀏覽器 App；
-  丟 `ActivityNotFoundException`（沒裝對應 App）時退回原本不帶旗標的 `ACTION_VIEW`，由瀏覽器開。API 29 以下維持原本做法。
-- **不要寫 Spotify／KKBOX 專屬的 package 判斷**，用系統旗標就夠，其他串流服務一體適用。
+- 用 `PackageManager.queryIntentActivities` 查出能處理這個連結的 App，扣掉瀏覽器（能處理泛用網址 `https://www.example.com` 的就是瀏覽器）；
+  剛好剩一個就 `setPackage` 直接交給它，其餘情況維持不指定對象的 `ACTION_VIEW`。選擇邏輯是純函式 `soleNonBrowserPackage`。
+  Android 11 以上的套件可見性靠 manifest 的 `<queries>`，不用 `QUERY_ALL_PACKAGES`。
+- **`<queries>` 一定要逐一列出串流服務的連結網域**（目前只有 `open.spotify.com`）。只宣告 `https` 而不寫 host 只看得到瀏覽器：
+  串流 App 的 intent filter 綁定特定網域，不寫 host 的宣告比對不到它，我們的程式就查不到它、選不出來，照樣跳選擇視窗。
+  2026-10-14 實機驗證：只有泛用宣告時無效，加上 `open.spotify.com` 後直接進 Spotify。
+  這是全案唯一出現串流服務名稱的地方，而且只是可見性宣告；**程式碼裡仍然不寫任何服務專屬的 package 或判斷**。
+- 要支援其他服務（KKBOX、Apple Music、YouTube Music）直接開啟，就在 `<queries>` 加該服務分享連結的網域，
+  並在裝了該 App 的實機上確認。沒列到的服務不會壞，只是第一次會跳系統的選擇視窗，教練選「一律採用」即可。
+- **不要改回 `Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER`**：2026-10-14 在 Tab S6 Lite（Android 11）實測無效。
+  候選同時有串流 App 和瀏覽器時它不會幫忙選，照樣跳「選擇開啟工具」；它只在「只有瀏覽器能開」時丟例外。
 - 連結驗證（`normalizedStreamingPlaylistUrl`）與「開不了要有提示」不變。
 - iOS 不改：`UIApplication.open` 對 universal link 本來就直接進 App。這點尚未在實機確認，iPad 測試時一併看。
 
