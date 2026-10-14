@@ -1975,11 +1975,14 @@ final class FitnessRiderTests: XCTestCase {
     }
 
     func testHudScaleClampsAroundSixHundredFortyBase() {
-        XCTAssertEqual(hudScale(availableHeight: 640), 1.0, accuracy: 0.0001)
-        XCTAssertEqual(hudScale(availableHeight: 710.4), 1.11, accuracy: 0.0001)
-        XCTAssertEqual(hudScale(availableHeight: 330), 0.7, accuracy: 0.0001)
-        XCTAssertEqual(hudScale(availableHeight: 2000), 1.6, accuracy: 0.0001)
-        XCTAssertEqual(hudScale(availableHeight: 768), 1.2, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 640, availableWidth: 2000), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 710.4, availableWidth: 2000), 1.11, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 330, availableWidth: 2000), 0.7, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 2000, availableWidth: 3000), 1.6, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 768, availableWidth: 2000), 1.2, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 760, availableWidth: 1180), 1180.0 / 1220.0, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 2000, availableWidth: 500), 0.7, accuracy: 0.0001)
+        XCTAssertEqual(hudScale(availableHeight: 800, availableWidth: 1220), 1.0, accuracy: 0.0001)
     }
 
     func testRateStepForSwipeHorizontalPastThreshold() {

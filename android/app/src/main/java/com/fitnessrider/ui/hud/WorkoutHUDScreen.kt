@@ -132,7 +132,8 @@ private fun nonBrowserHandlerPackage(context: Context, url: String): String? = t
     null
 }
 
-fun hudScale(availableHeight: Float): Float = (availableHeight / 640f).coerceIn(0.7f, 1.6f)
+fun hudScale(availableHeight: Float, availableWidth: Float): Float =
+    minOf(availableHeight / 640f, availableWidth / 1220f).coerceIn(0.7f, 1.6f)
 
 @Composable
 fun WorkoutHUDScreen(
@@ -462,7 +463,7 @@ fun WorkoutHUDScreen(
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val hudHeight = maxHeight.value
-            val s = hudScale(hudHeight)
+            val s = hudScale(hudHeight, maxWidth.value)
             Row(modifier = Modifier.fillMaxSize()) {
                 if (isDrawerOpen) {
                     Column(

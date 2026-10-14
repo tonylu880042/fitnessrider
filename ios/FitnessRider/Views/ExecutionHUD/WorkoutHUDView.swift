@@ -53,8 +53,8 @@ func shouldAutoStartOnHudEntry(isStreamingSegment: Bool, followEnabled: Bool, is
     isStreamingSegment && followEnabled ? isOtherAudioPlaying : true
 }
 
-func hudScale(availableHeight: CGFloat) -> CGFloat {
-    min(max(availableHeight / 640, 0.7), 1.6)
+func hudScale(availableHeight: CGFloat, availableWidth: CGFloat) -> CGFloat {
+    min(max(min(availableHeight / 640, availableWidth / 1220), 0.7), 1.6)
 }
 
 public struct WorkoutHUDView: View {
@@ -214,7 +214,7 @@ public struct WorkoutHUDView: View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
             let hudHeight = geo.size.height - 60
-            let scale = hudScale(availableHeight: hudHeight)
+            let scale = hudScale(availableHeight: hudHeight, availableWidth: geo.size.width)
 
             VStack(spacing: 0) {
                 cockpitHeader
