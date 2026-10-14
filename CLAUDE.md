@@ -763,6 +763,34 @@ iOS 不開放讀取其他 App 的播放資訊。**Tony 2026-10-13 定案：接�
   - 已知限制：曲名比對是完全相等（不分大小寫、去前後空白）。串流 App 的曲名常帶 "(Remastered)"、feat. 等字樣，
     教練要用「帶入正在播放的歌」建段落才會對得上。HUD 左側清單的時長讀的是進 HUD 時的課表，曲長校正後要重進才更新。
 
+### T6 — 實機回饋的兩個修正（2026-10-14 Tony 定案：兩個都修）
+
+**T6-1「開啟歌單」直接進串流 App（Android）**
+
+實機上按「開啟歌單」會先跳出系統的「選擇開啟方式」（Spotify／瀏覽器），因為 `https` 連結有多個 App 可處理。
+
+- Android 11 以上（API 30）：先帶 `Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER` 開啟，讓系統直接交給能處理這個連結的非瀏覽器 App；
+  丟 `ActivityNotFoundException`（沒裝對應 App）時退回原本不帶旗標的 `ACTION_VIEW`，由瀏覽器開。API 29 以下維持原本做法。
+- **不要寫 Spotify／KKBOX 專屬的 package 判斷**，用系統旗標就夠，其他串流服務一體適用。
+- 連結驗證（`normalizedStreamingPlaylistUrl`）與「開不了要有提示」不變。
+- iOS 不改：`UIApplication.open` 對 universal link 本來就直接進 App。這點尚未在實機確認，iPad 測試時一併看。
+
+**T6-2 串流課表進 HUD 時等音樂開始（雙端）**
+
+實機上一進 HUD 時鐘就開始走，即使串流 App 還沒按播放；要等音樂開始、位置校正把時鐘拉回來才對齊，開頭那幾秒在空跑。
+
+- 進 HUD 時，若起始段落是串流段落且「跟隨串流音樂播放／暫停」開著：不再無條件開始。以當下的播放訊號決定——
+  已經在播就立刻開始，沒在播就停著等。之後照 T3 的邊緣觸發（音樂開始 → 時鐘開始）。
+- 訊號來源與 T3／T4 相同：Android 已授權且有 session 用 session 的播放狀態，否則 `isMusicActive`；iOS `isOtherAudioPlaying`。
+  Android 要等 `StreamingSessionMonitor` 啟動過一次再判斷，不然第一輪永遠讀不到 session。
+- **只在「進 HUD」這一次這樣做。** 課堂中途換進串流段落仍照 T3（以當下訊號為初始、不動作），否則教練的手動操作會被打回。
+- 開關關閉、或起始段落是一般有音檔的段落 → 維持現況（進 HUD 自動開始）。
+- 等待中教練按 HUD 播放鍵 → 照常開始（Android 已授權時會同時讓串流 App 播放，這是 T4 既有行為）。
+- 等待中在「開啟歌單」那一列顯示一行提示「請在串流 App 開始播放，或按播放鍵開始」，音樂開始後消失。套 `hudScale`、單行、不擋手勢。
+- 純函式雙端同名 `shouldAutoStartOnHudEntry(isStreamingSegment, followEnabled, isOtherAudioPlaying)`：
+  非串流 → true；串流且開關關 → true；串流且開關開 → 等於訊號。測試涵蓋這四種組合。
+- 已知取捨：iOS 的訊號尚未在實機驗證。若它恆為「沒在播」，iOS 的串流課表進 HUD 後要教練自己按播放才開始——可接受，iPad 實機驗完再決定要不要調整。
+
 ### T5 — iOS：Apple「音樂」App 同步（延後，需實機）
 
 iOS 唯一能讀到的是 Apple 自己的「音樂」App（`MPMusicPlayerController.systemMusicPlayer`，需 `NSAppleMusicUsageDescription`）。
