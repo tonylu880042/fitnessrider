@@ -748,8 +748,15 @@ iOS 不開放讀取其他 App 的播放資訊。**Tony 2026-10-13 定案：接�
   - 資料庫升級已在模擬器實測（2026-10-14）：裝 v1.0.12 建課表後覆蓋安裝新版，Room 3→4，課表、段落、cue 筆數與 id 不變，
     `classes` 多出 `streamingPlaylistUrl` 欄位。專案沒有能自動跑 migration 的測試，**之後每次改 Room 版本都要照這個方式手動驗一次**：
     根目錄留有歷次發布的 `fitnessrider-v*.apk` 可當舊版，debug 版可用 `adb shell run-as com.fitnessrider.coach sqlite3 databases/FitnessRider.db` 查。
-  - 未驗：播放／暫停跟隨（T3 的 `isMusicActive` 與 T4 的 session 兩條路徑）、HUD 遙控（播放、暫停、上下首、±10 秒）、
-    換歌自動換段與「不在課表中」提示、曲長自動校正、「開啟歌單」實際開啟。
+  - **Android 實機＋真的 Spotify 已驗（2026-10-14，Samsung Tab S6 Lite SM-P610、Android 11、v1.0.13）**，全部通過：
+    「帶入正在播放的歌」建三首課表；Spotify 端播放／暫停 → HUD 跟隨；HUD 暫停／播放／±10 秒／下一首／上一首（超過 3 秒回曲首）
+    → Spotify 同步；Spotify 端換歌 → HUD 跳到對應段落；播課表外的歌 → 顯示「不在課表中」且段落不動；
+    一首歌自然播完 → 兩邊一起進下一段，沒有卡頓；撤銷通知存取權 → 不閃退，退回 `isMusicActive`（媒體音量為 0 時訊號仍有效）；
+    一般有音檔的課表不受影響，也不會遙控 Spotify。
+  - 實機觀察到、尚未處理的兩點：
+    1. 「開啟歌單」跳出系統的「選擇開啟方式」對話框（Spotify／瀏覽器），不是直接進 Spotify——`https` 連結有多個 App 可處理。
+    2. 進 HUD 時課堂時鐘會立刻開始走，即使 Spotify 還在暫停；等 Spotify 開始播放時位置校正會把時鐘拉回來。
+  - 仍未驗：曲長自動校正（這次曲長都由 Spotify 帶入，本來就正確）、KKBOX 等其他播放器、iOS 的 `isOtherAudioPlaying`（要 iPad 實機）。
   - 模擬器替身不可靠的原因：Chrome 退到背景後會被系統關掉，媒體鍵會被送到別的 App，所以這些項目不要再用模擬器驗。
   - 實機要特別看的兩點：各家 App 回報的播放位置品質；換歌緩衝時 `BUFFERING` 被當成暫停，時鐘會短暫停一下再走，
     若覺得干擾就把 `BUFFERING` 也算成播放中。
