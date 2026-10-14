@@ -1874,12 +1874,12 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
-    fun testHudScaleClampsAroundEightHundredBase() {
-        assertEquals(1.0f, hudScale(800f), 0.0001f)
-        assertEquals(0.93f, hudScale(744f), 0.0001f)
+    fun testHudScaleClampsAroundSixHundredFortyBase() {
+        assertEquals(1.0f, hudScale(640f), 0.0001f)
+        assertEquals(1.11f, hudScale(710.4f), 0.0001f)
         assertEquals(0.7f, hudScale(330f), 0.0001f)
         assertEquals(1.6f, hudScale(2000f), 0.0001f)
-        assertEquals(1.2f, hudScale(960f), 0.0001f)
+        assertEquals(1.2f, hudScale(768f), 0.0001f)
     }
 
     @Test

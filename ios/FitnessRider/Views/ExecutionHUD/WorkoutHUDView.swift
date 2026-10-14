@@ -54,7 +54,7 @@ func shouldAutoStartOnHudEntry(isStreamingSegment: Bool, followEnabled: Bool, is
 }
 
 func hudScale(availableHeight: CGFloat) -> CGFloat {
-    min(max(availableHeight / 800, 0.7), 1.6)
+    min(max(availableHeight / 640, 0.7), 1.6)
 }
 
 public struct WorkoutHUDView: View {
@@ -393,15 +393,15 @@ public struct WorkoutHUDView: View {
                         HStack(spacing: 12) {
                             Text("\(index + 1)")
                                 .font(.system(size: 14 * scale, weight: .bold))
-                                .foregroundColor(isCurrent ? .white : FitnessRiderTheme.textSecondary)
+                                .foregroundColor(isCurrent ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.textSecondary)
                                 .frame(width: 28 * scale, height: 28 * scale)
-                                .background(isCurrent ? FitnessRiderTheme.topBarGreenDark : Color.clear)
+                                .background(isCurrent ? Color.white : Color.clear)
                                 .clipShape(Circle())
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(segment.title)
                                     .font(.system(size: 18 * scale, weight: isCurrent ? .bold : .semibold))
-                                    .foregroundColor(isCurrent ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.textPrimary)
+                                    .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textPrimary)
                                     .lineLimit(1)
 
                                 HStack(spacing: 8) {
@@ -410,7 +410,7 @@ public struct WorkoutHUDView: View {
                                     Text("\(Int(segment.effectiveBpm)) BPM")
                                 }
                                 .font(.system(size: 14 * scale))
-                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                                .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textSecondary)
                                 .lineLimit(1)
                             }
 
@@ -419,12 +419,12 @@ public struct WorkoutHUDView: View {
                             if isCurrent && audioManager.isPlaying {
                                 Image(systemName: "waveform")
                                     .font(.system(size: 14))
-                                    .foregroundColor(FitnessRiderTheme.topBarGreen)
+                                    .foregroundColor(.white)
                             }
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(isCurrent ? FitnessRiderTheme.topBarGreen.opacity(0.12) : Color.clear)
+                        .background(isCurrent ? FitnessRiderTheme.topBarGreenDark : Color.clear)
                         .cornerRadius(8)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -511,28 +511,31 @@ public struct WorkoutHUDView: View {
                     }
                 }
 
-                HStack(spacing: 6) {
+                HStack(spacing: 24 * scale) {
                     Button("-2%") {
                         audioManager.adjustRatePercent(by: -2.0)
                     }
-                    .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
+                    .buttonStyle(HUDTempoButtonStyle(fontSize: 20 * scale, scale: scale))
                     .disabled(isStreamingSegmentActive)
 
-                    Button("100%") {
-                        audioManager.resetRate()
-                    }
-                    .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 16 * scale))
-                    .disabled(isStreamingSegmentActive)
+                    Text(String(format: "%.0f%%", audioManager.currentRate * 100))
+                        .font(.system(size: 28 * scale, weight: .bold, design: .monospaced))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .lineLimit(1)
 
                     Button("+2%") {
                         audioManager.adjustRatePercent(by: 2.0)
                     }
-                    .buttonStyle(HUDTempoButtonStyle(fontSize: 16 * scale))
+                    .buttonStyle(HUDTempoButtonStyle(fontSize: 20 * scale, scale: scale))
                     .disabled(isStreamingSegmentActive)
 
-                    Text(String(format: "%.0f%%", audioManager.currentRate * 100))
-                        .font(.system(size: 18 * scale, weight: .bold, design: .monospaced))
-                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    Spacer(minLength: 48 * scale)
+
+                    Button("重置") {
+                        audioManager.resetRate()
+                    }
+                    .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 20 * scale, scale: scale))
+                    .disabled(isStreamingSegmentActive)
                 }
             }
 
@@ -665,12 +668,14 @@ public struct WorkoutHUDView: View {
 
                 HStack(alignment: .lastTextBaseline, spacing: 2) {
                     Text(formattedTotalElapsed)
-                        .font(.system(size: 20 * scale, weight: .black, design: .monospaced))
+                        .font(.system(size: 18 * scale, weight: .black, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .lineLimit(1)
 
                     Text("/ \(formattedTotalDuration)")
-                        .font(.system(size: 14 * scale, weight: .medium, design: .monospaced))
+                        .font(.system(size: 12 * scale, weight: .medium, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textSecondary)
+                        .lineLimit(1)
                 }
             }
         }
@@ -923,14 +928,15 @@ struct HUDTempoButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var isPrimary: Bool = false
     var fontSize: CGFloat = 14
+    var scale: CGFloat = 1
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: fontSize, weight: .bold))
             .foregroundColor(isPrimary ? .white : FitnessRiderTheme.textPrimary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(minWidth: 54, minHeight: 44)
+            .padding(.horizontal, 16 * scale)
+            .padding(.vertical, 12 * scale)
+            .frame(minWidth: 88 * scale, minHeight: 64 * scale)
             .background(isPrimary ? FitnessRiderTheme.topBarGreen : FitnessRiderTheme.cardBorder)
             .cornerRadius(8)
             .contentShape(Rectangle())

@@ -132,7 +132,7 @@ private fun nonBrowserHandlerPackage(context: Context, url: String): String? = t
     null
 }
 
-fun hudScale(availableHeight: Float): Float = (availableHeight / 800f).coerceIn(0.7f, 1.6f)
+fun hudScale(availableHeight: Float): Float = (availableHeight / 640f).coerceIn(0.7f, 1.6f)
 
 @Composable
 fun WorkoutHUDScreen(
@@ -505,21 +505,21 @@ fun WorkoutHUDScreen(
                                             audioManager.jumpToSegment(index)
                                             audioManager.play()
                                         }
-                                        .background(if (isCurrent) TopBarGreen.copy(alpha = 0.12f) else Color.Transparent)
+                                        .background(if (isCurrent) TopBarGreenDark else Color.Transparent)
                                         .padding(horizontal = 14.dp, vertical = (10 * s).dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .size((28 * s).dp)
-                                            .background(if (isCurrent) TopBarGreenDark else Color.Transparent, CircleShape),
+                                            .background(if (isCurrent) Color.White else Color.Transparent, CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = "${index + 1}",
                                             fontSize = (14 * s).sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isCurrent) Color.White else TextSecondary
+                                            color = if (isCurrent) TopBarGreenDark else TextSecondary
                                         )
                                     }
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -528,14 +528,14 @@ fun WorkoutHUDScreen(
                                             text = segment.title,
                                             fontSize = (18 * s).sp,
                                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                                            color = if (isCurrent) TopBarGreenDark else TextPrimary,
+                                            color = if (isCurrent) Color.White else TextPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "${segment.formattedDuration} • ${segment.effectiveBpm.toInt()} BPM",
                                             fontSize = (14 * s).sp,
-                                            color = TextSecondary,
+                                            color = if (isCurrent) Color.White else TextSecondary,
                                             maxLines = 1
                                         )
                                     }
@@ -778,17 +778,21 @@ fun WorkoutHUDScreen(
                                         Row(verticalAlignment = Alignment.Bottom) {
                                             Text(
                                                 text = formattedTotalElapsed,
-                                                fontSize = (20 * s).sp,
+                                                fontSize = (18 * s).sp,
                                                 fontWeight = FontWeight.Black,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = TextPrimary
+                                                color = TextPrimary,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                             Text(
                                                 text = " / $formattedTotalDuration",
-                                                fontSize = (14 * s).sp,
+                                                fontSize = (12 * s).sp,
                                                 fontWeight = FontWeight.Medium,
                                                 fontFamily = FontFamily.Monospace,
                                                 color = TextSecondary,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 modifier = Modifier.padding(bottom = 1.dp)
                                             )
                                         }
@@ -875,47 +879,54 @@ fun WorkoutHUDScreen(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy((24 * s).dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Button(
                                 onClick = { audioManager.adjustRatePercent(-2.0) },
                                 enabled = !isStreamingSegmentActive,
                                 colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                modifier = Modifier.defaultMinSize(minWidth = (88 * s).dp, minHeight = (64 * s).dp),
+                                contentPadding = PaddingValues(horizontal = (16 * s).dp, vertical = (12 * s).dp)
                             ) {
-                                Text(text = "-2%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "-2%", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
 
-                            Button(
-                                onClick = { audioManager.resetRate() },
-                                enabled = !isStreamingSegmentActive,
-                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Text(text = "100%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
+                            Text(
+                                text = "${(currentRate * 100).toInt()}%",
+                                fontSize = (28 * s).sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextPrimary,
+                                maxLines = 1
+                            )
 
                             Button(
                                 onClick = { audioManager.adjustRatePercent(2.0) },
                                 enabled = !isStreamingSegmentActive,
                                 colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.defaultMinSize(minWidth = 52.dp, minHeight = 48.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                modifier = Modifier.defaultMinSize(minWidth = (88 * s).dp, minHeight = (64 * s).dp),
+                                contentPadding = PaddingValues(horizontal = (16 * s).dp, vertical = (12 * s).dp)
                             ) {
-                                Text(text = "+2%", fontSize = (16 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "+2%", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
 
-                            Text(
-                                text = "${(currentRate * 100).toInt()}%",
-                                fontSize = (18 * s).sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = TextSecondary
-                            )
+                            Spacer(modifier = Modifier.weight(1f).widthIn(min = (48 * s).dp))
+
+                            Button(
+                                onClick = { audioManager.resetRate() },
+                                enabled = !isStreamingSegmentActive,
+                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.defaultMinSize(minWidth = (88 * s).dp, minHeight = (64 * s).dp),
+                                contentPadding = PaddingValues(horizontal = (16 * s).dp, vertical = (12 * s).dp)
+                            ) {
+                                Text(text = "重置", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
 
