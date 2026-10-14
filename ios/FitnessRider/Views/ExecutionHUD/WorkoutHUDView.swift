@@ -49,6 +49,10 @@ func streamingFollowStep(state: StreamingFollowState?, signal: Bool, nowMs: Int)
     return (StreamingFollowState(signal: signal, pendingSinceMs: nil), signal ? .play : .pause)
 }
 
+func shouldAutoStartOnHudEntry(isStreamingSegment: Bool, followEnabled: Bool, isOtherAudioPlaying: Bool) -> Bool {
+    isStreamingSegment && followEnabled ? isOtherAudioPlaying : true
+}
+
 func hudScale(availableHeight: CGFloat) -> CGFloat {
     min(max(availableHeight / 800, 0.7), 1.6)
 }
@@ -66,6 +70,7 @@ public struct WorkoutHUDView: View {
     @State private var pulseAlpha: CGFloat = 1.0
     @State private var countdownPulse: CGFloat = 1.0
     @State private var isShowingPlaylistOpenError: Bool = false
+    @State private var awaitingStreamingStart: Bool = false
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
@@ -86,6 +91,10 @@ public struct WorkoutHUDView: View {
         return URL(string: normalized)
     }
 
+    private var isAwaitingStreamingStart: Bool {
+        awaitingStreamingStart && !audioManager.isPlaying
+    }
+
     private var isStreamingSegmentActive: Bool {
         activeSegment.map(isStreamingSegment) ?? false
     }
@@ -94,6 +103,7 @@ public struct WorkoutHUDView: View {
         var followState: StreamingFollowState?
         var followedIndex = -1
         while !Task.isCancelled {
+            if awaitingStreamingStart && audioManager.isPlaying { awaitingStreamingStart = false }
             let index = audioManager.currentSegmentIndex
             if !isStreamingSegmentActive || !AppSettings.shared.followStreamingPlayback {
                 followState = nil
@@ -237,8 +247,18 @@ public struct WorkoutHUDView: View {
                 withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) {
                     pulseAlpha = 0.35
                 }
+                let entrySignal = AVAudioSession.sharedInstance().isOtherAudioPlaying
                 audioManager.loadClass(workoutClass)
-                audioManager.play()
+                let startsStreaming = audioManager.currentSegment.map(isStreamingSegment) ?? false
+                if shouldAutoStartOnHudEntry(
+                    isStreamingSegment: startsStreaming,
+                    followEnabled: AppSettings.shared.followStreamingPlayback,
+                    isOtherAudioPlaying: entrySignal
+                ) {
+                    audioManager.play()
+                } else {
+                    awaitingStreamingStart = true
+                }
                 TrackDurationRepair.shared.start(segments: liveClass.segments)
             }
             .onDisappear {
@@ -421,22 +441,28 @@ public struct WorkoutHUDView: View {
 
     private func cockpitCore(isLandscape: Bool, scale: CGFloat, hudHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
-            if let url = playlistURL {
+            if playlistURL != nil || isAwaitingStreamingStart {
                 HStack {
+                    Text(isAwaitingStreamingStart ? "請在串流 App 開始播放，或按播放鍵開始" : "")
+                        .font(.system(size: 18 * scale, weight: .semibold))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .lineLimit(1)
                     Spacer()
-                    Button {
-                        UIApplication.shared.open(url, options: [:]) { success in
-                            if !success { isShowingPlaylistOpenError = true }
+                    if let url = playlistURL {
+                        Button {
+                            UIApplication.shared.open(url, options: [:]) { success in
+                                if !success { isShowingPlaylistOpenError = true }
+                            }
+                        } label: {
+                            Label("開啟歌單", systemImage: "music.note")
+                                .font(.system(size: 18 * scale, weight: .bold))
+                                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .frame(minHeight: 40 * scale)
+                                .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
+                                .cornerRadius(8)
                         }
-                    } label: {
-                        Label("開啟歌單", systemImage: "music.note")
-                            .font(.system(size: 18 * scale, weight: .bold))
-                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .frame(minHeight: 40 * scale)
-                            .background(FitnessRiderTheme.topBarGreen.opacity(0.15))
-                            .cornerRadius(8)
                     }
                 }
             }

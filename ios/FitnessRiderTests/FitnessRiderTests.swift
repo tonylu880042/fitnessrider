@@ -2077,6 +2077,14 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(info.durationMs, 300_000)
     }
 
+    func testShouldAutoStartOnHudEntry() {
+        XCTAssertTrue(shouldAutoStartOnHudEntry(isStreamingSegment: false, followEnabled: true, isOtherAudioPlaying: false))
+        XCTAssertTrue(shouldAutoStartOnHudEntry(isStreamingSegment: false, followEnabled: false, isOtherAudioPlaying: false))
+        XCTAssertTrue(shouldAutoStartOnHudEntry(isStreamingSegment: true, followEnabled: false, isOtherAudioPlaying: false))
+        XCTAssertFalse(shouldAutoStartOnHudEntry(isStreamingSegment: true, followEnabled: true, isOtherAudioPlaying: false))
+        XCTAssertTrue(shouldAutoStartOnHudEntry(isStreamingSegment: true, followEnabled: true, isOtherAudioPlaying: true))
+    }
+
     func testStreamingFollowDebounceConstant() {
         XCTAssertEqual(streamingFollowDebounceMs, 800)
     }

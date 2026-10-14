@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.session.MediaController
 import android.net.Uri
@@ -115,6 +116,22 @@ fun streamingFollowStep(
     return Pair(StreamingFollowState(signal, null), action)
 }
 
+fun shouldAutoStartOnHudEntry(isStreamingSegment: Boolean, followEnabled: Boolean, isOtherAudioPlaying: Boolean): Boolean =
+    if (isStreamingSegment && followEnabled) isOtherAudioPlaying else true
+
+fun soleNonBrowserPackage(handlerPackages: List<String>, browserPackages: Set<String>): String? =
+    handlerPackages.filter { it !in browserPackages }.distinct().singleOrNull()
+
+private fun nonBrowserHandlerPackage(context: Context, url: String): String? = try {
+    val packageManager = context.packageManager
+    fun packagesHandling(target: String) = packageManager
+        .queryIntentActivities(Intent(Intent.ACTION_VIEW, Uri.parse(target)), PackageManager.MATCH_DEFAULT_ONLY)
+        .map { it.activityInfo.packageName }
+    soleNonBrowserPackage(packagesHandling(url), packagesHandling("https://www.example.com").toSet())
+} catch (e: RuntimeException) {
+    null
+}
+
 fun hudScale(availableHeight: Float): Float = (availableHeight / 800f).coerceIn(0.7f, 1.6f)
 
 @Composable
@@ -125,6 +142,8 @@ fun WorkoutHUDScreen(
 ) {
     val context = LocalContext.current
     val settings = remember { AppSettings.getInstance(context) }
+    var entryDecisionPending by remember { mutableStateOf(false) }
+    var awaitingStreamingStart by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         val activity = context as? Activity
@@ -133,7 +152,12 @@ fun WorkoutHUDScreen(
         }
         activity?.requestedOrientation = hudRequestedOrientation(true)
         audioManager.loadClass(workoutClass)
-        audioManager.play()
+        val startsStreaming = audioManager.currentSegment?.let(::isStreamingSegment) == true
+        if (shouldAutoStartOnHudEntry(startsStreaming, settings.followStreamingPlayback, false)) {
+            audioManager.play()
+        } else {
+            entryDecisionPending = true
+        }
 
         onDispose {
             activity?.requestedOrientation = hudRequestedOrientation(false)
@@ -182,6 +206,17 @@ fun WorkoutHUDScreen(
 
             val index = audioManager.currentSegmentIndex.value
             val streamingSegment = audioManager.currentSegment?.takeIf(::isStreamingSegment)
+
+            if (entryDecisionPending) {
+                entryDecisionPending = false
+                val entrySignal = session?.isPlaying ?: systemAudio.isMusicActive
+                if (shouldAutoStartOnHudEntry(streamingSegment != null, settings.followStreamingPlayback, entrySignal)) {
+                    audioManager.play()
+                } else {
+                    awaitingStreamingStart = true
+                }
+            }
+            if (awaitingStreamingStart && audioManager.isPlaying.value) awaitingStreamingStart = false
 
             unmatchedNowPlaying = if (session != null && session.isPlaying && title != null &&
                 segmentIndexForNowPlaying(title, segments, index) == null
@@ -517,14 +552,16 @@ fun WorkoutHUDScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (playlistUrl != null || unmatchedNowPlaying != null) {
+                    val hudHint = unmatchedNowPlaying?.let { "串流正在播放：$it（不在課表中）" }
+                        ?: if (awaitingStreamingStart && !isPlaying) "請在串流 App 開始播放，或按播放鍵開始" else null
+                    if (playlistUrl != null || hudHint != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = unmatchedNowPlaying?.let { "串流正在播放：$it（不在課表中）" } ?: "",
+                                text = hudHint ?: "",
                                 fontSize = (18 * s).sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary,
@@ -534,11 +571,11 @@ fun WorkoutHUDScreen(
                             )
                             if (playlistUrl != null) Button(
                                 onClick = {
+                                    val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(playlistUrl))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    nonBrowserHandlerPackage(context, playlistUrl)?.let { viewIntent.setPackage(it) }
                                     try {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(playlistUrl))
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        )
+                                        context.startActivity(viewIntent)
                                     } catch (e: ActivityNotFoundException) {
                                         Toast.makeText(context, "無法開啟歌單連結", Toast.LENGTH_SHORT).show()
                                     }

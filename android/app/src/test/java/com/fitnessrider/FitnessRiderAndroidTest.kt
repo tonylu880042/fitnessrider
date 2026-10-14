@@ -40,6 +40,8 @@ import com.fitnessrider.ui.hud.STREAMING_FOLLOW_DEBOUNCE_MS
 import com.fitnessrider.ui.hud.StreamingFollowAction
 import com.fitnessrider.ui.hud.StreamingFollowState
 import com.fitnessrider.ui.hud.segmentStepForSwipe
+import com.fitnessrider.ui.hud.shouldAutoStartOnHudEntry
+import com.fitnessrider.ui.hud.soleNonBrowserPackage
 import com.fitnessrider.ui.hud.streamingFollowStep
 import com.fitnessrider.ui.musiclibrary.IMPORT_PROGRESS_DELAY_MS
 import com.fitnessrider.ui.musiclibrary.MusicLibraryTrack
@@ -2162,6 +2164,28 @@ class FitnessRiderAndroidTest {
         assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 11_000L))
         assertTrue(isDecodeStalled(lastProgressAtMs = 1_000L, nowMs = 600_000L))
         assertFalse(isDecodeStalled(lastProgressAtMs = 50_000L, nowMs = 1_000L))
+    }
+
+    @Test
+    fun testSoleNonBrowserPackage() {
+        val browsers = setOf("com.browser.a", "com.browser.b")
+        assertEquals("com.stream.app", soleNonBrowserPackage(listOf("com.stream.app", "com.browser.a"), browsers))
+        assertNull(soleNonBrowserPackage(listOf("com.browser.a", "com.browser.b"), browsers))
+        assertNull(soleNonBrowserPackage(listOf("com.stream.one", "com.stream.two"), browsers))
+        assertNull(soleNonBrowserPackage(emptyList(), browsers))
+        assertEquals(
+            "com.stream.app",
+            soleNonBrowserPackage(listOf("com.stream.app", "com.stream.app", "com.browser.a"), browsers)
+        )
+    }
+
+    @Test
+    fun testShouldAutoStartOnHudEntry() {
+        assertEquals(true, shouldAutoStartOnHudEntry(false, true, false))
+        assertEquals(true, shouldAutoStartOnHudEntry(false, false, false))
+        assertEquals(true, shouldAutoStartOnHudEntry(true, false, false))
+        assertEquals(false, shouldAutoStartOnHudEntry(true, true, false))
+        assertEquals(true, shouldAutoStartOnHudEntry(true, true, true))
     }
 
     @Test
