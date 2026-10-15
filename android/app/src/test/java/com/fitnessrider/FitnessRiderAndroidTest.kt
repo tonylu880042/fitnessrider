@@ -1,5 +1,6 @@
 package com.fitnessrider
 
+import com.fitnessrider.audio.PLAYBACK_RATE_RANGE
 import com.fitnessrider.audio.CrossfadeCalculator
 import com.fitnessrider.audio.CrossfadeFinishCoordinator
 import com.fitnessrider.audio.HapticFeedbackManager
@@ -172,11 +173,11 @@ class FitnessRiderAndroidTest {
         currentRate -= 0.04
         assertEquals(0.98, (currentRate * 100).roundToInt() / 100.0, 0.001)
 
-        var clampedRate = 1.50.coerceIn(0.85, 1.15)
-        assertEquals(1.15, clampedRate, 0.001)
+        var clampedRate = 1.50.coerceIn(PLAYBACK_RATE_RANGE)
+        assertEquals(1.20, clampedRate, 0.001)
 
-        clampedRate = 0.50.coerceIn(0.85, 1.15)
-        assertEquals(0.85, clampedRate, 0.001)
+        clampedRate = 0.50.coerceIn(PLAYBACK_RATE_RANGE)
+        assertEquals(0.80, clampedRate, 0.001)
     }
 
     @Test

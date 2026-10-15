@@ -358,10 +358,10 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(audio.currentRate, 0.98)
 
         audio.setRate(1.50)
-        XCTAssertEqual(audio.currentRate, 1.15)
+        XCTAssertEqual(audio.currentRate, 1.20)
 
         audio.setRate(0.50)
-        XCTAssertEqual(audio.currentRate, 0.85)
+        XCTAssertEqual(audio.currentRate, 0.80)
 
         audio.resetRate()
         XCTAssertEqual(audio.currentRate, 1.0)

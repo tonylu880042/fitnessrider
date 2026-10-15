@@ -761,7 +761,7 @@ public struct ClassEditorView: View {
     }
 
     private func adjustRate(for segment: WorkoutSegment, delta: Double) {
-        let newRate = max(0.85, min(1.15, segment.playbackRate + delta))
+        let newRate = max(AudioEngineManager.playbackRateRange.lowerBound, min(AudioEngineManager.playbackRateRange.upperBound, segment.playbackRate + delta))
         setRate(for: segment, rate: newRate)
     }
 

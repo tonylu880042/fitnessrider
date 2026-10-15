@@ -77,7 +77,7 @@ graph TD
 飛輪教學中，教練經常需要微調音樂速度以精準契合學員踩踏節奏。
 
 * **M2.1 變速不變調 (Pitch-Preserving TimePitch)**：
-  * **變速範圍**：**±15%（0.85x ~ 1.15x）** 連續無損速度調整。
+  * **變速範圍**：**±20%（0.80x ~ 1.20x）** 連續無損速度調整。
   * **快捷步進**：以「**百分比 (±2%)**」為步進單位增減，支援直接點擊快捷鍵（-2%, Reset 100%, +2%）或滑桿連續微調。
   * **音調鎖定**：嚴格鎖定原曲音調（人聲不變尖、低音不失真）。
   * **iOS**：基於 `AVAudioEngine` + `AVAudioUnitTimePitch`。
@@ -252,7 +252,7 @@ graph TD
 
 | 指標類別 | 規格標準 | 驗證方式 |
 | :--- | :--- | :--- |
-| **音訊播放延遲** | 變速（TimePitch ±15%）或 Seeking 響應時間 < 50ms | `AVAudioEngine` / `Media3` 緩衝區監控 |
+| **音訊播放延遲** | 變速（TimePitch ±20%）或 Seeking 響應時間 < 50ms | `AVAudioEngine` / `Media3` 緩衝區監控 |
 | **播放與螢幕防休眠** | 執行課堂時強制螢幕常亮（`isIdleTimerDisabled` / `FLAG_KEEP_SCREEN_ON`）；退出 HUD 時還原；完整支援系統背景音訊播放（`UIBackgroundModes: ["audio"]` / `MediaSessionService`） | 鎖定畫面控制與長時放音實測 |
 | **介面幀率 (FPS)** | 橫向 HUD 動畫與波形滾動恆定 60 FPS (ProMotion 120 FPS) | Instruments Core Animation / Systrace |
 | **離線授權寬限** | 支援最長 7~30 天離線無網路使用（離線快取 JWT 憑證，連網時背景無感刷新） | 飛航模式驗證授權與課堂執行 |

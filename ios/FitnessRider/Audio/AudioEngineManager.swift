@@ -110,6 +110,7 @@ private final class AudioDeck {
 @MainActor
 public final class AudioEngineManager: ObservableObject {
     public static let shared = AudioEngineManager()
+    static let playbackRateRange: ClosedRange<Double> = 0.80...1.20
 
     private let audioEngine = AVAudioEngine()
     private let deckA = AudioDeck(id: "DeckA")
@@ -323,7 +324,7 @@ public final class AudioEngineManager: ObservableObject {
     }
 
     public func setRate(_ rate: Double) {
-        let clampedRate = max(0.85, min(1.15, (rate * 100.0).rounded() / 100.0))
+        let clampedRate = max(Self.playbackRateRange.lowerBound, min(Self.playbackRateRange.upperBound, (rate * 100.0).rounded() / 100.0))
         self.currentRate = clampedRate
         activeDeck.setRate(clampedRate)
 

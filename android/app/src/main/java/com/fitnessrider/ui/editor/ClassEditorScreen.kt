@@ -1,5 +1,6 @@
 package com.fitnessrider.ui.editor
 
+import com.fitnessrider.audio.PLAYBACK_RATE_RANGE
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -620,7 +621,7 @@ fun ClassEditorScreen(
                                 enabled = !isStreamingSegment(activeSegment),
                                 onClick = {
                                     val newRate = ((activeSegment.playbackRate - 0.02) * 100).roundToInt() / 100.0
-                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
+                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(PLAYBACK_RATE_RANGE))
                                     val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
                                     workoutClass = workoutClass.copy(segments = updatedSegs)
                                 },
@@ -648,7 +649,7 @@ fun ClassEditorScreen(
                                 enabled = !isStreamingSegment(activeSegment),
                                 onClick = {
                                     val newRate = ((activeSegment.playbackRate + 0.02) * 100).roundToInt() / 100.0
-                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(0.85, 1.15))
+                                    val updatedSeg = activeSegment.copy(playbackRate = newRate.coerceIn(PLAYBACK_RATE_RANGE))
                                     val updatedSegs = workoutClass.segments.toMutableList().also { it[selectedSegmentIndex] = updatedSeg }
                                     workoutClass = workoutClass.copy(segments = updatedSegs)
                                 },

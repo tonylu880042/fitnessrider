@@ -127,6 +127,8 @@ class CrossfadeFinishCoordinator(startSegmentIndex: Int = 0) {
     }
 }
 
+val PLAYBACK_RATE_RANGE = 0.80..1.20
+
 class AudioEngineManager(private val context: Context) {
     private val playerA: ExoPlayer = ExoPlayer.Builder(context).build()
     private val playerB: ExoPlayer = ExoPlayer.Builder(context).build()
@@ -293,7 +295,7 @@ class AudioEngineManager(private val context: Context) {
     }
 
     fun setRate(rate: Double) {
-        val clamped = (rate.coerceIn(0.85, 1.15) * 100).roundToInt() / 100.0
+        val clamped = (rate.coerceIn(PLAYBACK_RATE_RANGE) * 100).roundToInt() / 100.0
         _currentRate.value = clamped
         activePlayer.playbackParameters = PlaybackParameters(clamped.toFloat(), 1.0f)
     }
