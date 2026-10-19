@@ -57,6 +57,11 @@ func hudScale(availableHeight: CGFloat, availableWidth: CGFloat) -> CGFloat {
     min(max(min(availableHeight / 640, availableWidth / 1220), 0.7), 1.6)
 }
 
+func playlistSearchIndices(titles: [String], query: String) -> [Int] {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    return titles.indices.filter { needle.isEmpty || titles[$0].range(of: needle, options: .caseInsensitive) != nil }
+}
+
 public struct WorkoutHUDView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var audioManager = AudioEngineManager.shared
@@ -71,6 +76,9 @@ public struct WorkoutHUDView: View {
     @State private var countdownPulse: CGFloat = 1.0
     @State private var isShowingPlaylistOpenError: Bool = false
     @State private var awaitingStreamingStart: Bool = false
+    @State private var isPlaylistSearchOpen: Bool = false
+    @State private var playlistQuery: String = ""
+    @FocusState private var isPlaylistSearchFocused: Bool
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
@@ -368,16 +376,51 @@ public struct WorkoutHUDView: View {
         .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 2)
     }
 
+    private func closePlaylistSearch() {
+        isPlaylistSearchOpen = false
+        playlistQuery = ""
+        isPlaylistSearchFocused = false
+    }
+
     private func playlistDrawer(scale: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("課堂曲目清單")
-                    .font(.system(size: 18 * scale, weight: .bold))
-                    .foregroundColor(FitnessRiderTheme.textPrimary)
-                Spacer()
-                Text("\(liveClass.segments.count) 首")
-                    .font(.system(size: 14 * scale, weight: .semibold))
-                    .foregroundColor(FitnessRiderTheme.textSecondary)
+                if isPlaylistSearchOpen {
+                    TextField("搜尋歌曲", text: $playlistQuery)
+                        .font(.system(size: 16 * scale))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.search)
+                        .focused($isPlaylistSearchFocused)
+                        .onSubmit { isPlaylistSearchFocused = false }
+                    Button {
+                        closePlaylistSearch()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 18 * scale, weight: .semibold))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+                    }
+                    .accessibilityLabel("關閉搜尋")
+                } else {
+                    Text("課堂曲目清單")
+                        .font(.system(size: 18 * scale, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                    Spacer()
+                    Text("\(liveClass.segments.count) 首")
+                        .font(.system(size: 14 * scale, weight: .semibold))
+                        .foregroundColor(FitnessRiderTheme.textSecondary)
+                    Button {
+                        isPlaylistSearchOpen = true
+                        isPlaylistSearchFocused = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18 * scale, weight: .semibold))
+                            .foregroundColor(FitnessRiderTheme.textPrimary)
+                    }
+                    .accessibilityLabel("搜尋歌曲")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -385,9 +428,18 @@ public struct WorkoutHUDView: View {
 
             Divider()
 
+            let visibleSegmentIndices = playlistSearchIndices(titles: liveClass.segments.map(\.title), query: playlistQuery)
             ScrollView {
                 LazyVStack(spacing: 4) {
-                    ForEach(Array(liveClass.segments.enumerated()), id: \.element.id) { index, segment in
+                    if visibleSegmentIndices.isEmpty {
+                        Text("找不到符合的歌曲")
+                            .font(.system(size: 16 * scale))
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                    }
+                    ForEach(visibleSegmentIndices, id: \.self) { index in
+                        let segment = liveClass.segments[index]
                         let isCurrent = index == audioManager.currentSegmentIndex
 
                         HStack(spacing: 12) {
@@ -430,6 +482,7 @@ public struct WorkoutHUDView: View {
                         .onTapGesture {
                             audioManager.jumpToSegment(index)
                             audioManager.play()
+                            if isPlaylistSearchOpen { closePlaylistSearch() }
                         }
                     }
                 }

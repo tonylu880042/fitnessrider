@@ -1974,6 +1974,17 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(selectedIndexAfterRemoval(3, removedIndex: 3, newSize: 3), 2)
     }
 
+    func testPlaylistSearchIndicesReturnsOriginalIndices() {
+        let titles = ["I Swear--All-4-One", "Like a virgin-Madonna", "飛輪暖身", "La Bamba", "I Swear--All-4-One"]
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: ""), [0, 1, 2, 3, 4])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "   "), [0, 1, 2, 3, 4])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "MADONNA"), [1])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "暖身"), [2])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "  bamba "), [3])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "Queen"), [])
+        XCTAssertEqual(playlistSearchIndices(titles: titles, query: "swear"), [0, 4])
+    }
+
     func testHudScaleClampsAroundSixHundredFortyBase() {
         XCTAssertEqual(hudScale(availableHeight: 640, availableWidth: 2000), 1.0, accuracy: 0.0001)
         XCTAssertEqual(hudScale(availableHeight: 710.4, availableWidth: 2000), 1.11, accuracy: 0.0001)

@@ -36,6 +36,7 @@ import com.fitnessrider.ui.editor.renamedSegmentTitle
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.hudRequestedOrientation
 import com.fitnessrider.ui.hud.hudScale
+import com.fitnessrider.ui.hud.playlistSearchIndices
 import com.fitnessrider.ui.hud.rateStepForSwipe
 import com.fitnessrider.ui.hud.STREAMING_FOLLOW_DEBOUNCE_MS
 import com.fitnessrider.ui.hud.StreamingFollowAction
@@ -1872,6 +1873,18 @@ class FitnessRiderAndroidTest {
     fun testHudRequestedOrientationLocksLandscapeOnlyInHud() {
         assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, hudRequestedOrientation(true))
         assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, hudRequestedOrientation(false))
+    }
+
+    @Test
+    fun testPlaylistSearchIndicesReturnsOriginalIndices() {
+        val titles = listOf("I Swear--All-4-One", "Like a virgin-Madonna", "飛輪暖身", "La Bamba", "I Swear--All-4-One")
+        assertEquals(listOf(0, 1, 2, 3, 4), playlistSearchIndices(titles, ""))
+        assertEquals(listOf(0, 1, 2, 3, 4), playlistSearchIndices(titles, "   "))
+        assertEquals(listOf(1), playlistSearchIndices(titles, "MADONNA"))
+        assertEquals(listOf(2), playlistSearchIndices(titles, "暖身"))
+        assertEquals(listOf(3), playlistSearchIndices(titles, "  bamba "))
+        assertEquals(emptyList<Int>(), playlistSearchIndices(titles, "Queen"))
+        assertEquals(listOf(0, 4), playlistSearchIndices(titles, "swear"))
     }
 
     @Test

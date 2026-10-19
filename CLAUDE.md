@@ -848,3 +848,24 @@ U3 調大的基準值在客戶平板上反而被縮小。
 
 - 目前曲目那一列改為實心 `TopBarGreenDark` 底色；曲名、時長／BPM 改白字（`Color.White`／`.white`），曲名粗體。
 - 左側序號圓圈反轉：白底、`TopBarGreenDark` 字。其他列不變。只用既有 token。
+
+## 開發清單：HUD 播放清單搜尋（2026-10-19，教練回報）
+
+教練一堂課放幾百首歌（截圖 341 首），上課中要找下一首只能在左側清單一直捲。舊版有搜尋，教練說是「好用的關鍵」。
+一個單元 H2，雙端一起改，只動 HUD 左側清單，不碰引擎與資料。
+
+**舊版行為**（`original/.../ActivityClassExecute.java` 的 `buttonShowPlaylistSearch`、`afterTextChanged`、`onSearchItemClick`，
+`ui/RecyclerAdapterForSearchPlaylist.java`）：清單標題旁一顆放大鏡，按下後標題換成輸入框＋關閉鍵；
+邊打字邊過濾（曲名或演出者，不分大小寫的「包含」比對）；點結果就從那首開始播並收起搜尋。
+舊版用 `items.indexOf(musicInfo)` 找回位置，課表裡有同一首歌兩次時會跳到第一個——新版改用原始 index，不要照抄。
+
+- **入口**：清單標題列（「課堂播放清單」／「課堂曲目清單」那一列）右側加放大鏡鍵。按下後整列換成輸入框（自動聚焦、提示「搜尋歌曲」）＋關閉鍵。
+- **過濾**：雙端同名純函式 `playlistSearchIndices(titles, query)`，回傳符合的**原始 index**：
+  query trim 後為空 → 全部；否則曲名不分大小寫「包含」比對。段落沒有演出者欄位，但曲名通常是「歌名--歌手」檔名，包含比對自然涵蓋。
+- **結果列**：沿用一般清單列的樣式，序號顯示**原始序號**（index + 1），目前播放中的那首照樣反白。沒有結果時顯示「找不到符合的歌曲」。
+- **點結果**：與點一般清單列完全相同（`jumpToSegment(index)` ＋ `play()`，手動換曲淡入淡出規則照舊），然後關閉搜尋：清空文字、收起鍵盤、回到完整清單。
+- **關閉鍵**：清空文字、收起鍵盤、回到完整清單。
+- **鍵盤不能讓 HUD 縮小**：`hudScale` 依 HUD 高度計算，鍵盤若把版面往上推擠，整個 HUD 字級會在打字時跳動。
+  iOS 的 HUD 根層已有 `.ignoresSafeArea(.keyboard)`；Android 要確認鍵盤出現時 HUD 高度不變（實測）。
+- 不改任何 HUD 手勢（`rateStepForSwipe`／`segmentStepForSwipe`）與變速／播放按鈕。
+- 測試：`playlistSearchIndices`——空字串與純空白回傳全部、不分大小寫、中文、前後空白、無結果回傳空、重複曲名兩個 index 都回傳。

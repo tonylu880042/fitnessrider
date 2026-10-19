@@ -21,7 +21,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,10 +36,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -134,6 +140,11 @@ private fun nonBrowserHandlerPackage(context: Context, url: String): String? = t
 
 fun hudScale(availableHeight: Float, availableWidth: Float): Float =
     minOf(availableHeight / 640f, availableWidth / 1220f).coerceIn(0.7f, 1.6f)
+
+fun playlistSearchIndices(titles: List<String>, query: String): List<Int> {
+    val needle = query.trim()
+    return titles.indices.filter { needle.isEmpty() || titles[it].contains(needle, ignoreCase = true) }
+}
 
 @Composable
 fun WorkoutHUDScreen(
@@ -312,6 +323,15 @@ fun WorkoutHUDScreen(
     val currentSegmentIndex by audioManager.currentSegmentIndex.collectAsState()
 
     var isDrawerOpen by remember { mutableStateOf(true) }
+    var isPlaylistSearchOpen by remember { mutableStateOf(false) }
+    var playlistQuery by remember { mutableStateOf("") }
+    val playlistSearchFocus = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    fun closePlaylistSearch() {
+        isPlaylistSearchOpen = false
+        playlistQuery = ""
+        keyboardController?.hide()
+    }
     var isShowingPostureInfo by remember { mutableStateOf(false) }
     var isShowingExitConfirmDialog by remember { mutableStateOf(false) }
     var reminderTick by remember { mutableStateOf(0) }
@@ -481,23 +501,60 @@ fun WorkoutHUDScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "課堂播放清單",
-                                fontSize = (18 * s).sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "${workoutClass.segments.size} 首",
-                                fontSize = (14 * s).sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextSecondary
-                            )
+                            if (isPlaylistSearchOpen) {
+                                OutlinedTextField(
+                                    value = playlistQuery,
+                                    onValueChange = { playlistQuery = it },
+                                    placeholder = { Text("搜尋歌曲", fontSize = (16 * s).sp) },
+                                    textStyle = LocalTextStyle.current.copy(fontSize = (16 * s).sp, color = TextPrimary),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(playlistSearchFocus)
+                                )
+                                LaunchedEffect(Unit) { playlistSearchFocus.requestFocus() }
+                                IconButton(onClick = { closePlaylistSearch() }) {
+                                    Icon(Icons.Default.Close, contentDescription = "關閉搜尋", tint = TextPrimary)
+                                }
+                            } else {
+                                Text(
+                                    text = "課堂播放清單",
+                                    fontSize = (18 * s).sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "${workoutClass.segments.size} 首",
+                                    fontSize = (14 * s).sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextSecondary
+                                )
+                                IconButton(onClick = { isPlaylistSearchOpen = true }) {
+                                    Icon(Icons.Default.Search, contentDescription = "搜尋歌曲", tint = TextPrimary)
+                                }
+                            }
                         }
                         HorizontalDivider(color = CardBorder)
 
+                        val visibleSegmentIndices = remember(workoutClass.segments, playlistQuery) {
+                            playlistSearchIndices(workoutClass.segments.map { it.title }, playlistQuery)
+                        }
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            itemsIndexed(workoutClass.segments) { index, segment ->
+                            if (visibleSegmentIndices.isEmpty()) {
+                                item {
+                                    Text(
+                                        text = "找不到符合的歌曲",
+                                        fontSize = (16 * s).sp,
+                                        color = TextSecondary,
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                }
+                            }
+                            items(visibleSegmentIndices) { index ->
+                                val segment = workoutClass.segments[index]
                                 val isCurrent = index == currentSegmentIndex
                                 Row(
                                     modifier = Modifier
@@ -505,6 +562,7 @@ fun WorkoutHUDScreen(
                                         .clickable {
                                             audioManager.jumpToSegment(index)
                                             audioManager.play()
+                                            if (isPlaylistSearchOpen) closePlaylistSearch()
                                         }
                                         .background(if (isCurrent) TopBarGreenDark else Color.Transparent)
                                         .padding(horizontal = 14.dp, vertical = (10 * s).dp),
