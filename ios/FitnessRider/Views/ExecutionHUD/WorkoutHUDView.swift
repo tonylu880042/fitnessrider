@@ -487,7 +487,7 @@ public struct WorkoutHUDView: View {
 
             coachingPromptBanner(scale: scale)
 
-            HStack(spacing: 20) {
+            ZStack {
                 HStack(spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "gauge.with.needle.fill")
@@ -510,6 +510,7 @@ public struct WorkoutHUDView: View {
                             .cornerRadius(12)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 24 * scale) {
                     Button("-2%") {
@@ -522,21 +523,21 @@ public struct WorkoutHUDView: View {
                         .font(.system(size: 28 * scale, weight: .bold, design: .monospaced))
                         .foregroundColor(FitnessRiderTheme.textPrimary)
                         .lineLimit(1)
+                        .frame(minWidth: 80 * scale)
 
                     Button("+2%") {
                         audioManager.adjustRatePercent(by: 2.0)
                     }
                     .buttonStyle(HUDTempoButtonStyle(fontSize: 20 * scale, scale: scale))
                     .disabled(isStreamingSegmentActive)
-
-                    Spacer(minLength: 48 * scale)
-
-                    Button("重置") {
-                        audioManager.resetRate()
-                    }
-                    .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 20 * scale, scale: scale))
-                    .disabled(isStreamingSegmentActive)
                 }
+
+                Button("重置") {
+                    audioManager.resetRate()
+                }
+                .buttonStyle(HUDTempoButtonStyle(isPrimary: true, fontSize: 20 * scale, scale: scale))
+                .disabled(isStreamingSegmentActive)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
             Spacer()

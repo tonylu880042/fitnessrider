@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -834,9 +835,9 @@ fun WorkoutHUDScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(20.dp)
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -873,7 +874,7 @@ fun WorkoutHUDScreen(
                         }
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.align(Alignment.Center),
                             horizontalArrangement = Arrangement.spacedBy((24 * s).dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -894,7 +895,9 @@ fun WorkoutHUDScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = TextPrimary,
-                                maxLines = 1
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                modifier = Modifier.widthIn(min = (80 * s).dp)
                             )
 
                             Button(
@@ -907,19 +910,19 @@ fun WorkoutHUDScreen(
                             ) {
                                 Text(text = "+2%", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
+                        }
 
-                            Spacer(modifier = Modifier.weight(1f).widthIn(min = (48 * s).dp))
-
-                            Button(
-                                onClick = { audioManager.resetRate() },
-                                enabled = !isStreamingSegmentActive,
-                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.defaultMinSize(minWidth = (88 * s).dp, minHeight = (64 * s).dp),
-                                contentPadding = PaddingValues(horizontal = (16 * s).dp, vertical = (12 * s).dp)
-                            ) {
-                                Text(text = "重置", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
+                        Button(
+                            onClick = { audioManager.resetRate() },
+                            enabled = !isStreamingSegmentActive,
+                            colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .defaultMinSize(minWidth = (88 * s).dp, minHeight = (64 * s).dp),
+                            contentPadding = PaddingValues(horizontal = (16 * s).dp, vertical = (12 * s).dp)
+                        ) {
+                            Text(text = "重置", fontSize = (20 * s).sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
 
