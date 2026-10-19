@@ -18,7 +18,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -647,13 +646,6 @@ fun WorkoutHUDScreen(
                             trackColor = CardBorder,
                             modifier = Modifier
                                 .size((340 * s).dp)
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onDoubleTap = {
-                                            togglePlayback()
-                                        }
-                                    )
-                                }
                         ) {
                             if (remainingCueSec <= 5) {
                                 val pulse = remember { Animatable(1f) }

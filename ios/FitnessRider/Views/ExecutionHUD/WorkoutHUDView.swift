@@ -638,9 +638,6 @@ public struct WorkoutHUDView: View {
         }
         .frame(width: dialSize, height: dialSize)
         .contentShape(Circle())
-        .onTapGesture(count: 2) {
-            audioManager.togglePlayPause()
-        }
         .onChange(of: remainingCueSeconds) { newValue in
             guard newValue <= 5 else { return }
             countdownPulse = 1.4
