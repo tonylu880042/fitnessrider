@@ -36,6 +36,7 @@ import com.fitnessrider.ui.editor.renamedSegmentTitle
 import com.fitnessrider.ui.editor.selectedIndexAfterRemoval
 import com.fitnessrider.ui.hud.hudRequestedOrientation
 import com.fitnessrider.ui.hud.hudScale
+import com.fitnessrider.ui.hud.playlistAutoScrollTarget
 import com.fitnessrider.ui.hud.playlistSearchIndices
 import com.fitnessrider.ui.hud.rateStepForSwipe
 import com.fitnessrider.ui.hud.STREAMING_FOLLOW_DEBOUNCE_MS
@@ -1885,6 +1886,14 @@ class FitnessRiderAndroidTest {
         assertEquals(listOf(3), playlistSearchIndices(titles, "  bamba "))
         assertEquals(emptyList<Int>(), playlistSearchIndices(titles, "Queen"))
         assertEquals(listOf(0, 4), playlistSearchIndices(titles, "swear"))
+    }
+
+    @Test
+    fun testPlaylistAutoScrollTargetKeepsPreviousSongAboveCurrent() {
+        assertEquals(0, playlistAutoScrollTarget(0, false))
+        assertEquals(0, playlistAutoScrollTarget(1, false))
+        assertEquals(41, playlistAutoScrollTarget(42, false))
+        assertEquals(null, playlistAutoScrollTarget(42, true))
     }
 
     @Test

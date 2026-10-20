@@ -62,6 +62,10 @@ func playlistSearchIndices(titles: [String], query: String) -> [Int] {
     return titles.indices.filter { needle.isEmpty || titles[$0].range(of: needle, options: .caseInsensitive) != nil }
 }
 
+func playlistAutoScrollTarget(currentIndex: Int, isSearchOpen: Bool) -> Int? {
+    isSearchOpen ? nil : max(0, currentIndex - 1)
+}
+
 public struct WorkoutHUDView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var audioManager = AudioEngineManager.shared
@@ -429,67 +433,81 @@ public struct WorkoutHUDView: View {
             Divider()
 
             let visibleSegmentIndices = playlistSearchIndices(titles: liveClass.segments.map(\.title), query: playlistQuery)
-            ScrollView {
-                LazyVStack(spacing: 4) {
-                    if visibleSegmentIndices.isEmpty {
-                        Text("找不到符合的歌曲")
-                            .font(.system(size: 16 * scale))
-                            .foregroundColor(FitnessRiderTheme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                    }
-                    ForEach(visibleSegmentIndices, id: \.self) { index in
-                        let segment = liveClass.segments[index]
-                        let isCurrent = index == audioManager.currentSegmentIndex
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 4) {
+                        if visibleSegmentIndices.isEmpty {
+                            Text("找不到符合的歌曲")
+                                .font(.system(size: 16 * scale))
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                        }
+                        ForEach(visibleSegmentIndices, id: \.self) { index in
+                            let segment = liveClass.segments[index]
+                            let isCurrent = index == audioManager.currentSegmentIndex
 
-                        HStack(spacing: 12) {
-                            Text("\(index + 1)")
-                                .font(.system(size: 14 * scale, weight: .bold))
-                                .foregroundColor(isCurrent ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.textSecondary)
-                                .frame(width: 28 * scale, height: 28 * scale)
-                                .background(isCurrent ? Color.white : Color.clear)
-                                .clipShape(Circle())
+                            HStack(spacing: 12) {
+                                Text("\(index + 1)")
+                                    .font(.system(size: 14 * scale, weight: .bold))
+                                    .foregroundColor(isCurrent ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.textSecondary)
+                                    .frame(width: 28 * scale, height: 28 * scale)
+                                    .background(isCurrent ? Color.white : Color.clear)
+                                    .clipShape(Circle())
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(segment.title)
-                                    .font(.system(size: 18 * scale, weight: isCurrent ? .bold : .semibold))
-                                    .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textPrimary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(segment.title)
+                                        .font(.system(size: 18 * scale, weight: isCurrent ? .bold : .semibold))
+                                        .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textPrimary)
+                                        .lineLimit(1)
+
+                                    HStack(spacing: 8) {
+                                        Text(segment.formattedDuration)
+                                        Text("•")
+                                        Text("\(Int(segment.effectiveBpm)) BPM")
+                                    }
+                                    .font(.system(size: 14 * scale))
+                                    .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textSecondary)
                                     .lineLimit(1)
-
-                                HStack(spacing: 8) {
-                                    Text(segment.formattedDuration)
-                                    Text("•")
-                                    Text("\(Int(segment.effectiveBpm)) BPM")
                                 }
-                                .font(.system(size: 14 * scale))
-                                .foregroundColor(isCurrent ? Color.white : FitnessRiderTheme.textSecondary)
-                                .lineLimit(1)
-                            }
 
-                            Spacer()
+                                Spacer()
 
-                            if isCurrent && audioManager.isPlaying {
-                                Image(systemName: "waveform")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.white)
+                                if isCurrent && audioManager.isPlaying {
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.white)
+                                }
                             }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(isCurrent ? FitnessRiderTheme.topBarGreenDark : Color.clear)
-                        .cornerRadius(8)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            audioManager.jumpToSegment(index)
-                            audioManager.play()
-                            if isPlaylistSearchOpen { closePlaylistSearch() }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(isCurrent ? FitnessRiderTheme.topBarGreenDark : Color.clear)
+                            .cornerRadius(8)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                audioManager.jumpToSegment(index)
+                                audioManager.play()
+                                if isPlaylistSearchOpen { closePlaylistSearch() }
+                            }
                         }
                     }
+                    .padding(8)
                 }
-                .padding(8)
+                .onAppear { scrollPlaylistToCurrent(proxy, animated: false) }
+                .onChange(of: audioManager.currentSegmentIndex) { _ in scrollPlaylistToCurrent(proxy, animated: true) }
+                .onChange(of: isPlaylistSearchOpen) { _ in scrollPlaylistToCurrent(proxy, animated: true) }
             }
         }
         .background(FitnessRiderTheme.cardBackground)
+    }
+
+    private func scrollPlaylistToCurrent(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard let target = playlistAutoScrollTarget(currentIndex: audioManager.currentSegmentIndex, isSearchOpen: isPlaylistSearchOpen) else { return }
+        if animated {
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+        } else {
+            proxy.scrollTo(target, anchor: .top)
+        }
     }
 
     private func cockpitCore(isLandscape: Bool, scale: CGFloat, hudHeight: CGFloat) -> some View {

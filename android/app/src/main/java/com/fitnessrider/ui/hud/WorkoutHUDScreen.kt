@@ -22,6 +22,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
@@ -145,6 +146,9 @@ fun playlistSearchIndices(titles: List<String>, query: String): List<Int> {
     val needle = query.trim()
     return titles.indices.filter { needle.isEmpty() || titles[it].contains(needle, ignoreCase = true) }
 }
+
+fun playlistAutoScrollTarget(currentIndex: Int, isSearchOpen: Boolean): Int? =
+    if (isSearchOpen) null else maxOf(0, currentIndex - 1)
 
 @Composable
 fun WorkoutHUDScreen(
@@ -542,7 +546,13 @@ fun WorkoutHUDScreen(
                         val visibleSegmentIndices = remember(workoutClass.segments, playlistQuery) {
                             playlistSearchIndices(workoutClass.segments.map { it.title }, playlistQuery)
                         }
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        val playlistListState = rememberLazyListState()
+                        LaunchedEffect(currentSegmentIndex, isPlaylistSearchOpen) {
+                            playlistAutoScrollTarget(currentSegmentIndex, isPlaylistSearchOpen)?.let {
+                                playlistListState.animateScrollToItem(it)
+                            }
+                        }
+                        LazyColumn(state = playlistListState, modifier = Modifier.fillMaxSize()) {
                             if (visibleSegmentIndices.isEmpty()) {
                                 item {
                                     Text(

@@ -869,3 +869,6 @@ U3 調大的基準值在客戶平板上反而被縮小。
   iOS 的 HUD 根層已有 `.ignoresSafeArea(.keyboard)`；Android 要確認鍵盤出現時 HUD 高度不變（實測）。
 - 不改任何 HUD 手勢（`rateStepForSwipe`／`segmentStepForSwipe`）與變速／播放按鈕。
 - 測試：`playlistSearchIndices`——空字串與純空白回傳全部、不分大小寫、中文、前後空白、無結果回傳空、重複曲名兩個 index 都回傳。
+- **清單自動捲動（2026-10-20 教練回報「播了很多首後不知在哪兒」）**：每次換段（自然播完、手動換曲皆同）與關閉搜尋時，
+  左側清單捲到「上一首在最上面、目前曲目在第二列」；搜尋開著時不捲。雙端同名純函式 `playlistAutoScrollTarget(currentIndex, isSearchOpen)`。
+  教練手動往下捲看歌時，下一次換段會被拉回目前曲目——這是刻意的，換段間隔是幾分鐘，不做「使用者捲動後暫停自動捲動」。

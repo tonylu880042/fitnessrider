@@ -1985,6 +1985,13 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(playlistSearchIndices(titles: titles, query: "swear"), [0, 4])
     }
 
+    func testPlaylistAutoScrollTargetKeepsPreviousSongAboveCurrent() {
+        XCTAssertEqual(playlistAutoScrollTarget(currentIndex: 0, isSearchOpen: false), 0)
+        XCTAssertEqual(playlistAutoScrollTarget(currentIndex: 1, isSearchOpen: false), 0)
+        XCTAssertEqual(playlistAutoScrollTarget(currentIndex: 42, isSearchOpen: false), 41)
+        XCTAssertNil(playlistAutoScrollTarget(currentIndex: 42, isSearchOpen: true))
+    }
+
     func testHudScaleClampsAroundSixHundredFortyBase() {
         XCTAssertEqual(hudScale(availableHeight: 640, availableWidth: 2000), 1.0, accuracy: 0.0001)
         XCTAssertEqual(hudScale(availableHeight: 710.4, availableWidth: 2000), 1.11, accuracy: 0.0001)
