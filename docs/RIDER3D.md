@@ -7,12 +7,17 @@
 - **雙平台都要**，CLAUDE.md 的對等規則照舊。
 - Android flavor：`coach`（`com.fitnessrider.coach`，不變）、`rider3d`（`com.fitnessrider.rider3d`）。
   iOS 新 target `FitnessRider3D`（`app.fitnessrider.rider3d`）。顯示名稱暫定「FitnessRider 3D」，圖示待提供前沿用現有。
-- 3D 版不走 7 天試用／推廣碼／VIP 付費牆，改用**啟動碼**解鎖——**設計待定，先不做**。
-  定案前 3D 版沿用教練版的授權流程，不要自己先發明一套。
-  **啟動碼設計必須處理**：同一台裝置上兩個 App 拿到的 `device_fingerprint` 相同（Android `ANDROID_ID` 依簽章金鑰、
-  iOS `identifierForVendor` 依開發者帳號，都不分 App）。後端 `device_trials` 只在 `device_secret` 為空時寫入，
-  所以不會覆蓋先裝那個 App 的授權，但後裝的 App 會共用試用起算日、線上兌換會被拒（沒有該裝置的 secret）。
-  3D 版對後端要用自己的識別（例如在 fingerprint 前加固定前綴），或啟動碼完全不走這套後端。
+- **收費（2026-10-29 Tony 定案）**：**每位教練每月 US$5，商店自動續訂**（App Store 自動續期訂閱、Google Play 訂閱），
+  首月免費用商店的免費試用優惠。新舊 3D Biking 客戶一律相同，沒有場館授權、沒有啟動碼。
+  3D 版不走教練版的 7 天試用／推廣碼／VIP 序號，也不用後端 `device_trials`。
+  - 教練在 App 內付費解鎖數位功能，iOS 依 Guideline 3.1.1 一定要走 IAP，不可在 App 外賣碼繞過。商店抽成約 15%。
+  - 授權以商店為準（StoreKit 2 `Transaction.currentEntitlements`、Play Billing `queryPurchasesAsync`）。
+    兩者都有本機快取，場館區網連不到外網時仍能判斷；也就不會碰到兩個 App 共用 `device_fingerprint` 的問題
+    （同一台裝置兩個 App 的 fingerprint 相同，後端 `device_trials` 只認先裝的那個）。
+  - 首月免費每個 Apple ID／Google 帳號只能領一次，由商店把關，不另做防重灌。
+  - 訂閱到期只影響 App，3D 主機照常運作（客戶買斷的是主機）。不可在上課途中鎖住。
+  - **依賴**：3D 版的訂閱商品（App Store Connect／Play Console）與 RevenueCat 都還沒設定（見 CLAUDE.md Paywall 節）。
+    商品 ID 出來前 3D 版沿用教練版授權流程，不要先寫假的購買流程或購買抽象層。
 - 3D 主機介接來源：`FitnessRider3D_Spec_V1.0.12_2019.07.01.pptx`（REST `/api/v1/fitnessrider3d/*`，
   主機以 UDP 廣播 `255.255.255.255:24000` 公告 IP 與 port）。實機確認後的正式格式補在本文件「3D 主機 API」一節。
 
@@ -56,7 +61,7 @@
   監看引擎既有狀態即可，引擎不改。
   payload 組裝、姿勢對應、狀態轉指令做成雙端同名純函式＋測試。
 - **之後再說**：HUD 3D 鏡頭控制（focusUser／focusRank／lineUp／rpmView／trap／groupRide）、
-  學員排行（`GetUserTrainingInfos`）、阻力連動（需先把「建議阻力」改成 1~40 數值）、UDP 自動搜尋、啟動碼。
+  學員排行（`GetUserTrainingInfos`）、阻力連動（需先把「建議阻力」改成 1~40 數值）、UDP 自動搜尋、商店訂閱（商品設定好之後）。
 - **不做**：`power`（與 spec §6「剔除瓦特數」衝突）、`CheckUpdate`（我們有自己的強制更新）。
 
 ## 3D 主機 API
@@ -134,6 +139,12 @@ Unity 進入訓練畫面時，若主機設定 `gymSettings.playMusic` 為 true�
 - [x] `EnterTraining` 失敗時給「重試」與「不連 3D 直接上課」。
 - [x] 姿勢對應中 SPRINT→0、JUMPS→2。
 - [x] 暫停時 3D 不會停（主機 `pause` 無作用），可接受。
+
+### 收費（2026-10-29）
+- [ ] **3D 版要怎麼避免取代教練版**：3D 版每月 US$5，比教練版 VIP（NT$390）便宜，又是同一套功能。
+      建議：3D 版的 HUD 只有在「最近 30 天內連過 3D 主機」時可用，否則只能編課表與匯出；
+      「不連 3D 直接上課」也受同一條件限制。未定前不要實作。
+- [ ] 在 App Store Connect／Play Console 建立 3D 版訂閱商品（US$4.99／月、首月免費試用）。
 
 ### D0 需要 Tony 處理
 - [ ] Firebase console 新增 Android app `com.fitnessrider.rider3d`，提供新的 `google-services.json`。
