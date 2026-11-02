@@ -52,10 +52,10 @@
 
 ## 開發單元（依序，前一個 commit 前不要動下一個）
 
-- **D0 兩個 App 的建置設定**：flavor／target、`isRider3D`、名稱、權限、上傳腳本。
+- **D0 兩個 App 的建置設定**（已完成）：flavor／target、`isRider3D`、名稱、權限、上傳腳本。
   驗收：兩個 App 可並存安裝且資料各自獨立；教練版行為與 main 完全相同；兩端既有測試全過。
-- **D1 連線**（「3D 主機 API」一節補齊後）：3D 版設定頁加主機 IP:port、開關、以 `GetUGymBikeStage` 測試連線並顯示狀態。
-- **D2 課程連動 MVP**：開課時選場景（`GetSceneInfos`，記住上次選擇，不改資料庫）→ `EnterTraining`
+- **D1 連線**（已完成，`38142b2`）：3D 版設定頁加主機 IP:port、開關、以 `GetUGymBikeStage` 測試連線並顯示狀態。
+- **D2 課程連動 MVP**（已完成，`33a771f`，2026-11-02 與實機 `192.168.0.115:8000` 驗證通過）：開課時選場景（`GetSceneInfos`，記住上次選擇，不改資料庫）→ `EnterTraining`
   （失敗時給「重試」與「不連 3D 直接上課」兩個選項）→ `UpdateWorkoutInfo` 的 start／pause／stop／exit，
   以及換 Cue／換段落時的 update（`targetRpm`／`intensityZone`／`posture`）；`start` 要等主機狀態到 `prepare` 才送。
   監看引擎既有狀態即可，引擎不改。
@@ -88,7 +88,7 @@ JSON 欄位全是字串：`classId`、`classTitle`、`classDuration`、`sceneId`
 - `sceneId` 空字串時主機當成 `"1"`。場景從主機的 `gymSceneList` 找 `Id`，找到就啟動該場景的 Unity 程式，
   狀態變 `waitUnity`。
 - **`gymSceneList` 是主機首頁載入時讀 `C:\uGym\GymSceneList_<語系>.xml`**（tw／cn／en／pt）；檔案不在就是 null，
-  此時 `GetSceneInfos` 與 `EnterTraining` 都會回 `ErrCode 20`。2026-09-30 實機即為此狀態。
+  此時 `GetSceneInfos` 與 `EnterTraining` 都會回 `ErrCode 20`。2026-11-02 實機 `192.168.0.115` 已載入 12 個場景，且實機 `GetSceneInfos` 的 `Obj` 直接回傳陣列 `[{"Id":"1","Name":"黃昏湖畔",...}, ...]`（規格投影片寫成 `{"sceneInfos":[...]}`，雙端 parser 同時相容兩種格式）。
 
 ### UpdateWorkoutInfo
 JSON：`command`、`rpm`、`intensity`、`posture`、`focusUserId`、`focusRank` 為**字串**；`resistance`、`power` 為 int；
@@ -130,7 +130,7 @@ Unity 進入訓練畫面時，若主機設定 `gymSettings.playMusic` 為 true�
 ## 待確認
 
 ### 3D 主機（擋 D1／D2 實機驗證）
-- [ ] 主機補上 `C:\uGym\GymSceneList_<語系>.xml`，讓 `GetSceneInfos`／`EnterTraining` 可用。
+- [x] 主機補上 `C:\uGym\GymSceneList_<語系>.xml`，讓 `GetSceneInfos`／`EnterTraining` 可用（2026-11-02 實機 `192.168.0.115` 已確認可用並通過連動測試）。
 - [ ] 主機 `gymSettings.playMusic` 關閉（避免雙重音樂），或改由 App 在 Unity 開跑後送 `silentMode: true`。
 
 ### 產品範圍（2026-09-30 Tony 全部同意）
