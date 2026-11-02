@@ -2429,4 +2429,65 @@ class FitnessRiderAndroidTest {
         val (_, repeat) = streamingFollowStep(settled, false, 1_150L, 0L)
         assertEquals(StreamingFollowAction.NONE, repeat)
     }
+
+    @Test
+    fun testNormalizedRider3DBaseUrl() {
+        assertEquals("http://192.168.0.115:8000", normalizedRider3DBaseUrl("192.168.0.115"))
+        assertEquals("http://192.168.0.115:8000", normalizedRider3DBaseUrl("  192.168.0.115:8000  "))
+        assertEquals("http://192.168.0.115:9000", normalizedRider3DBaseUrl("http://192.168.0.115:9000"))
+        assertEquals("http://ugym-host.local:8000", normalizedRider3DBaseUrl("HTTP://UGYM-HOST.LOCAL"))
+        assertNull(normalizedRider3DBaseUrl(""))
+        assertNull(normalizedRider3DBaseUrl("   "))
+        assertNull(normalizedRider3DBaseUrl("https://192.168.0.115:8000"))
+        assertNull(normalizedRider3DBaseUrl("192.168.0.115:0"))
+        assertNull(normalizedRider3DBaseUrl("192.168.0.115:70000"))
+        assertNull(normalizedRider3DBaseUrl("192.168.0.115:abc"))
+        assertNull(normalizedRider3DBaseUrl("192.168.0.115/api"))
+        assertNull(normalizedRider3DBaseUrl("192.168.0.115:8000:1"))
+        assertNull(normalizedRider3DBaseUrl(".192.168.0.115"))
+    }
+
+    @Test
+    fun testIsRider3DActive() {
+        assertTrue(isRider3DActive(isRider3DApp = true, isEnabled = true, hostInput = "192.168.0.115"))
+        assertFalse(isRider3DActive(isRider3DApp = false, isEnabled = true, hostInput = "192.168.0.115"))
+        assertFalse(isRider3DActive(isRider3DApp = true, isEnabled = false, hostInput = "192.168.0.115"))
+        assertFalse(isRider3DActive(isRider3DApp = true, isEnabled = true, hostInput = ""))
+    }
+
+    @Test
+    fun testRider3DStageUrlAndParseResponse() {
+        assertEquals(
+            "http://192.168.0.115:8000/api/v1/fitnessrider3d/GetUGymBikeStage",
+            rider3DStageUrl("192.168.0.115")
+        )
+        assertNull(rider3DStageUrl(""))
+
+        val idleJson = """{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"stage":"launcher","status":"","extra":null}}"""
+        val idleResult = parseRider3DStageResponse(idleJson)
+        assertTrue(idleResult.isSuccess)
+        assertEquals(Rider3DStage(stage = "launcher", status = ""), idleResult.data)
+
+        val prepareJson = """{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"stage":"launcher","status":"prepare","extra":null}}"""
+        val prepareResult = parseRider3DStageResponse(prepareJson)
+        assertTrue(prepareResult.isSuccess)
+        assertEquals(Rider3DStage(stage = "launcher", status = "prepare"), prepareResult.data)
+
+        val errJson = """{"ErrVer":1,"ErrPairs":[{"ErrCode":20,"ErrMsg":"General_ProcessFail"}],"Obj":null}"""
+        val errResult = parseRider3DStageResponse(errJson)
+        assertFalse(errResult.isSuccess)
+        assertTrue(errResult.errorMessage!!.contains("20"))
+
+        val badJson = parseRider3DStageResponse("not json")
+        assertFalse(badJson.isSuccess)
+    }
+
+    @Test
+    fun testRider3DStageDisplayText() {
+        assertEquals("已連線（主機待命）", rider3DStageDisplayText("launcher", ""))
+        assertEquals("已連線（正在啟動 3D 場景）", rider3DStageDisplayText("launcher", "waitUnity"))
+        assertEquals("已連線（3D 場景準備完成）", rider3DStageDisplayText("launcher", "prepare"))
+        assertEquals("已連線（3D 訓練進行中）", rider3DStageDisplayText("launcher", "start"))
+        assertEquals("已連線（顯示訓練結果）", rider3DStageDisplayText("launcher", "result"))
+    }
 }

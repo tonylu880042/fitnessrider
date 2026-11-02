@@ -30,6 +30,14 @@ class AppSettings internal constructor(context: Context) {
         get() = prefs.getBoolean("follow_streaming_playback", true)
         set(value) = prefs.edit().putBoolean("follow_streaming_playback", value).apply()
 
+    var isRider3DEnabled: Boolean
+        get() = prefs.getBoolean("is_rider3d_enabled", true)
+        set(value) = prefs.edit().putBoolean("is_rider3d_enabled", value).apply()
+
+    var rider3dHost: String
+        get() = prefs.getString("rider3d_host", "") ?: ""
+        set(value) = prefs.edit().putString("rider3d_host", value).apply()
+
     companion object {
         @Volatile
         private var INSTANCE: AppSettings? = null

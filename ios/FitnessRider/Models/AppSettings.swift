@@ -13,6 +13,8 @@ public final class AppSettings: ObservableObject {
         static let crossfadeDurationSeconds = "crossfadeDurationSeconds"
         static let keepScreenAwakeInHUD = "keepScreenAwakeInHUD"
         static let followStreamingPlayback = "followStreamingPlayback"
+        static let isRider3DEnabled = "isRider3DEnabled"
+        static let rider3dHost = "rider3dHost"
     }
 
     @Published public var isCountdownBeepEnabled: Bool {
@@ -39,6 +41,14 @@ public final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(followStreamingPlayback, forKey: Keys.followStreamingPlayback) }
     }
 
+    @Published public var isRider3DEnabled: Bool {
+        didSet { UserDefaults.standard.set(isRider3DEnabled, forKey: Keys.isRider3DEnabled) }
+    }
+
+    @Published public var rider3dHost: String {
+        didSet { UserDefaults.standard.set(rider3dHost, forKey: Keys.rider3dHost) }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             Keys.isCountdownBeepEnabled: true,
@@ -46,7 +56,9 @@ public final class AppSettings: ObservableObject {
             Keys.isAutoPauseBetweenSegmentsEnabled: false,
             Keys.crossfadeDurationSeconds: 2.0,
             Keys.keepScreenAwakeInHUD: true,
-            Keys.followStreamingPlayback: true
+            Keys.followStreamingPlayback: true,
+            Keys.isRider3DEnabled: true,
+            Keys.rider3dHost: ""
         ])
 
         self.isCountdownBeepEnabled = UserDefaults.standard.bool(forKey: Keys.isCountdownBeepEnabled)
@@ -55,5 +67,7 @@ public final class AppSettings: ObservableObject {
         self.crossfadeDurationSeconds = UserDefaults.standard.double(forKey: Keys.crossfadeDurationSeconds)
         self.keepScreenAwakeInHUD = UserDefaults.standard.bool(forKey: Keys.keepScreenAwakeInHUD)
         self.followStreamingPlayback = UserDefaults.standard.bool(forKey: Keys.followStreamingPlayback)
+        self.isRider3DEnabled = UserDefaults.standard.bool(forKey: Keys.isRider3DEnabled)
+        self.rider3dHost = UserDefaults.standard.string(forKey: Keys.rider3dHost) ?? ""
     }
 }

@@ -24,12 +24,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.fitnessrider.AppVariant
 import com.fitnessrider.audio.StreamingSessionMonitor
 import com.fitnessrider.auth.DeviceIdentifierService
 import com.fitnessrider.auth.LicenseVerificationService
 import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.data.SQLiteBackupService
 import com.fitnessrider.model.AppSettings
+import com.fitnessrider.model.Rider3DClient
+import com.fitnessrider.model.rider3DStageDisplayText
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.ui.paywall.PaywallScreen
@@ -54,6 +57,12 @@ fun SettingsScreen(
     var isKeepAwakeEnabled by remember { mutableStateOf(settings.keepScreenAwakeInHUD) }
     var isFollowStreamingEnabled by remember { mutableStateOf(settings.followStreamingPlayback) }
     var isNowPlayingAuthorized by remember { mutableStateOf(StreamingSessionMonitor.isAuthorized(context)) }
+    var isRider3DEnabled by remember { mutableStateOf(settings.isRider3DEnabled) }
+    var rider3dHost by remember { mutableStateOf(settings.rider3dHost) }
+    var rider3dStatusMessage by remember { mutableStateOf<String?>(null) }
+    var rider3dStatusSuccess by remember { mutableStateOf(false) }
+    var isTestingRider3D by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -243,6 +252,81 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             color = if (isNowPlayingAuthorized) TopBarGreenDark else TextSecondary
                         )
+                    }
+                }
+            }
+
+            if (AppVariant.isRider3D) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBackground),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(text = "3D Biking 主機連動", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "啟用 3D Biking 連動", fontSize = 14.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = isRider3DEnabled,
+                                onCheckedChange = {
+                                    isRider3DEnabled = it
+                                    settings.isRider3DEnabled = it
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = rider3dHost,
+                            onValueChange = {
+                                rider3dHost = it
+                                settings.rider3dHost = it
+                                rider3dStatusMessage = null
+                            },
+                            label = { Text("主機位址 (IP 或 IP:Port)") },
+                            placeholder = { Text("例如 192.168.0.115:8000") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = {
+                                isTestingRider3D = true
+                                rider3dStatusMessage = "連線測試中..."
+                                rider3dStatusSuccess = false
+                                coroutineScope.launch {
+                                    val result = Rider3DClient.fetchStage(rider3dHost)
+                                    isTestingRider3D = false
+                                    if (result.isSuccess && result.data != null) {
+                                        rider3dStatusSuccess = true
+                                        rider3dStatusMessage = rider3DStageDisplayText(result.data.stage, result.data.status)
+                                    } else {
+                                        rider3dStatusSuccess = false
+                                        rider3dStatusMessage = result.errorMessage ?: "無法連線至 3D 主機"
+                                    }
+                                }
+                            },
+                            enabled = !isTestingRider3D,
+                            colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = if (isTestingRider3D) "測試連線中..." else "測試連線")
+                        }
+
+                        rider3dStatusMessage?.let { statusMsg ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = statusMsg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (rider3dStatusSuccess) TopBarGreenDark else AccentRed
+                            )
+                        }
                     }
                 }
             }

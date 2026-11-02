@@ -2157,4 +2157,61 @@ final class FitnessRiderTests: XCTestCase {
         let repeated = streamingFollowStep(state: settled.state, signal: true, nowMs: 2_000)
         XCTAssertEqual(repeated.action, .none)
     }
+
+    func testNormalizedRider3DBaseUrl() {
+        XCTAssertEqual(normalizedRider3DBaseUrl("192.168.0.115"), "http://192.168.0.115:8000")
+        XCTAssertEqual(normalizedRider3DBaseUrl("  192.168.0.115:8000  "), "http://192.168.0.115:8000")
+        XCTAssertEqual(normalizedRider3DBaseUrl("http://192.168.0.115:9000"), "http://192.168.0.115:9000")
+        XCTAssertEqual(normalizedRider3DBaseUrl("HTTP://UGYM-HOST.LOCAL"), "http://ugym-host.local:8000")
+        XCTAssertNil(normalizedRider3DBaseUrl(""))
+        XCTAssertNil(normalizedRider3DBaseUrl("   "))
+        XCTAssertNil(normalizedRider3DBaseUrl("https://192.168.0.115:8000"))
+        XCTAssertNil(normalizedRider3DBaseUrl("192.168.0.115:0"))
+        XCTAssertNil(normalizedRider3DBaseUrl("192.168.0.115:70000"))
+        XCTAssertNil(normalizedRider3DBaseUrl("192.168.0.115:abc"))
+        XCTAssertNil(normalizedRider3DBaseUrl("192.168.0.115/api"))
+        XCTAssertNil(normalizedRider3DBaseUrl("192.168.0.115:8000:1"))
+        XCTAssertNil(normalizedRider3DBaseUrl(".192.168.0.115"))
+    }
+
+    func testIsRider3DActive() {
+        XCTAssertTrue(isRider3DActive(isRider3DApp: true, isEnabled: true, hostInput: "192.168.0.115"))
+        XCTAssertFalse(isRider3DActive(isRider3DApp: false, isEnabled: true, hostInput: "192.168.0.115"))
+        XCTAssertFalse(isRider3DActive(isRider3DApp: true, isEnabled: false, hostInput: "192.168.0.115"))
+        XCTAssertFalse(isRider3DActive(isRider3DApp: true, isEnabled: true, hostInput: ""))
+    }
+
+    func testRider3DStageUrlAndParseResponse() {
+        XCTAssertEqual(
+            rider3DStageUrl("192.168.0.115"),
+            "http://192.168.0.115:8000/api/v1/fitnessrider3d/GetUGymBikeStage"
+        )
+        XCTAssertNil(rider3DStageUrl(""))
+
+        let idleJson = #"{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"stage":"launcher","status":"","extra":null}}"#
+        let idleResult = parseRider3DStageResponse(idleJson)
+        XCTAssertTrue(idleResult.isSuccess)
+        XCTAssertEqual(idleResult.data, Rider3DStage(stage: "launcher", status: ""))
+
+        let prepareJson = #"{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"stage":"launcher","status":"prepare","extra":null}}"#
+        let prepareResult = parseRider3DStageResponse(prepareJson)
+        XCTAssertTrue(prepareResult.isSuccess)
+        XCTAssertEqual(prepareResult.data, Rider3DStage(stage: "launcher", status: "prepare"))
+
+        let errJson = #"{"ErrVer":1,"ErrPairs":[{"ErrCode":20,"ErrMsg":"General_ProcessFail"}],"Obj":null}"#
+        let errResult = parseRider3DStageResponse(errJson)
+        XCTAssertFalse(errResult.isSuccess)
+        XCTAssertTrue(errResult.errorMessage?.contains("20") == true)
+
+        let badJson = parseRider3DStageResponse("not json")
+        XCTAssertFalse(badJson.isSuccess)
+    }
+
+    func testRider3DStageDisplayText() {
+        XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: ""), "已連線（主機待命）")
+        XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "waitUnity"), "已連線（正在啟動 3D 場景）")
+        XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "prepare"), "已連線（3D 場景準備完成）")
+        XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "start"), "已連線（3D 訓練進行中）")
+        XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "result"), "已連線（顯示訓練結果）")
+    }
 }

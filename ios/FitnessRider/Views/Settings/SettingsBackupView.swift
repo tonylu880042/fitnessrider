@@ -19,6 +19,9 @@ public struct SettingsBackupView: View {
     @State private var isShowingPaywallSheet: Bool = false
     @State private var licenseCodeInput: String = ""
     @State private var isCopiedDeviceId: Bool = false
+    @State private var rider3dStatusMessage: String?
+    @State private var rider3dStatusSuccess: Bool = false
+    @State private var isTestingRider3D: Bool = false
 
     public init(onDataChanged: @escaping () -> Void) {
         self.onDataChanged = onDataChanged
@@ -52,6 +55,55 @@ public struct SettingsBackupView: View {
                     Toggle("課堂進行中螢幕強制常亮", isOn: $settings.keepScreenAwakeInHUD)
 
                     Toggle("跟隨串流音樂播放／暫停", isOn: $settings.followStreamingPlayback)
+                }
+
+                if AppVariant.isRider3D {
+                    Section("3D Biking 主機連動") {
+                        Toggle("啟用 3D Biking 連動", isOn: $settings.isRider3DEnabled)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("主機位址 (IP 或 IP:Port)")
+                                .font(.caption)
+                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                            TextField("例如 192.168.0.115:8000", text: $settings.rider3dHost)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .onChange(of: settings.rider3dHost) { _ in
+                                    rider3dStatusMessage = nil
+                                }
+                        }
+
+                        Button {
+                            isTestingRider3D = true
+                            rider3dStatusMessage = "連線測試中..."
+                            rider3dStatusSuccess = false
+                            let host = settings.rider3dHost
+                            Task {
+                                let result = await Rider3DClient.fetchStage(hostInput: host)
+                                isTestingRider3D = false
+                                if result.isSuccess, let stage = result.data {
+                                    rider3dStatusSuccess = true
+                                    rider3dStatusMessage = rider3DStageDisplayText(stage: stage.stage, status: stage.status)
+                                } else {
+                                    rider3dStatusSuccess = false
+                                    rider3dStatusMessage = result.errorMessage ?? "無法連線至 3D 主機"
+                                }
+                            }
+                        } label: {
+                            Label(isTestingRider3D ? "測試連線中..." : "測試連線", systemImage: "network")
+                                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                                .fontWeight(.semibold)
+                        }
+                        .disabled(isTestingRider3D)
+
+                        if let statusMsg = rider3dStatusMessage {
+                            Text(statusMsg)
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(rider3dStatusSuccess ? FitnessRiderTheme.topBarGreenDark : FitnessRiderTheme.accentRed)
+                        }
+                    }
                 }
 
                 Section("資料庫備份與還原 (SQLite)") {
