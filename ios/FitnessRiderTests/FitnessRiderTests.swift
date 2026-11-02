@@ -2214,4 +2214,161 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "start"), "已連線（3D 訓練進行中）")
         XCTAssertEqual(rider3DStageDisplayText(stage: "launcher", status: "result"), "已連線（顯示訓練結果）")
     }
+
+    func testRider3DPostureAndIntensityMapping() {
+        XCTAssertEqual(rider3DPostureCode(.seatedFlat), "0")
+        XCTAssertEqual(rider3DPostureCode(.seatedClimb), "1")
+        XCTAssertEqual(rider3DPostureCode(.standingFlat), "2")
+        XCTAssertEqual(rider3DPostureCode(.standingClimb), "3")
+        XCTAssertEqual(rider3DPostureCode(.recovery), "0")
+        XCTAssertEqual(rider3DPostureCode(.sprint), "0")
+        XCTAssertEqual(rider3DPostureCode(.jumps), "2")
+
+        XCTAssertEqual(rider3DIntensityPercent(1), "55")
+        XCTAssertEqual(rider3DIntensityPercent(2), "65")
+        XCTAssertEqual(rider3DIntensityPercent(3), "75")
+        XCTAssertEqual(rider3DIntensityPercent(4), "85")
+        XCTAssertEqual(rider3DIntensityPercent(5), "90")
+        XCTAssertEqual(rider3DIntensityPercent(99), "65")
+
+        XCTAssertEqual(rider3DTargetRpmString(85), "85")
+        XCTAssertEqual(rider3DTargetRpmString(0), "1")
+        XCTAssertEqual(rider3DTargetRpmString(300), "250")
+    }
+
+    func testSelectInitialRider3DSceneIdAndParseScenes() {
+        let scenesJson = #"{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"sceneInfos":[{"Id":"1","Name":"山林公路","Description":"森林"},{"Id":"2","Name":"海濱大道","Description":"海岸"}]}}"#
+        let parsed = parseRider3DScenesResponse(scenesJson)
+        XCTAssertTrue(parsed.isSuccess)
+        let scenes = parsed.data ?? []
+        XCTAssertEqual(scenes.count, 2)
+        XCTAssertEqual(scenes.first, Rider3DScene(id: "1", name: "山林公路", description: "森林"))
+        XCTAssertEqual(selectInitialRider3DSceneId(scenes: scenes, lastSceneId: "2"), "2")
+        XCTAssertEqual(selectInitialRider3DSceneId(scenes: scenes, lastSceneId: "99"), "1")
+        XCTAssertEqual(selectInitialRider3DSceneId(scenes: [], lastSceneId: ""), "1")
+    }
+
+    func testBuildRider3DEnterTrainingAndUpdateWorkoutJson() throws {
+        let enterJsonStr = buildRider3DEnterTrainingJson(classId: "c1", classTitle: "極限燃脂", classDurationMs: 300_000, sceneId: "")
+        let enterObj = try JSONSerialization.jsonObject(with: Data(enterJsonStr.utf8)) as? [String: Any]
+        XCTAssertEqual(enterObj?["classId"] as? String, "c1")
+        XCTAssertEqual(enterObj?["classTitle"] as? String, "極限燃脂")
+        XCTAssertEqual(enterObj?["classDuration"] as? String, "300000")
+        XCTAssertEqual(enterObj?["sceneId"] as? String, "1")
+
+        let enterUrl = rider3DEnterTrainingUrl(hostInput: "192.168.0.115", classId: "c1", classTitle: "Test", classDurationMs: 60_000, sceneId: "2")
+        XCTAssertTrue(enterUrl?.hasPrefix("http://192.168.0.115:8000/api/v1/fitnessrider3d/EnterTraining?json=") == true)
+
+        let startJsonStr = buildRider3DUpdateWorkoutJson(command: "start", trap: false, groupRide: true)
+        let startObj = try JSONSerialization.jsonObject(with: Data(startJsonStr.utf8)) as? [String: Any]
+        XCTAssertEqual(startObj?["command"] as? String, "start")
+        XCTAssertEqual(startObj?["trap"] as? Bool, false)
+        XCTAssertEqual(startObj?["groupRide"] as? Bool, true)
+
+        let updateJsonStr = buildRider3DUpdateWorkoutJson(
+            command: "update",
+            targetRpm: 110,
+            intensityZone: 4,
+            posture: .sprint
+        )
+        let updateObj = try JSONSerialization.jsonObject(with: Data(updateJsonStr.utf8)) as? [String: Any]
+        XCTAssertEqual(updateObj?["command"] as? String, "update")
+        XCTAssertEqual(updateObj?["rpm"] as? String, "110")
+        XCTAssertEqual(updateObj?["intensity"] as? String, "85")
+        XCTAssertEqual(updateObj?["posture"] as? String, "0")
+    }
+
+    func testRider3DStepCommandsAndExitCommand() {
+        let cue1 = Rider3DCueSnapshot(segmentIndex: 0, cueId: "cue1", targetRpm: 85, intensityZone: 2, posture: .seatedFlat)
+        let cue2 = Rider3DCueSnapshot(segmentIndex: 0, cueId: "cue2", targetRpm: 65, intensityZone: 4, posture: .standingClimb)
+
+        let waitStep = rider3DStepCommands(
+            state: Rider3DSyncState(),
+            hostStatus: "waitUnity",
+            isPlaying: true,
+            totalSegments: 2,
+            currentSegmentIndex: 0,
+            currentOffsetSeconds: 1.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue1
+        )
+        XCTAssertTrue(waitStep.commands.isEmpty)
+        XCTAssertFalse(waitStep.state.hasStartedOnHost)
+
+        let startedStep = rider3DStepCommands(
+            state: waitStep.state,
+            hostStatus: "prepare",
+            isPlaying: true,
+            totalSegments: 2,
+            currentSegmentIndex: 0,
+            currentOffsetSeconds: 2.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue1
+        )
+        XCTAssertTrue(startedStep.state.hasStartedOnHost)
+        XCTAssertEqual(
+            startedStep.commands,
+            [
+                Rider3DCommandSpec(command: "start"),
+                Rider3DCommandSpec(command: "update", targetRpm: 85, intensityZone: 2, posture: .seatedFlat)
+            ]
+        )
+
+        let sameStep = rider3DStepCommands(
+            state: startedStep.state,
+            hostStatus: "start",
+            isPlaying: true,
+            totalSegments: 2,
+            currentSegmentIndex: 0,
+            currentOffsetSeconds: 5.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue1
+        )
+        XCTAssertTrue(sameStep.commands.isEmpty)
+
+        let nextCueStep = rider3DStepCommands(
+            state: sameStep.state,
+            hostStatus: "start",
+            isPlaying: true,
+            totalSegments: 2,
+            currentSegmentIndex: 0,
+            currentOffsetSeconds: 30.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue2
+        )
+        XCTAssertEqual(
+            nextCueStep.commands,
+            [Rider3DCommandSpec(command: "update", targetRpm: 65, intensityZone: 4, posture: .standingClimb)]
+        )
+
+        let pauseStep = rider3DStepCommands(
+            state: nextCueStep.state,
+            hostStatus: "start",
+            isPlaying: false,
+            totalSegments: 2,
+            currentSegmentIndex: 0,
+            currentOffsetSeconds: 40.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue2
+        )
+        XCTAssertEqual(pauseStep.commands, [Rider3DCommandSpec(command: "pause")])
+        XCTAssertEqual(rider3DCommandOnHudExit(hasStoppedOnHost: pauseStep.state.hasStoppedOnHost), "exit")
+
+        var nearEndState = pauseStep.state
+        nearEndState.lastIsPlaying = true
+        nearEndState.lastOffsetSeconds = 179.5
+        let stopStep = rider3DStepCommands(
+            state: nearEndState,
+            hostStatus: "start",
+            isPlaying: false,
+            totalSegments: 2,
+            currentSegmentIndex: 1,
+            currentOffsetSeconds: 0.0,
+            currentDurationSeconds: 180.0,
+            snapshot: cue2
+        )
+        XCTAssertTrue(stopStep.state.hasStoppedOnHost)
+        XCTAssertEqual(stopStep.commands, [Rider3DCommandSpec(command: "stop")])
+        XCTAssertNil(rider3DCommandOnHudExit(hasStoppedOnHost: stopStep.state.hasStoppedOnHost))
+    }
 }

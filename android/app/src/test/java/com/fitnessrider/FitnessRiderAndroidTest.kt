@@ -2490,4 +2490,162 @@ class FitnessRiderAndroidTest {
         assertEquals("已連線（3D 訓練進行中）", rider3DStageDisplayText("launcher", "start"))
         assertEquals("已連線（顯示訓練結果）", rider3DStageDisplayText("launcher", "result"))
     }
+
+    @Test
+    fun testRider3DPostureAndIntensityMapping() {
+        assertEquals("0", rider3DPostureCode(PostureType.SEATED_FLAT))
+        assertEquals("1", rider3DPostureCode(PostureType.SEATED_CLIMB))
+        assertEquals("2", rider3DPostureCode(PostureType.STANDING_FLAT))
+        assertEquals("3", rider3DPostureCode(PostureType.STANDING_CLIMB))
+        assertEquals("0", rider3DPostureCode(PostureType.RECOVERY))
+        assertEquals("0", rider3DPostureCode(PostureType.SPRINT))
+        assertEquals("2", rider3DPostureCode(PostureType.JUMPS))
+
+        assertEquals("55", rider3DIntensityPercent(1))
+        assertEquals("65", rider3DIntensityPercent(2))
+        assertEquals("75", rider3DIntensityPercent(3))
+        assertEquals("85", rider3DIntensityPercent(4))
+        assertEquals("90", rider3DIntensityPercent(5))
+        assertEquals("65", rider3DIntensityPercent(99))
+
+        assertEquals("85", rider3DTargetRpmString(85))
+        assertEquals("1", rider3DTargetRpmString(0))
+        assertEquals("250", rider3DTargetRpmString(300))
+    }
+
+    @Test
+    fun testSelectInitialRider3DSceneIdAndParseScenes() {
+        val scenesJson = """{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"sceneInfos":[{"Id":"1","Name":"山林公路","Description":"森林"},{"Id":"2","Name":"海濱大道","Description":"海岸"}]}}"""
+        val parsed = parseRider3DScenesResponse(scenesJson)
+        assertTrue(parsed.isSuccess)
+        val scenes = parsed.data!!
+        assertEquals(2, scenes.size)
+        assertEquals(Rider3DScene(id = "1", name = "山林公路", description = "森林"), scenes[0])
+        assertEquals("2", selectInitialRider3DSceneId(scenes, "2"))
+        assertEquals("1", selectInitialRider3DSceneId(scenes, "99"))
+        assertEquals("1", selectInitialRider3DSceneId(emptyList(), ""))
+    }
+
+    @Test
+    fun testBuildRider3DEnterTrainingAndUpdateWorkoutJson() {
+        val enterJson = org.json.JSONObject(buildRider3DEnterTrainingJson("c1", "極限燃脂", 300_000, ""))
+        assertEquals("c1", enterJson.getString("classId"))
+        assertEquals("極限燃脂", enterJson.getString("classTitle"))
+        assertEquals("300000", enterJson.getString("classDuration"))
+        assertEquals("1", enterJson.getString("sceneId"))
+
+        val enterUrl = rider3DEnterTrainingUrl("192.168.0.115", "c1", "Test", 60_000, "2")
+        assertTrue(enterUrl!!.startsWith("http://192.168.0.115:8000/api/v1/fitnessrider3d/EnterTraining?json="))
+
+        val startJson = org.json.JSONObject(buildRider3DUpdateWorkoutJson(command = "start", trap = false, groupRide = true))
+        assertEquals("start", startJson.getString("command"))
+        assertEquals(false, startJson.getBoolean("trap"))
+        assertEquals(true, startJson.getBoolean("groupRide"))
+
+        val updateJson = org.json.JSONObject(
+            buildRider3DUpdateWorkoutJson(
+                command = "update",
+                targetRpm = 110,
+                intensityZone = 4,
+                posture = PostureType.SPRINT
+            )
+        )
+        assertEquals("update", updateJson.getString("command"))
+        assertEquals("110", updateJson.getString("rpm"))
+        assertEquals("85", updateJson.getString("intensity"))
+        assertEquals("0", updateJson.getString("posture"))
+    }
+
+    @Test
+    fun testRider3DStepCommandsAndExitCommand() {
+        val cue1 = Rider3DCueSnapshot(segmentIndex = 0, cueId = "cue1", targetRpm = 85, intensityZone = 2, posture = PostureType.SEATED_FLAT)
+        val cue2 = Rider3DCueSnapshot(segmentIndex = 0, cueId = "cue2", targetRpm = 65, intensityZone = 4, posture = PostureType.STANDING_CLIMB)
+
+        val (waitState, waitCmds) = rider3DStepCommands(
+            state = Rider3DSyncState(),
+            hostStatus = "waitUnity",
+            isPlaying = true,
+            totalSegments = 2,
+            currentSegmentIndex = 0,
+            currentOffsetSeconds = 1.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue1
+        )
+        assertTrue(waitCmds.isEmpty())
+        assertFalse(waitState.hasStartedOnHost)
+
+        val (startedState, startCmds) = rider3DStepCommands(
+            state = waitState,
+            hostStatus = "prepare",
+            isPlaying = true,
+            totalSegments = 2,
+            currentSegmentIndex = 0,
+            currentOffsetSeconds = 2.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue1
+        )
+        assertTrue(startedState.hasStartedOnHost)
+        assertEquals(
+            listOf(
+                Rider3DCommandSpec(command = "start"),
+                Rider3DCommandSpec(command = "update", targetRpm = 85, intensityZone = 2, posture = PostureType.SEATED_FLAT)
+            ),
+            startCmds
+        )
+
+        val (sameCueState, sameCmds) = rider3DStepCommands(
+            state = startedState,
+            hostStatus = "start",
+            isPlaying = true,
+            totalSegments = 2,
+            currentSegmentIndex = 0,
+            currentOffsetSeconds = 5.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue1
+        )
+        assertTrue(sameCmds.isEmpty())
+
+        val (nextCueState, nextCueCmds) = rider3DStepCommands(
+            state = sameCueState,
+            hostStatus = "start",
+            isPlaying = true,
+            totalSegments = 2,
+            currentSegmentIndex = 0,
+            currentOffsetSeconds = 30.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue2
+        )
+        assertEquals(
+            listOf(Rider3DCommandSpec(command = "update", targetRpm = 65, intensityZone = 4, posture = PostureType.STANDING_CLIMB)),
+            nextCueCmds
+        )
+
+        val (pausedState, pauseCmds) = rider3DStepCommands(
+            state = nextCueState,
+            hostStatus = "start",
+            isPlaying = false,
+            totalSegments = 2,
+            currentSegmentIndex = 0,
+            currentOffsetSeconds = 40.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue2
+        )
+        assertEquals(listOf(Rider3DCommandSpec(command = "pause")), pauseCmds)
+        assertEquals("exit", rider3DCommandOnHudExit(pausedState.hasStoppedOnHost))
+
+        val nearEndState = pausedState.copy(lastIsPlaying = true, lastOffsetSeconds = 179.5)
+        val (stoppedState, stopCmds) = rider3DStepCommands(
+            state = nearEndState,
+            hostStatus = "start",
+            isPlaying = false,
+            totalSegments = 2,
+            currentSegmentIndex = 1,
+            currentOffsetSeconds = 0.0,
+            currentDurationSeconds = 180.0,
+            snapshot = cue2
+        )
+        assertTrue(stoppedState.hasStoppedOnHost)
+        assertEquals(listOf(Rider3DCommandSpec(command = "stop")), stopCmds)
+        assertNull(rider3DCommandOnHudExit(stoppedState.hasStoppedOnHost))
+    }
 }

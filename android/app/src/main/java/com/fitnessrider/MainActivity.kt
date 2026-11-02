@@ -86,14 +86,16 @@ class MainActivity : ComponentActivity() {
 
                     var currentScreen by remember { mutableStateOf(ScreenState.LIST) }
                     var activeClassForHUD by remember { mutableStateOf<WorkoutClass?>(null) }
+                    var activeClassConnectRider3D by remember { mutableStateOf(false) }
                     var activeClassForEditor by remember { mutableStateOf<WorkoutClass?>(null) }
 
                     when (currentScreen) {
                         ScreenState.LIST -> {
                             ClassListScreen(
                                 classes = classes,
-                                onClassClick = {
-                                    activeClassForHUD = it
+                                onClassClick = { workoutClass, connectRider3D ->
+                                    activeClassForHUD = workoutClass
+                                    activeClassConnectRider3D = connectRider3D
                                     currentScreen = ScreenState.HUD
                                 },
                                 onEditClick = {
@@ -141,6 +143,7 @@ class MainActivity : ComponentActivity() {
                                 WorkoutHUDScreen(
                                     workoutClass = classes.firstOrNull { it.id == wc.id } ?: wc,
                                     audioManager = audioEngine,
+                                    connectRider3D = activeClassConnectRider3D,
                                     onExitClick = {
                                         audioEngine.pause()
                                         currentScreen = ScreenState.LIST

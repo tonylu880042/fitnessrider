@@ -15,6 +15,7 @@ public final class AppSettings: ObservableObject {
         static let followStreamingPlayback = "followStreamingPlayback"
         static let isRider3DEnabled = "isRider3DEnabled"
         static let rider3dHost = "rider3dHost"
+        static let rider3dLastSceneId = "rider3dLastSceneId"
     }
 
     @Published public var isCountdownBeepEnabled: Bool {
@@ -49,6 +50,10 @@ public final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(rider3dHost, forKey: Keys.rider3dHost) }
     }
 
+    @Published public var rider3dLastSceneId: String {
+        didSet { UserDefaults.standard.set(rider3dLastSceneId, forKey: Keys.rider3dLastSceneId) }
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [
             Keys.isCountdownBeepEnabled: true,
@@ -58,7 +63,8 @@ public final class AppSettings: ObservableObject {
             Keys.keepScreenAwakeInHUD: true,
             Keys.followStreamingPlayback: true,
             Keys.isRider3DEnabled: true,
-            Keys.rider3dHost: ""
+            Keys.rider3dHost: "",
+            Keys.rider3dLastSceneId: ""
         ])
 
         self.isCountdownBeepEnabled = UserDefaults.standard.bool(forKey: Keys.isCountdownBeepEnabled)
@@ -69,5 +75,6 @@ public final class AppSettings: ObservableObject {
         self.followStreamingPlayback = UserDefaults.standard.bool(forKey: Keys.followStreamingPlayback)
         self.isRider3DEnabled = UserDefaults.standard.bool(forKey: Keys.isRider3DEnabled)
         self.rider3dHost = UserDefaults.standard.string(forKey: Keys.rider3dHost) ?? ""
+        self.rider3dLastSceneId = UserDefaults.standard.string(forKey: Keys.rider3dLastSceneId) ?? ""
     }
 }

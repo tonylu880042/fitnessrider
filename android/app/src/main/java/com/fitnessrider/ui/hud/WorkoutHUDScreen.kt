@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+import com.fitnessrider.AppVariant
 import com.fitnessrider.R
 import com.fitnessrider.audio.AudioEngineManager
 import com.fitnessrider.audio.HapticFeedbackManager
@@ -68,15 +69,25 @@ import com.fitnessrider.audio.streamingPreviousAction
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.HandPosition
 import com.fitnessrider.model.PostureType
+import com.fitnessrider.model.Rider3DClient
+import com.fitnessrider.model.Rider3DCommandSpec
+import com.fitnessrider.model.Rider3DCueSnapshot
+import com.fitnessrider.model.Rider3DSyncState
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutCue
+import com.fitnessrider.model.isRider3DActive
 import com.fitnessrider.model.isStreamingSegment
 import com.fitnessrider.model.normalizedStreamingPlaylistUrl
+import com.fitnessrider.model.rider3DCommandOnHudExit
+import com.fitnessrider.model.rider3DStepCommands
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.CircleProgressBar
 import com.fitnessrider.ui.components.HandPositionBadge
 import com.fitnessrider.ui.components.TopNavBar
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val RATE_SWIPE_THRESHOLD_DP = 60.dp
 
@@ -154,10 +165,16 @@ fun playlistAutoScrollTarget(currentIndex: Int, isSearchOpen: Boolean): Int? =
 fun WorkoutHUDScreen(
     workoutClass: WorkoutClass,
     audioManager: AudioEngineManager,
+    connectRider3D: Boolean = false,
     onExitClick: () -> Unit
 ) {
     val context = LocalContext.current
     val settings = remember { AppSettings.getInstance(context) }
+    val coroutineScope = rememberCoroutineScope()
+    val rider3dEnabledInHud = connectRider3D && isRider3DActive(AppVariant.isRider3D, settings.isRider3DEnabled, settings.rider3dHost)
+    var rider3dSyncState by remember { mutableStateOf(Rider3DSyncState()) }
+    var rider3dHostStatus by remember { mutableStateOf("waitUnity") }
+    var rider3dStatusLabel by remember { mutableStateOf<String?>(if (rider3dEnabledInHud) "3D 準備中" else null) }
     var entryDecisionPending by remember { mutableStateOf(false) }
     var awaitingStreamingStart by remember { mutableStateOf(false) }
 
@@ -374,6 +391,74 @@ fun WorkoutHUDScreen(
         }
     }
 
+    LaunchedEffect(rider3dEnabledInHud) {
+        if (!rider3dEnabledInHud) return@LaunchedEffect
+        while (!rider3dSyncState.hasStartedOnHost && !rider3dSyncState.hasStoppedOnHost) {
+            val stageRes = Rider3DClient.fetchStage(settings.rider3dHost, timeoutMs = 1500)
+            if (stageRes.isSuccess && stageRes.data != null) {
+                rider3dHostStatus = stageRes.data.status
+                if (!rider3dSyncState.hasStartedOnHost) {
+                    rider3dStatusLabel = if (stageRes.data.status == "prepare" || stageRes.data.status == "start") {
+                        "3D 準備完成"
+                    } else {
+                        "3D 啟動中"
+                    }
+                }
+            } else {
+                rider3dStatusLabel = "3D 連線異常"
+            }
+            delay(1000L)
+        }
+    }
+
+    LaunchedEffect(
+        rider3dEnabledInHud,
+        rider3dHostStatus,
+        isPlaying,
+        currentSegmentIndex,
+        currentOffsetSec,
+        currentDurationSec,
+        activeCue?.id,
+        activeCue?.targetRpm,
+        activeCue?.posture,
+        activeSegment?.intensityZone
+    ) {
+        if (!rider3dEnabledInHud) return@LaunchedEffect
+        val snapshot = if (activeSegment != null && activeCue != null) {
+            Rider3DCueSnapshot(
+                segmentIndex = currentSegmentIndex,
+                cueId = activeCue.id,
+                targetRpm = activeCue.targetRpm,
+                intensityZone = activeSegment.intensityZone,
+                posture = activeCue.posture
+            )
+        } else null
+        val (nextState, commands) = rider3DStepCommands(
+            state = rider3dSyncState,
+            hostStatus = rider3dHostStatus,
+            isPlaying = isPlaying,
+            totalSegments = workoutClass.segments.size,
+            currentSegmentIndex = currentSegmentIndex,
+            currentOffsetSeconds = currentOffsetSec,
+            currentDurationSeconds = currentDurationSec,
+            snapshot = snapshot
+        )
+        rider3dSyncState = nextState
+        if (commands.isNotEmpty()) {
+            val host = settings.rider3dHost
+            coroutineScope.launch {
+                for (cmd in commands) {
+                    val res = Rider3DClient.updateWorkoutInfo(host, cmd, timeoutMs = 1500)
+                    rider3dStatusLabel = if (res.isSuccess) {
+                        if (cmd.command == "stop") "3D 訓練完成" else "3D 已連動"
+                    } else {
+                        "3D 連線異常"
+                    }
+                }
+            }
+        }
+    }
+
     val remainingCueSec = if (nextCue != null) {
         ((nextCue.offsetMs - currentMs) / 1000).coerceAtLeast(0)
     } else {
@@ -449,7 +534,10 @@ fun WorkoutHUDScreen(
                         color = Color.White
                     )
                     Text(
-                        text = "即時消耗: $realtimeCalories / ${workoutClass.estimatedCalories.toInt()} kcal",
+                        text = buildString {
+                            append("即時消耗: $realtimeCalories / ${workoutClass.estimatedCalories.toInt()} kcal")
+                            rider3dStatusLabel?.let { append(" • $it") }
+                        },
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.9f)
                     )
@@ -1123,6 +1211,15 @@ fun WorkoutHUDScreen(
                     TextButton(
                         onClick = {
                             isShowingExitConfirmDialog = false
+                            if (rider3dEnabledInHud) {
+                                val exitCmd = rider3DCommandOnHudExit(rider3dSyncState.hasStoppedOnHost)
+                                if (exitCmd != null) {
+                                    val host = settings.rider3dHost
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        Rider3DClient.updateWorkoutInfo(host, Rider3DCommandSpec(command = exitCmd), timeoutMs = 1500)
+                                    }
+                                }
+                            }
                             onExitClick()
                         }
                     ) {

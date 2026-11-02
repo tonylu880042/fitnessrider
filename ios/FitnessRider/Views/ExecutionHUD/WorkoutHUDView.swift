@@ -71,6 +71,7 @@ public struct WorkoutHUDView: View {
     @StateObject private var audioManager = AudioEngineManager.shared
 
     public let workoutClass: WorkoutClass
+    public let connectRider3D: Bool
 
     @State private var isShowingExitAlert: Bool = false
     @State private var isPlaylistDrawerOpen: Bool = true
@@ -82,12 +83,25 @@ public struct WorkoutHUDView: View {
     @State private var awaitingStreamingStart: Bool = false
     @State private var isPlaylistSearchOpen: Bool = false
     @State private var playlistQuery: String = ""
+    @State private var rider3dSyncState = Rider3DSyncState()
+    @State private var rider3dHostStatus: String = "waitUnity"
+    @State private var rider3dStatusLabel: String?
     @FocusState private var isPlaylistSearchFocused: Bool
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
 
-    public init(workoutClass: WorkoutClass) {
+    public init(workoutClass: WorkoutClass, connectRider3D: Bool = false) {
         self.workoutClass = workoutClass
+        self.connectRider3D = connectRider3D
+    }
+
+    private var rider3dEnabledInHud: Bool {
+        let settings = AppSettings.shared
+        return connectRider3D && isRider3DActive(
+            isRider3DApp: AppVariant.isRider3D,
+            isEnabled: settings.isRider3DEnabled,
+            hostInput: settings.rider3dHost
+        )
     }
 
     private var liveClass: WorkoutClass {
@@ -136,6 +150,65 @@ public struct WorkoutHUDView: View {
                 if step.action == .pause && audioManager.isPlaying { audioManager.pause() }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private func pollRider3DStageIfNeeded() async {
+        guard rider3dEnabledInHud else { return }
+        rider3dStatusLabel = "3D 準備中"
+        while !Task.isCancelled && !rider3dSyncState.hasStartedOnHost && !rider3dSyncState.hasStoppedOnHost {
+            let host = AppSettings.shared.rider3dHost
+            let stageRes = await Rider3DClient.fetchStage(hostInput: host, timeoutSeconds: 1.5)
+            if stageRes.isSuccess, let stage = stageRes.data {
+                rider3dHostStatus = stage.status
+                if !rider3dSyncState.hasStartedOnHost {
+                    rider3dStatusLabel = (stage.status == "prepare" || stage.status == "start") ? "3D 準備完成" : "3D 啟動中"
+                }
+                syncRider3DNow()
+            } else {
+                rider3dStatusLabel = "3D 連線異常"
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    private func syncRider3DNow() {
+        guard rider3dEnabledInHud else { return }
+        let snapshot: Rider3DCueSnapshot?
+        if let segment = activeSegment, let cue = activeCue {
+            snapshot = Rider3DCueSnapshot(
+                segmentIndex: audioManager.currentSegmentIndex,
+                cueId: cue.id.uuidString,
+                targetRpm: cue.targetRpm,
+                intensityZone: segment.intensityZone,
+                posture: cue.posture
+            )
+        } else {
+            snapshot = nil
+        }
+        let step = rider3DStepCommands(
+            state: rider3dSyncState,
+            hostStatus: rider3dHostStatus,
+            isPlaying: audioManager.isPlaying,
+            totalSegments: liveClass.segments.count,
+            currentSegmentIndex: audioManager.currentSegmentIndex,
+            currentOffsetSeconds: audioManager.currentOffsetSeconds,
+            currentDurationSeconds: audioManager.currentDurationSeconds,
+            snapshot: snapshot
+        )
+        rider3dSyncState = step.state
+        guard !step.commands.isEmpty else { return }
+        let host = AppSettings.shared.rider3dHost
+        let commands = step.commands
+        Task {
+            for cmd in commands {
+                let res = await Rider3DClient.updateWorkoutInfo(hostInput: host, spec: cmd, timeoutSeconds: 1.5)
+                if res.isSuccess {
+                    rider3dStatusLabel = (cmd.command == "stop") ? "3D 訓練完成" : "3D 已連動"
+                } else {
+                    rider3dStatusLabel = "3D 連線異常"
+                }
+            }
         }
     }
 
@@ -280,12 +353,28 @@ public struct WorkoutHUDView: View {
             .task {
                 await followStreamingPlayback()
             }
+            .task {
+                await pollRider3DStageIfNeeded()
+            }
+            .onChange(of: audioManager.isPlaying) { _ in syncRider3DNow() }
+            .onChange(of: audioManager.currentSegmentIndex) { _ in syncRider3DNow() }
+            .onChange(of: audioManager.currentOffsetSeconds) { _ in syncRider3DNow() }
             .alert("無法開啟歌單連結", isPresented: $isShowingPlaylistOpenError) {
                 Button("確定", role: .cancel) {}
             }
             .alert("退出課堂確認", isPresented: $isShowingExitAlert) {
                 Button("繼續騎乘", role: .cancel) {}
                 Button("結束課堂", role: .destructive) {
+                    if rider3dEnabledInHud, let exitCmd = rider3DCommandOnHudExit(hasStoppedOnHost: rider3dSyncState.hasStoppedOnHost) {
+                        let host = AppSettings.shared.rider3dHost
+                        Task.detached {
+                            _ = await Rider3DClient.updateWorkoutInfo(
+                                hostInput: host,
+                                spec: Rider3DCommandSpec(command: exitCmd),
+                                timeoutSeconds: 1.5
+                            )
+                        }
+                    }
                     audioManager.pause()
                     dismiss()
                 }
@@ -321,7 +410,11 @@ public struct WorkoutHUDView: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
 
-                Text("即時消耗: \(realtimeCalories) / \(Int(liveClass.estimatedCalories)) kcal")
+                Text(
+                    rider3dStatusLabel.map {
+                        "即時消耗: \(realtimeCalories) / \(Int(liveClass.estimatedCalories)) kcal • \($0)"
+                    } ?? "即時消耗: \(realtimeCalories) / \(Int(liveClass.estimatedCalories)) kcal"
+                )
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
             }

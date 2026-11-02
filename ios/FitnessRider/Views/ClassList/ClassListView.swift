@@ -4,6 +4,14 @@ public struct ClassListView: View {
     @State private var classes: [WorkoutClass] = []
     @State private var selectedClassForEdit: WorkoutClass?
     @State private var selectedClassForHUD: WorkoutClass?
+    @State private var connectRider3DForHUD: Bool = false
+    @State private var pendingClassFor3D: WorkoutClass?
+    @State private var rider3dScenes: [Rider3DScene] = []
+    @State private var selectedSceneId: String = "1"
+    @State private var isLoadingScenes: Bool = false
+    @State private var isEnteringTraining: Bool = false
+    @State private var rider3dErrorMessage: String?
+    @State private var rider3dFailedStep: String?
     @State private var isShowingNewClassSheet: Bool = false
     @State private var isShowingSettingsSheet: Bool = false
     @State private var shareURL: URL?
@@ -126,7 +134,10 @@ public struct ClassListView: View {
                 loadClasses()
             }
             .fullScreenCover(item: $selectedClassForHUD, onDismiss: { loadClasses() }) { workoutClass in
-                WorkoutHUDView(workoutClass: workoutClass)
+                WorkoutHUDView(workoutClass: workoutClass, connectRider3D: connectRider3DForHUD)
+            }
+            .sheet(item: $pendingClassFor3D) { targetClass in
+                rider3DSceneSelectionSheet(for: targetClass)
             }
             .sheet(item: $selectedClassForEdit) { workoutClass in
                 ClassEditorView(workoutClass: workoutClass) { updatedClass in
@@ -239,7 +250,17 @@ public struct ClassListView: View {
 
             HStack(spacing: 18) {
                 Button {
-                    selectedClassForHUD = workoutClass
+                    let settings = AppSettings.shared
+                    if isRider3DActive(
+                        isRider3DApp: AppVariant.isRider3D,
+                        isEnabled: settings.isRider3DEnabled,
+                        hostInput: settings.rider3dHost
+                    ) {
+                        loadRider3DScenes(for: workoutClass)
+                    } else {
+                        connectRider3DForHUD = false
+                        selectedClassForHUD = workoutClass
+                    }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
@@ -294,6 +315,166 @@ public struct ClassListView: View {
 
     private func loadClasses() {
         self.classes = ClassRepository.shared.fetchAllClasses()
+    }
+
+    private func loadRider3DScenes(for workoutClass: WorkoutClass) {
+        pendingClassFor3D = workoutClass
+        isLoadingScenes = true
+        isEnteringTraining = false
+        rider3dErrorMessage = nil
+        rider3dFailedStep = nil
+        let host = AppSettings.shared.rider3dHost
+        Task {
+            let res = await Rider3DClient.fetchScenes(hostInput: host)
+            isLoadingScenes = false
+            if res.isSuccess, let scenes = res.data {
+                rider3dScenes = scenes
+                selectedSceneId = selectInitialRider3DSceneId(
+                    scenes: scenes,
+                    lastSceneId: AppSettings.shared.rider3dLastSceneId
+                )
+            } else {
+                rider3dScenes = []
+                rider3dFailedStep = "scenes"
+                rider3dErrorMessage = res.errorMessage ?? "無法取得 3D 場景清單"
+            }
+        }
+    }
+
+    private func startRider3DEnterTraining(for workoutClass: WorkoutClass) {
+        let trimmed = selectedSceneId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sceneId = trimmed.isEmpty ? "1" : trimmed
+        AppSettings.shared.rider3dLastSceneId = sceneId
+        isEnteringTraining = true
+        rider3dErrorMessage = nil
+        rider3dFailedStep = nil
+        let durationMs = workoutClass.totalDurationMs > 0
+            ? workoutClass.totalDurationMs
+            : workoutClass.segments.reduce(0) { $0 + $1.durationMs }
+        let host = AppSettings.shared.rider3dHost
+        let classId = workoutClass.id.uuidString
+        let classTitle = workoutClass.title
+        Task {
+            let res = await Rider3DClient.enterTraining(
+                hostInput: host,
+                classId: classId,
+                classTitle: classTitle,
+                classDurationMs: durationMs,
+                sceneId: sceneId
+            )
+            isEnteringTraining = false
+            if res.isSuccess {
+                pendingClassFor3D = nil
+                connectRider3DForHUD = true
+                selectedClassForHUD = workoutClass
+            } else {
+                rider3dFailedStep = "enter"
+                rider3dErrorMessage = res.errorMessage ?? "無法連線至 3D 主機啟動訓練"
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rider3DSceneSelectionSheet(for targetClass: WorkoutClass) -> some View {
+        NavigationStack {
+            Form {
+                if isLoadingScenes {
+                    Section {
+                        Text("正在從 3D 主機讀取場景清單...")
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                    }
+                } else if isEnteringTraining {
+                    Section {
+                        Text("正在通知 3D 主機啟動場景...")
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                    }
+                } else if let errMsg = rider3dErrorMessage {
+                    Section("3D 主機連線失敗") {
+                        Text(errMsg)
+                            .foregroundColor(FitnessRiderTheme.accentRed)
+                        Text("您可以點擊「重試」，或選擇「不連 3D 直接上課」單獨播放課表。")
+                            .font(.caption)
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                        Button {
+                            if rider3dFailedStep == "enter" {
+                                startRider3DEnterTraining(for: targetClass)
+                            } else {
+                                loadRider3DScenes(for: targetClass)
+                            }
+                        } label: {
+                            Label("重試", systemImage: "arrow.clockwise")
+                                .fontWeight(.bold)
+                                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        }
+                    }
+                } else if rider3dScenes.isEmpty {
+                    Section("選擇 3D 騎乘場景") {
+                        Text("主機未提供特定場景清單，將使用預設場景 (1) 啟動。")
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                    }
+                } else {
+                    Section("選擇 3D 騎乘場景") {
+                        ForEach(rider3dScenes) { scene in
+                            Button {
+                                selectedSceneId = scene.id
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(scene.name)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(FitnessRiderTheme.textPrimary)
+                                        if !scene.description.isEmpty {
+                                            Text(scene.description)
+                                                .font(.caption)
+                                                .foregroundColor(FitnessRiderTheme.textSecondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    if selectedSceneId == scene.id {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section {
+                    if rider3dErrorMessage == nil {
+                        Button {
+                            startRider3DEnterTraining(for: targetClass)
+                        } label: {
+                            Label("進入 3D 課堂", systemImage: "play.fill")
+                                .fontWeight(.bold)
+                                .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        }
+                        .disabled(isLoadingScenes || isEnteringTraining)
+                    }
+
+                    Button {
+                        pendingClassFor3D = nil
+                        connectRider3DForHUD = false
+                        selectedClassForHUD = targetClass
+                    } label: {
+                        Text("不連 3D 直接上課")
+                            .fontWeight(.semibold)
+                            .foregroundColor(FitnessRiderTheme.textSecondary)
+                    }
+                    .disabled(isLoadingScenes || isEnteringTraining)
+                }
+            }
+            .navigationTitle("3D 課堂設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        pendingClassFor3D = nil
+                    }
+                    .disabled(isLoadingScenes || isEnteringTraining)
+                }
+            }
+        }
     }
 
     private func createNewClass() {

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,17 +24,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fitnessrider.AppVariant
 import com.fitnessrider.data.TrackDurationRepair
+import com.fitnessrider.model.AppSettings
+import com.fitnessrider.model.Rider3DClient
+import com.fitnessrider.model.Rider3DScene
 import com.fitnessrider.model.WorkoutClass
+import com.fitnessrider.model.isRider3DActive
+import com.fitnessrider.model.selectInitialRider3DSceneId
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.SegmentProgressBar
 import com.fitnessrider.ui.components.TopNavBar
 import com.fitnessrider.util.VersionLifecycleManager
+import kotlinx.coroutines.launch
 
 @Composable
 fun ClassListScreen(
     classes: List<WorkoutClass>,
-    onClassClick: (WorkoutClass) -> Unit,
+    onClassClick: (WorkoutClass, Boolean) -> Unit,
     onEditClick: (WorkoutClass) -> Unit,
     onNewClassClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -41,9 +49,65 @@ fun ClassListScreen(
     onDeleteClick: (WorkoutClass) -> Unit
 ) {
     val context = LocalContext.current
+    val settings = remember { AppSettings.getInstance(context) }
+    val coroutineScope = rememberCoroutineScope()
     var isWarningDismissed by rememberSaveable { mutableStateOf(false) }
     val remainingDays = remember { VersionLifecycleManager.getRemainingDays(context) }
     val repairProgress by TrackDurationRepair.progress.collectAsState()
+
+    var pendingClassFor3D by remember { mutableStateOf<WorkoutClass?>(null) }
+    var rider3dScenes by remember { mutableStateOf<List<Rider3DScene>>(emptyList()) }
+    var selectedSceneId by remember { mutableStateOf("1") }
+    var isLoadingScenes by remember { mutableStateOf(false) }
+    var isEnteringTraining by remember { mutableStateOf(false) }
+    var rider3dErrorMessage by remember { mutableStateOf<String?>(null) }
+    var rider3dFailedStep by remember { mutableStateOf<String?>(null) }
+
+    fun loadRider3DScenesForClass(workoutClass: WorkoutClass) {
+        pendingClassFor3D = workoutClass
+        isLoadingScenes = true
+        isEnteringTraining = false
+        rider3dErrorMessage = null
+        rider3dFailedStep = null
+        coroutineScope.launch {
+            val res = Rider3DClient.fetchScenes(settings.rider3dHost)
+            isLoadingScenes = false
+            if (res.isSuccess && res.data != null) {
+                rider3dScenes = res.data
+                selectedSceneId = selectInitialRider3DSceneId(res.data, settings.rider3dLastSceneId)
+            } else {
+                rider3dScenes = emptyList()
+                rider3dFailedStep = "scenes"
+                rider3dErrorMessage = res.errorMessage ?: "無法取得 3D 場景清單"
+            }
+        }
+    }
+
+    fun startRider3DEnterTraining(workoutClass: WorkoutClass) {
+        val sceneId = selectedSceneId.ifBlank { "1" }
+        settings.rider3dLastSceneId = sceneId
+        isEnteringTraining = true
+        rider3dErrorMessage = null
+        rider3dFailedStep = null
+        val durationMs = if (workoutClass.totalDurationMs > 0) workoutClass.totalDurationMs else workoutClass.segments.sumOf { it.durationMs }
+        coroutineScope.launch {
+            val res = Rider3DClient.enterTraining(
+                hostInput = settings.rider3dHost,
+                classId = workoutClass.id,
+                classTitle = workoutClass.title,
+                classDurationMs = durationMs,
+                sceneId = sceneId
+            )
+            isEnteringTraining = false
+            if (res.isSuccess) {
+                pendingClassFor3D = null
+                onClassClick(workoutClass, true)
+            } else {
+                rider3dFailedStep = "enter"
+                rider3dErrorMessage = res.errorMessage ?: "無法連線至 3D 主機啟動訓練"
+            }
+        }
+    }
 
     LaunchedEffect(classes) {
         TrackDurationRepair.start(context, classes.flatMap { it.segments })
@@ -179,13 +243,148 @@ fun ClassListScreen(
                 items(classes, key = { it.id }) { workoutClass ->
                     ClassCard(
                         workoutClass = workoutClass,
-                        onPlayClick = { onClassClick(workoutClass) },
+                        onPlayClick = {
+                            if (isRider3DActive(AppVariant.isRider3D, settings.isRider3DEnabled, settings.rider3dHost)) {
+                                loadRider3DScenesForClass(workoutClass)
+                            } else {
+                                onClassClick(workoutClass, false)
+                            }
+                        },
                         onEditClick = { onEditClick(workoutClass) },
                         onShareClick = { onShareClick(workoutClass) },
                         onDeleteClick = { onDeleteClick(workoutClass) }
                     )
                 }
             }
+        }
+
+        pendingClassFor3D?.let { targetClass ->
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isLoadingScenes && !isEnteringTraining) {
+                        pendingClassFor3D = null
+                    }
+                },
+                title = {
+                    Text(
+                        text = if (rider3dErrorMessage != null) "3D 主機連線失敗" else "選擇 3D 騎乘場景",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        when {
+                            isLoadingScenes -> {
+                                Text("正在從 3D 主機讀取場景清單...", fontSize = 14.sp, color = TextSecondary)
+                            }
+                            isEnteringTraining -> {
+                                Text("正在通知 3D 主機啟動場景...", fontSize = 14.sp, color = TextSecondary)
+                            }
+                            rider3dErrorMessage != null -> {
+                                Text(text = rider3dErrorMessage ?: "", fontSize = 14.sp, color = AccentRed)
+                                Text(
+                                    text = "您可以點擊「重試」，或選擇「不連 3D 直接上課」單獨播放課表。",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                            rider3dScenes.isEmpty() -> {
+                                Text(
+                                    text = "主機未提供特定場景清單，將使用預設場景 (1) 啟動。",
+                                    fontSize = 14.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                            else -> {
+                                rider3dScenes.forEach { scene ->
+                                    val isSelected = scene.id == selectedSceneId
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) TopBarGreenDark else CardBorder,
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .background(if (isSelected) TopBarGreen.copy(alpha = 0.12f) else Color.White)
+                                            .clickable { selectedSceneId = scene.id }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = { selectedSceneId = scene.id }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = scene.name,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary
+                                            )
+                                            if (scene.description.isNotBlank()) {
+                                                Text(
+                                                    text = scene.description,
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = {
+                                val wc = targetClass
+                                pendingClassFor3D = null
+                                onClassClick(wc, false)
+                            },
+                            enabled = !isLoadingScenes && !isEnteringTraining
+                        ) {
+                            Text("不連 3D 直接上課", color = TextSecondary, fontWeight = FontWeight.Bold)
+                        }
+                        if (rider3dErrorMessage != null) {
+                            Button(
+                                onClick = {
+                                    if (rider3dFailedStep == "enter") {
+                                        startRider3DEnterTraining(targetClass)
+                                    } else {
+                                        loadRider3DScenesForClass(targetClass)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                            ) {
+                                Text("重試", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = { startRider3DEnterTraining(targetClass) },
+                                enabled = !isLoadingScenes && !isEnteringTraining,
+                                colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                            ) {
+                                Text("進入 3D 課堂", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { pendingClassFor3D = null },
+                        enabled = !isLoadingScenes && !isEnteringTraining
+                    ) {
+                        Text("取消", color = TextSecondary)
+                    }
+                }
+            )
         }
     }
 }

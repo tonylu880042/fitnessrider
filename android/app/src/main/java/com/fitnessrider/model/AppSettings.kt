@@ -38,6 +38,10 @@ class AppSettings internal constructor(context: Context) {
         get() = prefs.getString("rider3d_host", "") ?: ""
         set(value) = prefs.edit().putString("rider3d_host", value).apply()
 
+    var rider3dLastSceneId: String
+        get() = prefs.getString("rider3d_last_scene_id", "") ?: ""
+        set(value) = prefs.edit().putString("rider3d_last_scene_id", value).apply()
+
     companion object {
         @Volatile
         private var INSTANCE: AppSettings? = null
