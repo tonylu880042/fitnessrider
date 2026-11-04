@@ -60,8 +60,36 @@
   以及換 Cue／換段落時的 update（`targetRpm`／`intensityZone`／`posture`）；`start` 要等主機狀態到 `prepare` 才送。
   監看引擎既有狀態即可，引擎不改。
   payload 組裝、姿勢對應、狀態轉指令做成雙端同名純函式＋測試。
-- **之後再說**：HUD 3D 鏡頭控制（focusUser／focusRank／lineUp／rpmView／trap／groupRide）、
-  學員排行（`GetUserTrainingInfos`）、阻力連動（需先把「建議阻力」改成 1~40 數值）、UDP 自動搜尋、商店訂閱（商品設定好之後）。
+- **D3 3D 視角面板：RPM 視圖＋列隊**（2026-11-04 Tony 定案，D2 之後）：
+  - HUD 頂端列（3D 狀態文字旁）加一顆「3D 視角」鍵，只在 3D 版、本堂有連 3D、且主機狀態為 `start` 時可按，其餘時間 disable 不隱藏。
+    按下開一個浮在 HUD 上的面板（點外面關閉），音樂與課程照常進行。**不加任何手勢**：
+    中央儀表不可有點擊類手勢（CLAUDE.md B 節），面板內一律是按鈕。
+  - 面板內容：「RPM 視圖」開關（送 `{"command":"rpmview","rpmView":true|false}`）、「學員列隊」按鈕（送 `{"command":"lineup"}`，一次性動作）。
+  - 主機沒有查詢目前視圖的 API，**RPM 視圖的開關狀態由 App 自己記**：每次 `EnterTraining` 成功後重設為關，不跨課堂記憶。
+    送出失敗時開關退回原狀態，並顯示既有的「3D 連線異常」。
+  - 送出即返回、逾時 1.5 秒，與 D2 的 update 共用 `Rider3DClient.updateWorkoutInfo`，不另開一條 HTTP 路徑。
+  - `buildRider3DUpdateWorkoutJson` 雙端加 `rpmview`（帶 bool `rpmView`）與 `lineup`（只帶 `command`）兩個分支，`Rider3DCommandSpec` 加對應欄位。
+  - 雙端同名純函式＋測試：`canSendRider3DViewCommand(isActiveInHud, hostStatus)`（只有 `start` 為 true）；
+    `rpmview`／`lineup` 的 JSON 內容（`rpmView` 為 JSON bool 不是字串）。
+  - **實機驗證**（要 Tony 在 3D 螢幕前看）：Unity 開課時 RPM 視圖的預設是否為關；開／關是否即時生效；
+    `lineup` 的畫面效果與持續時間；`stop` 之後（結果頁）送這些指令會不會出錯。
+- **D4 學員名單與鏡頭跟隨**（D3 commit 後才開始）：
+  - 開啟「3D 視角」面板時呼叫一次 `GetUserTrainingInfos`（唯讀，非同步、逾時 2 秒，讀取中顯示「讀取學員中…」），
+    **不做背景輪詢**；面板上有「重新整理」鍵。回應格式見「3D 主機 API」一節。
+  - 「鏡頭跟隨名次」：依目前人數列出 1～N 的按鈕，送 `{"command":"focusRank","focusRank":"<N>"}`（`focusRank` 是字串）。
+  - 「鏡頭跟隨學員」：列出學員姓名（`name`，空白時顯示「<deviceNo> 號車」），點選送 `{"command":"focusUser","focusUserId":"<phone>"}`。
+  - **學員手機號碼是個資**：只放在面板的記憶體狀態裡當作送出用的 id，不顯示、不寫 log、不存檔、不放進 URL 以外的任何地方，
+    面板關閉即丟棄（URL 是主機 API 規定的傳法，只在區網內）。
+  - 錯誤訊息：ErrCode `0x09005`（`GroupCycling_OutOfRankNo`）→「名次超過目前騎乘人數」，ErrCode `0x02000`（`Account_NotExist`）→「找不到這位學員」，
+    其餘沿用「3D 連線異常」。顯示後重新讀一次名單。
+  - 名單為空時顯示「目前沒有學員登入」，名次與學員兩區 disable。
+  - 雙端同名純函式＋測試：`parseRider3DUserTrainingInfos(body)`（含空名單、缺欄位、ErrCode ≠ 0）、
+    `rider3DFocusRankOptions(userCount)`（0→空、3→1…3）、`focusRank`／`focusUser` 的 JSON、上述兩個 ErrCode 的文案對應、
+    `rider3DRiderDisplayName(name, deviceNo)`。
+  - **實機驗證**：至少兩台車有學員登入，確認名次與學員跟隨都會轉鏡頭；**怎麼回到預設鏡頭**（主機原始碼裡找不到「取消跟隨」的指令，
+    要看 `lineup` 或 Unity 有沒有自動回復）。若沒有辦法回到預設，面板要明講「跟隨後需重新開課才會回到全景」或由 Tony 決定。
+- **之後再說**：HUD 常駐的學員排行（輪詢 `GetUserTrainingInfos`）、`trap`／`groupRide`（屬於 `start` 參數，要先決定開課時怎麼讓教練選）、
+  阻力連動（需先把「建議阻力」改成 1~40 數值）、UDP 自動搜尋、商店訂閱（商品設定好之後）。
 - **不做**：`power`（與 spec §6「剔除瓦特數」衝突）、`CheckUpdate`（我們有自己的強制更新）。
 
 ## 3D 主機 API
@@ -101,10 +129,18 @@ JSON：`command`、`rpm`、`intensity`、`posture`、`focusUserId`、`focusRank`
 | `pause` | **主機什麼都不做**（Unity 不會暫停） |
 | `stop` | Unity 顯示結果頁 |
 | `exit` | 關掉 Unity 程式、停掉主機音樂清單 |
-| `focusUser`／`focusRank`／`lineUp`／`rpmView` | 3D 鏡頭與顯示控制 |
+| `focusUser` | 以 `focusUserId`（學員帳號＝手機號碼）找登入學員，MQTT `UpdateGameInfo,FocusByMac,<padMac>`；找不到回 `Account_NotExist`（`0x02000`） |
+| `focusRank` | `focusRank` 字串轉 int，須在 1～登入人數之間，否則回 `GroupCycling_OutOfRankNo`（`0x09005`）；MQTT `UpdateGameInfo,FocusByNo,<N>` |
+| `lineUp` | MQTT `LineUp`，不帶參數 |
+| `rpmView` | bool `rpmView`：true → MQTT `RPMViewOpen`、false → `RPMViewClose`（2019-07-01 為巴西客戶加入）。主機只轉送，不記狀態、沒有查詢 API |
 | `resistance` | 直接對單車下阻力 `Level,<n>`（1~40） |
 | `power` | 直接對單車下功率 |
 | `silentMode` | 規格沒寫（2020 新增）：主機音樂清單暫停／繼續 |
+
+### 學員名單（GetUserTrainingInfos）
+唯讀，無參數。`Obj: {"userTrainingInfos":[...],"currentSeconds":<int>}`，只列 `status != 0` 的登入學員。每筆：
+`name`、`phone`（＝ `focusUser` 用的帳號）、`imageUrl`、`status`（字串）、`type`、`rpm`、`hr`、`calorie`、`sideForces`、`rank`（無排名為 0）、`deviceNo`。
+注意 `focusRank` 的上限檢查用的是全部登入人數（含 `status == 0`），可能比這份名單多；App 依名單人數列名次即可。
 
 ### 狀態（GetUGymBikeStage）
 `Obj: {"stage":"launcher","status":<狀態>,"extra":null}`，fitnessrider3d 模式下 `stage` 永遠是 `launcher`。
@@ -135,10 +171,15 @@ Unity 進入訓練畫面時，若主機設定 `gymSettings.playMusic` 為 true�
 
 ### 產品範圍（2026-09-30 Tony 全部同意）
 - [x] 這一輪只做 D1＋D2（MVP），鏡頭控制、學員排行、阻力連動之後再做。
+- [x] 2026-11-04：D3（RPM 視圖＋列隊）與 D4（學員名單＋名次／學員鏡頭跟隨）都要做，依序進行。
 - [x] 課程播完送 `stop`（3D 顯示結果）、教練中途離開 HUD 送 `exit`。
 - [x] `EnterTraining` 失敗時給「重試」與「不連 3D 直接上課」。
 - [x] 姿勢對應中 SPRINT→0、JUMPS→2。
 - [x] 暫停時 3D 不會停（主機 `pause` 無作用），可接受。
+
+### D3／D4 實機（要 Tony 在 3D 螢幕前看）
+- [ ] 對 `192.168.0.115` 送 `rpmview`／`lineup`／`focusRank`／`focusUser` 前先取得 Tony 同意（會改變主機畫面）。
+- [ ] RPM 視圖的預設狀態與畫面樣子；`lineup` 的效果；鏡頭跟隨後怎麼回到全景。
 
 ### 收費（2026-10-29）
 - [ ] **3D 版要怎麼避免取代教練版**：3D 版每月 US$5，比教練版 VIP（NT$390）便宜，又是同一套功能。
