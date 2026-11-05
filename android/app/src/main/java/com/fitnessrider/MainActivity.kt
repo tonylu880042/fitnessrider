@@ -67,10 +67,10 @@ class MainActivity : ComponentActivity() {
                 val importUri = pendingImportUri.value
                 LaunchedEffect(importUri, licenseChecked) {
                     if (importUri != null && licenseChecked) {
-                        pendingImportUri.value = null
                         if (!isExpired && !mustUpdate) {
                             importRiderClassFromUri(importUri)
                         }
+                        pendingImportUri.value = null
                     }
                 }
 
