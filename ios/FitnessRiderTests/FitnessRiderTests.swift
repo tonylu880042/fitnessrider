@@ -2181,6 +2181,14 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertFalse(isRider3DActive(isRider3DApp: true, isEnabled: true, hostInput: ""))
     }
 
+    func testRider3DStartAction() {
+        XCTAssertEqual(rider3DStartAction(isRider3DApp: false, isEnabled: true, hostInput: ""), .plainStart)
+        XCTAssertEqual(rider3DStartAction(isRider3DApp: true, isEnabled: false, hostInput: ""), .plainStart)
+        XCTAssertEqual(rider3DStartAction(isRider3DApp: true, isEnabled: true, hostInput: ""), .needsHost)
+        XCTAssertEqual(rider3DStartAction(isRider3DApp: true, isEnabled: true, hostInput: "not a host"), .needsHost)
+        XCTAssertEqual(rider3DStartAction(isRider3DApp: true, isEnabled: true, hostInput: "192.168.0.115:8000"), .pickScene)
+    }
+
     func testRider3DStageUrlAndParseResponse() {
         XCTAssertEqual(
             rider3DStageUrl("192.168.0.115"),

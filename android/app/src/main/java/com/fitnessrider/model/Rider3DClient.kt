@@ -89,6 +89,14 @@ private fun isValidRider3DHost(host: String): Boolean {
 fun isRider3DActive(isRider3DApp: Boolean, isEnabled: Boolean, hostInput: String): Boolean =
     isRider3DApp && isEnabled && normalizedRider3DBaseUrl(hostInput) != null
 
+enum class Rider3DStartAction { PlainStart, PickScene, NeedsHost }
+
+fun rider3DStartAction(isRider3DApp: Boolean, isEnabled: Boolean, hostInput: String): Rider3DStartAction = when {
+    !isRider3DApp || !isEnabled -> Rider3DStartAction.PlainStart
+    normalizedRider3DBaseUrl(hostInput) != null -> Rider3DStartAction.PickScene
+    else -> Rider3DStartAction.NeedsHost
+}
+
 fun rider3DStageUrl(hostInput: String): String? {
     val base = normalizedRider3DBaseUrl(hostInput) ?: return null
     return "$base/api/v1/fitnessrider3d/GetUGymBikeStage"

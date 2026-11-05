@@ -2456,6 +2456,15 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testRider3DStartAction() {
+        assertEquals(Rider3DStartAction.PlainStart, rider3DStartAction(isRider3DApp = false, isEnabled = true, hostInput = ""))
+        assertEquals(Rider3DStartAction.PlainStart, rider3DStartAction(isRider3DApp = true, isEnabled = false, hostInput = ""))
+        assertEquals(Rider3DStartAction.NeedsHost, rider3DStartAction(isRider3DApp = true, isEnabled = true, hostInput = ""))
+        assertEquals(Rider3DStartAction.NeedsHost, rider3DStartAction(isRider3DApp = true, isEnabled = true, hostInput = "not a host"))
+        assertEquals(Rider3DStartAction.PickScene, rider3DStartAction(isRider3DApp = true, isEnabled = true, hostInput = "192.168.0.115:8000"))
+    }
+
+    @Test
     fun testRider3DStageUrlAndParseResponse() {
         assertEquals(
             "http://192.168.0.115:8000/api/v1/fitnessrider3d/GetUGymBikeStage",

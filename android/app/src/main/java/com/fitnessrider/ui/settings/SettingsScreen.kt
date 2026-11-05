@@ -32,6 +32,7 @@ import com.fitnessrider.data.ClassRepository
 import com.fitnessrider.data.SQLiteBackupService
 import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.Rider3DClient
+import com.fitnessrider.model.normalizedRider3DBaseUrl
 import com.fitnessrider.model.rider3DStageDisplayText
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.TopNavBar
@@ -291,6 +292,15 @@ fun SettingsScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        if (isRider3DEnabled && normalizedRider3DBaseUrl(rider3dHost) == null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (rider3dHost.isBlank()) "尚未設定主機位址，開課時不會連動 3D" else "主機位址格式不正確（例如 192.168.0.115:8000）",
+                                fontSize = 13.sp,
+                                color = AccentRed
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(10.dp))
 

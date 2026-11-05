@@ -137,6 +137,17 @@ public func isRider3DActive(isRider3DApp: Bool, isEnabled: Bool, hostInput: Stri
     isRider3DApp && isEnabled && normalizedRider3DBaseUrl(hostInput) != nil
 }
 
+public enum Rider3DStartAction: Equatable, Sendable {
+    case plainStart
+    case pickScene
+    case needsHost
+}
+
+public func rider3DStartAction(isRider3DApp: Bool, isEnabled: Bool, hostInput: String) -> Rider3DStartAction {
+    if !isRider3DApp || !isEnabled { return .plainStart }
+    return normalizedRider3DBaseUrl(hostInput) != nil ? .pickScene : .needsHost
+}
+
 public func rider3DStageUrl(_ hostInput: String) -> String? {
     guard let base = normalizedRider3DBaseUrl(hostInput) else { return nil }
     return "\(base)/api/v1/fitnessrider3d/GetUGymBikeStage"

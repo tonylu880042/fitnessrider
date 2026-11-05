@@ -30,7 +30,8 @@ import com.fitnessrider.model.AppSettings
 import com.fitnessrider.model.Rider3DClient
 import com.fitnessrider.model.Rider3DScene
 import com.fitnessrider.model.WorkoutClass
-import com.fitnessrider.model.isRider3DActive
+import com.fitnessrider.model.Rider3DStartAction
+import com.fitnessrider.model.rider3DStartAction
 import com.fitnessrider.model.selectInitialRider3DSceneId
 import com.fitnessrider.theme.*
 import com.fitnessrider.ui.components.SegmentProgressBar
@@ -56,6 +57,7 @@ fun ClassListScreen(
     val repairProgress by TrackDurationRepair.progress.collectAsState()
 
     var pendingClassFor3D by remember { mutableStateOf<WorkoutClass?>(null) }
+    var classNeedingRider3DHost by remember { mutableStateOf<WorkoutClass?>(null) }
     var rider3dScenes by remember { mutableStateOf<List<Rider3DScene>>(emptyList()) }
     var selectedSceneId by remember { mutableStateOf("1") }
     var isLoadingScenes by remember { mutableStateOf(false) }
@@ -244,10 +246,10 @@ fun ClassListScreen(
                     ClassCard(
                         workoutClass = workoutClass,
                         onPlayClick = {
-                            if (isRider3DActive(AppVariant.isRider3D, settings.isRider3DEnabled, settings.rider3dHost)) {
-                                loadRider3DScenesForClass(workoutClass)
-                            } else {
-                                onClassClick(workoutClass, false)
+                            when (rider3DStartAction(AppVariant.isRider3D, settings.isRider3DEnabled, settings.rider3dHost)) {
+                                Rider3DStartAction.PickScene -> loadRider3DScenesForClass(workoutClass)
+                                Rider3DStartAction.NeedsHost -> classNeedingRider3DHost = workoutClass
+                                Rider3DStartAction.PlainStart -> onClassClick(workoutClass, false)
                             }
                         },
                         onEditClick = { onEditClick(workoutClass) },
@@ -256,6 +258,47 @@ fun ClassListScreen(
                     )
                 }
             }
+        }
+
+        classNeedingRider3DHost?.let { targetClass ->
+            AlertDialog(
+                onDismissRequest = { classNeedingRider3DHost = null },
+                title = {
+                    Text(
+                        text = "尚未設定 3D 主機",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = "已啟用 3D Biking 連動，但主機位址未設定或格式不正確。",
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            classNeedingRider3DHost = null
+                            onSettingsClick()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TopBarGreen)
+                    ) {
+                        Text("前往設定", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            classNeedingRider3DHost = null
+                            onClassClick(targetClass, false)
+                        }
+                    ) {
+                        Text("不連 3D 直接上課", color = TextSecondary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
         }
 
         pendingClassFor3D?.let { targetClass ->

@@ -6,6 +6,8 @@ public struct ClassListView: View {
     @State private var selectedClassForHUD: WorkoutClass?
     @State private var connectRider3DForHUD: Bool = false
     @State private var pendingClassFor3D: WorkoutClass?
+    @State private var classNeedingRider3DHost: WorkoutClass?
+    @State private var isShowingRider3DHostAlert: Bool = false
     @State private var rider3dScenes: [Rider3DScene] = []
     @State private var selectedSceneId: String = "1"
     @State private var isLoadingScenes: Bool = false
@@ -166,6 +168,18 @@ public struct ClassListView: View {
             } message: {
                 Text("確定要刪除「\(classToDelete?.title ?? "")」嗎？此動作無法復原。")
             }
+            .alert("尚未設定 3D 主機", isPresented: $isShowingRider3DHostAlert) {
+                Button("前往設定") {
+                    isShowingSettingsSheet = true
+                }
+                Button("不連 3D 直接上課") {
+                    connectRider3DForHUD = false
+                    selectedClassForHUD = classNeedingRider3DHost
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("已啟用 3D Biking 連動，但主機位址未設定或格式不正確。")
+            }
             .alert("課表匯出失敗", isPresented: $isShowingShareErrorAlert) {
                 Button("確定", role: .cancel) {}
             } message: {
@@ -251,13 +265,17 @@ public struct ClassListView: View {
             HStack(spacing: 18) {
                 Button {
                     let settings = AppSettings.shared
-                    if isRider3DActive(
+                    switch rider3DStartAction(
                         isRider3DApp: AppVariant.isRider3D,
                         isEnabled: settings.isRider3DEnabled,
                         hostInput: settings.rider3dHost
                     ) {
+                    case .pickScene:
                         loadRider3DScenes(for: workoutClass)
-                    } else {
+                    case .needsHost:
+                        classNeedingRider3DHost = workoutClass
+                        isShowingRider3DHostAlert = true
+                    case .plainStart:
                         connectRider3DForHUD = false
                         selectedClassForHUD = workoutClass
                     }

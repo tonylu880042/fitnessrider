@@ -72,6 +72,11 @@ public struct SettingsBackupView: View {
                                 .onChange(of: settings.rider3dHost) { _ in
                                     rider3dStatusMessage = nil
                                 }
+                            if settings.isRider3DEnabled && normalizedRider3DBaseUrl(settings.rider3dHost) == nil {
+                                Text(settings.rider3dHost.trimmingCharacters(in: .whitespaces).isEmpty ? "尚未設定主機位址，開課時不會連動 3D" : "主機位址格式不正確（例如 192.168.0.115:8000）")
+                                    .font(.caption)
+                                    .foregroundColor(FitnessRiderTheme.accentRed)
+                            }
                         }
 
                         Button {
