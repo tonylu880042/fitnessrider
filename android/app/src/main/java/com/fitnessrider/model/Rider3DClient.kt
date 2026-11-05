@@ -41,7 +41,8 @@ data class Rider3DCommandSpec(
     val command: String,
     val targetRpm: Int? = null,
     val intensityZone: Int? = null,
-    val posture: PostureType? = null
+    val posture: PostureType? = null,
+    val rpmView: Boolean? = null
 )
 
 data class Rider3DCallResult<T>(
@@ -171,7 +172,8 @@ fun buildRider3DUpdateWorkoutJson(
     intensityZone: Int? = null,
     posture: PostureType? = null,
     trap: Boolean = false,
-    groupRide: Boolean = false
+    groupRide: Boolean = false,
+    rpmView: Boolean = false
 ): String {
     val cmd = command.trim().lowercase()
     val obj = JSONObject()
@@ -186,9 +188,13 @@ fun buildRider3DUpdateWorkoutJson(
             obj.put("intensity", rider3DIntensityPercent(intensityZone ?: 2))
             obj.put("posture", rider3DPostureCode(posture ?: PostureType.SEATED_FLAT))
         }
+        "rpmview" -> obj.put("rpmView", rpmView)
     }
     return obj.toString()
 }
+
+fun canSendRider3DViewCommand(isActiveInHud: Boolean, hasStartedOnHost: Boolean, hasStoppedOnHost: Boolean): Boolean =
+    isActiveInHud && hasStartedOnHost && !hasStoppedOnHost
 
 fun rider3DUpdateWorkoutUrl(hostInput: String, payloadJson: String): String? {
     val base = normalizedRider3DBaseUrl(hostInput) ?: return null
@@ -419,7 +425,8 @@ object Rider3DClient {
             command = spec.command,
             targetRpm = spec.targetRpm,
             intensityZone = spec.intensityZone,
-            posture = spec.posture
+            posture = spec.posture,
+            rpmView = spec.rpmView ?: false
         )
         val urlString = rider3DUpdateWorkoutUrl(hostInput, payload)
             ?: return Rider3DCallResult(errorMessage = "請輸入有效的主機 IP 或 IP:Port")

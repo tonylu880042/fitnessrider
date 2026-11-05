@@ -2523,6 +2523,24 @@ class FitnessRiderAndroidTest {
     }
 
     @Test
+    fun testRider3DViewCommandJsonAndGate() {
+        val on = org.json.JSONObject(buildRider3DUpdateWorkoutJson(command = "rpmview", rpmView = true))
+        assertEquals("rpmview", on.getString("command"))
+        assertEquals(true, on.get("rpmView"))
+        assertTrue(on.get("rpmView") is Boolean)
+        val off = org.json.JSONObject(buildRider3DUpdateWorkoutJson(command = "RpmView", rpmView = false))
+        assertEquals(false, off.get("rpmView"))
+        val lineup = org.json.JSONObject(buildRider3DUpdateWorkoutJson(command = "lineup"))
+        assertEquals("lineup", lineup.getString("command"))
+        assertEquals(1, lineup.length())
+
+        assertTrue(canSendRider3DViewCommand(isActiveInHud = true, hasStartedOnHost = true, hasStoppedOnHost = false))
+        assertFalse(canSendRider3DViewCommand(isActiveInHud = false, hasStartedOnHost = true, hasStoppedOnHost = false))
+        assertFalse(canSendRider3DViewCommand(isActiveInHud = true, hasStartedOnHost = false, hasStoppedOnHost = false))
+        assertFalse(canSendRider3DViewCommand(isActiveInHud = true, hasStartedOnHost = true, hasStoppedOnHost = true))
+    }
+
+    @Test
     fun testSelectInitialRider3DSceneIdAndParseScenes() {
         val scenesJson = """{"ErrVer":1,"ErrPairs":[{"ErrCode":0,"ErrMsg":null}],"Obj":{"sceneInfos":[{"Id":"1","Name":"山林公路","Description":"森林"},{"Id":"2","Name":"海濱大道","Description":"海岸"}]}}"""
         val parsed = parseRider3DScenesResponse(scenesJson)

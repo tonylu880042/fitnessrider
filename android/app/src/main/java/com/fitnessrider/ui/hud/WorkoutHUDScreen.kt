@@ -75,6 +75,7 @@ import com.fitnessrider.model.Rider3DCueSnapshot
 import com.fitnessrider.model.Rider3DSyncState
 import com.fitnessrider.model.WorkoutClass
 import com.fitnessrider.model.WorkoutCue
+import com.fitnessrider.model.canSendRider3DViewCommand
 import com.fitnessrider.model.isRider3DActive
 import com.fitnessrider.model.isStreamingSegment
 import com.fitnessrider.model.normalizedStreamingPlaylistUrl
@@ -175,6 +176,8 @@ fun WorkoutHUDScreen(
     var rider3dSyncState by remember { mutableStateOf(Rider3DSyncState()) }
     var rider3dHostStatus by remember { mutableStateOf("waitUnity") }
     var rider3dStatusLabel by remember { mutableStateOf<String?>(if (rider3dEnabledInHud) "3D 準備中" else null) }
+    var rider3dRpmViewOn by remember { mutableStateOf(false) }
+    var isShowingRider3DViewPanel by remember { mutableStateOf(false) }
     var entryDecisionPending by remember { mutableStateOf(false) }
     var awaitingStreamingStart by remember { mutableStateOf(false) }
 
@@ -459,6 +462,23 @@ fun WorkoutHUDScreen(
         }
     }
 
+    val canSendRider3DView = canSendRider3DViewCommand(
+        isActiveInHud = rider3dEnabledInHud,
+        hasStartedOnHost = rider3dSyncState.hasStartedOnHost,
+        hasStoppedOnHost = rider3dSyncState.hasStoppedOnHost
+    )
+
+    fun sendRider3DViewCommand(spec: Rider3DCommandSpec, onFailure: () -> Unit = {}) {
+        val host = settings.rider3dHost
+        coroutineScope.launch {
+            val res = Rider3DClient.updateWorkoutInfo(host, spec, timeoutMs = 1500)
+            if (!res.isSuccess) {
+                onFailure()
+                rider3dStatusLabel = "3D 連線異常"
+            }
+        }
+    }
+
     val remainingCueSec = if (nextCue != null) {
         ((nextCue.offsetMs - currentMs) / 1000).coerceAtLeast(0)
     } else {
@@ -545,6 +565,19 @@ fun WorkoutHUDScreen(
             },
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (rider3dEnabledInHud) {
+                        TextButton(
+                            onClick = { isShowingRider3DViewPanel = true },
+                            enabled = canSendRider3DView
+                        ) {
+                            Text(
+                                text = "3D 視角",
+                                color = if (canSendRider3DView) Color.White else Color.White.copy(alpha = 0.4f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
                     IconButton(onClick = { goToPreviousSegment() }) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", tint = Color.White)
                     }
@@ -1184,6 +1217,72 @@ fun WorkoutHUDScreen(
                 confirmButton = {
                     TextButton(onClick = { isShowingPostureInfo = false }) {
                         Text("我知道了", color = TopBarGreenDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            )
+        }
+
+        if (isShowingRider3DViewPanel && canSendRider3DView) {
+            AlertDialog(
+                onDismissRequest = { isShowingRider3DViewPanel = false },
+                title = {
+                    Text(
+                        text = "3D 視角",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "RPM 視圖",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Switch(
+                                checked = rider3dRpmViewOn,
+                                onCheckedChange = { target ->
+                                    val previous = rider3dRpmViewOn
+                                    rider3dRpmViewOn = target
+                                    sendRider3DViewCommand(
+                                        Rider3DCommandSpec(command = "rpmview", rpmView = target),
+                                        onFailure = { rider3dRpmViewOn = previous }
+                                    )
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedTrackColor = TopBarGreenDark,
+                                    checkedThumbColor = Color.White
+                                )
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { sendRider3DViewCommand(Rider3DCommandSpec(command = "lineup")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "學員列隊",
+                                color = TopBarGreenDark,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { isShowingRider3DViewPanel = false }) {
+                        Text(
+                            text = "關閉",
+                            color = TopBarGreenDark,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
                 }
             )

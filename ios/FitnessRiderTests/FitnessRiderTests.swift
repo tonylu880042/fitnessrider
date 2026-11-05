@@ -2286,6 +2286,24 @@ final class FitnessRiderTests: XCTestCase {
         XCTAssertEqual(updateObj?["posture"] as? String, "0")
     }
 
+    func testRider3DViewCommandJsonAndGate() throws {
+        let onStr = buildRider3DUpdateWorkoutJson(command: "rpmview", rpmView: true)
+        XCTAssertTrue(onStr.contains("\"rpmView\":true"))
+        let onObj = try JSONSerialization.jsonObject(with: Data(onStr.utf8)) as? [String: Any]
+        XCTAssertEqual(onObj?["command"] as? String, "rpmview")
+        XCTAssertEqual(onObj?["rpmView"] as? Bool, true)
+        let offStr = buildRider3DUpdateWorkoutJson(command: "RpmView", rpmView: false)
+        XCTAssertTrue(offStr.contains("\"rpmView\":false"))
+        let lineupObj = try JSONSerialization.jsonObject(with: Data(buildRider3DUpdateWorkoutJson(command: "lineup").utf8)) as? [String: Any]
+        XCTAssertEqual(lineupObj?["command"] as? String, "lineup")
+        XCTAssertEqual(lineupObj?.count, 1)
+
+        XCTAssertTrue(canSendRider3DViewCommand(isActiveInHud: true, hasStartedOnHost: true, hasStoppedOnHost: false))
+        XCTAssertFalse(canSendRider3DViewCommand(isActiveInHud: false, hasStartedOnHost: true, hasStoppedOnHost: false))
+        XCTAssertFalse(canSendRider3DViewCommand(isActiveInHud: true, hasStartedOnHost: false, hasStoppedOnHost: false))
+        XCTAssertFalse(canSendRider3DViewCommand(isActiveInHud: true, hasStartedOnHost: true, hasStoppedOnHost: true))
+    }
+
     func testRider3DStepCommandsAndExitCommand() {
         let cue1 = Rider3DCueSnapshot(segmentIndex: 0, cueId: "cue1", targetRpm: 85, intensityZone: 2, posture: .seatedFlat)
         let cue2 = Rider3DCueSnapshot(segmentIndex: 0, cueId: "cue2", targetRpm: 65, intensityZone: 4, posture: .standingClimb)

@@ -86,6 +86,8 @@ public struct WorkoutHUDView: View {
     @State private var rider3dSyncState = Rider3DSyncState()
     @State private var rider3dHostStatus: String = "waitUnity"
     @State private var rider3dStatusLabel: String?
+    @State private var rider3dRpmViewOn: Bool = false
+    @State private var isShowingRider3DViewPanel: Bool = false
     @FocusState private var isPlaylistSearchFocused: Bool
 
     private let reminderTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
@@ -102,6 +104,84 @@ public struct WorkoutHUDView: View {
             isEnabled: settings.isRider3DEnabled,
             hostInput: settings.rider3dHost
         )
+    }
+
+    private var canSendRider3DView: Bool {
+        canSendRider3DViewCommand(
+            isActiveInHud: rider3dEnabledInHud,
+            hasStartedOnHost: rider3dSyncState.hasStartedOnHost,
+            hasStoppedOnHost: rider3dSyncState.hasStoppedOnHost
+        )
+    }
+
+    private func sendRider3DViewCommand(_ spec: Rider3DCommandSpec, onFailure: @escaping () -> Void = {}) {
+        let host = AppSettings.shared.rider3dHost
+        Task {
+            let res = await Rider3DClient.updateWorkoutInfo(hostInput: host, spec: spec, timeoutSeconds: 1.5)
+            if !res.isSuccess {
+                onFailure()
+                rider3dStatusLabel = "3D 連線異常"
+            }
+        }
+    }
+
+    private var rider3dViewPanel: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture { isShowingRider3DViewPanel = false }
+
+            VStack(spacing: 20) {
+                Text("3D 視角")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(FitnessRiderTheme.textPrimary)
+
+                Toggle(isOn: Binding(
+                    get: { rider3dRpmViewOn },
+                    set: { target in
+                        let previous = rider3dRpmViewOn
+                        rider3dRpmViewOn = target
+                        sendRider3DViewCommand(
+                            Rider3DCommandSpec(command: "rpmview", rpmView: target),
+                            onFailure: { rider3dRpmViewOn = previous }
+                        )
+                    }
+                )) {
+                    Text("RPM 視圖")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(FitnessRiderTheme.textPrimary)
+                }
+                .tint(FitnessRiderTheme.topBarGreenDark)
+
+                Button {
+                    sendRider3DViewCommand(Rider3DCommandSpec(command: "lineup"))
+                } label: {
+                    Text("學員列隊")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(FitnessRiderTheme.topBarGreenDark, lineWidth: 1)
+                        )
+                }
+
+                Button {
+                    isShowingRider3DViewPanel = false
+                } label: {
+                    Text("關閉")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(FitnessRiderTheme.topBarGreenDark)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 360)
+            .background(FitnessRiderTheme.canvasWhite)
+            .cornerRadius(16)
+            .shadow(radius: 12)
+            .padding(.horizontal, 24)
+        }
     }
 
     private var liveClass: WorkoutClass {
@@ -359,6 +439,11 @@ public struct WorkoutHUDView: View {
             .onChange(of: audioManager.isPlaying) { _ in syncRider3DNow() }
             .onChange(of: audioManager.currentSegmentIndex) { _ in syncRider3DNow() }
             .onChange(of: audioManager.currentOffsetSeconds) { _ in syncRider3DNow() }
+            .overlay {
+                if isShowingRider3DViewPanel && canSendRider3DView {
+                    rider3dViewPanel
+                }
+            }
             .alert("無法開啟歌單連結", isPresented: $isShowingPlaylistOpenError) {
                 Button("確定", role: .cancel) {}
             }
@@ -422,6 +507,17 @@ public struct WorkoutHUDView: View {
             Spacer()
 
             HStack(spacing: 12) {
+                if rider3dEnabledInHud {
+                    Button {
+                        isShowingRider3DViewPanel = true
+                    } label: {
+                        Text("3D 視角")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white.opacity(canSendRider3DView ? 1 : 0.4))
+                    }
+                    .disabled(!canSendRider3DView)
+                }
+
                 Button {
                     audioManager.previousSegment()
                 } label: {

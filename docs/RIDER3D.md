@@ -73,7 +73,7 @@
   - 只影響 3D 版；教練版（`isRider3D == false`）行為完全不變。
   - 測試（雙端同名）：`rider3DStartAction` 的四種組合——非 3D 版、3D 版開關關、開關開＋空白、開關開＋無效字串、開關開＋有效位址。
 - **D3 3D 視角面板：RPM 視圖＋列隊**（2026-11-04 Tony 定案，D2 之後）：
-  - HUD 頂端列（3D 狀態文字旁）加一顆「3D 視角」鍵，只在 3D 版、本堂有連 3D、且主機狀態為 `start` 時可按，其餘時間 disable 不隱藏。
+  - HUD 頂端列（3D 狀態文字旁）加一顆「3D 視角」鍵，只在 3D 版、本堂有連 3D、且本堂已在主機開跑（送出 `start`）、尚未 `stop` 時可按，其餘時間 disable 不隱藏。
     按下開一個浮在 HUD 上的面板（點外面關閉），音樂與課程照常進行。**不加任何手勢**：
     中央儀表不可有點擊類手勢（CLAUDE.md B 節），面板內一律是按鈕。
   - 面板內容：「RPM 視圖」開關（送 `{"command":"rpmview","rpmView":true|false}`）、「學員列隊」按鈕（送 `{"command":"lineup"}`，一次性動作）。
@@ -81,7 +81,7 @@
     送出失敗時開關退回原狀態，並顯示既有的「3D 連線異常」。
   - 送出即返回、逾時 1.5 秒，與 D2 的 update 共用 `Rider3DClient.updateWorkoutInfo`，不另開一條 HTTP 路徑。
   - `buildRider3DUpdateWorkoutJson` 雙端加 `rpmview`（帶 bool `rpmView`）與 `lineup`（只帶 `command`）兩個分支，`Rider3DCommandSpec` 加對應欄位。
-  - 雙端同名純函式＋測試：`canSendRider3DViewCommand(isActiveInHud, hostStatus)`（只有 `start` 為 true）；
+  - 雙端同名純函式＋測試：`canSendRider3DViewCommand(isActiveInHud, hasStartedOnHost, hasStoppedOnHost)`（已送出 `start` 且尚未 `stop` 才為 true；不用 `hostStatus`，因為送出 `start` 後 HUD 就停止輪詢主機狀態，它會停在 `prepare`）；
     `rpmview`／`lineup` 的 JSON 內容（`rpmView` 為 JSON bool 不是字串）。
   - **實機驗證**（要 Tony 在 3D 螢幕前看）：Unity 開課時 RPM 視圖的預設是否為關；開／關是否即時生效；
     `lineup` 的畫面效果與持續時間；`stop` 之後（結果頁）送這些指令會不會出錯。

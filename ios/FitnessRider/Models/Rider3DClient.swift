@@ -67,17 +67,20 @@ public struct Rider3DCommandSpec: Equatable, Sendable {
     public let targetRpm: Int?
     public let intensityZone: Int?
     public let posture: PostureType?
+    public let rpmView: Bool?
 
     public init(
         command: String,
         targetRpm: Int? = nil,
         intensityZone: Int? = nil,
-        posture: PostureType? = nil
+        posture: PostureType? = nil,
+        rpmView: Bool? = nil
     ) {
         self.command = command
         self.targetRpm = targetRpm
         self.intensityZone = intensityZone
         self.posture = posture
+        self.rpmView = rpmView
     }
 }
 
@@ -252,7 +255,8 @@ public func buildRider3DUpdateWorkoutJson(
     intensityZone: Int? = nil,
     posture: PostureType? = nil,
     trap: Bool = false,
-    groupRide: Bool = false
+    groupRide: Bool = false,
+    rpmView: Bool = false
 ) -> String {
     let cmd = command.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch cmd {
@@ -263,9 +267,15 @@ public func buildRider3DUpdateWorkoutJson(
         let intensity = rider3DIntensityPercent(intensityZone ?? 2)
         let postureCode = rider3DPostureCode(posture ?? .seatedFlat)
         return #"{"command":"update","rpm":"\#(rpm)","intensity":"\#(intensity)","posture":"\#(postureCode)"}"#
+    case "rpmview":
+        return #"{"command":"rpmview","rpmView":\#(rpmView)}"#
     default:
         return #"{"command":"\#(escapeJsonString(cmd))"}"#
     }
+}
+
+public func canSendRider3DViewCommand(isActiveInHud: Bool, hasStartedOnHost: Bool, hasStoppedOnHost: Bool) -> Bool {
+    isActiveInHud && hasStartedOnHost && !hasStoppedOnHost
 }
 
 public func rider3DUpdateWorkoutUrl(hostInput: String, payloadJson: String) -> String? {
@@ -512,7 +522,8 @@ public enum Rider3DClient {
             command: spec.command,
             targetRpm: spec.targetRpm,
             intensityZone: spec.intensityZone,
-            posture: spec.posture
+            posture: spec.posture,
+            rpmView: spec.rpmView ?? false
         )
         guard let urlString = rider3DUpdateWorkoutUrl(hostInput: hostInput, payloadJson: payload) else {
             return Rider3DCallResult(errorMessage: "請輸入有效的主機 IP 或 IP:Port")
